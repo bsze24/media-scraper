@@ -1,0 +1,135 @@
+import { createAnthropicClient } from "@lib/anthropic/client";
+import {
+  GENERATE_BULLETS_PROMPT_CURATED,
+  GENERATE_BULLETS_PROMPT_YOUTUBE,
+} from "@lib/prompts/bullets";
+import type { BulletsStepOutput } from "@lib/db/types";
+import type { EntityTags, TranscriptSource } from "@/types/appearance";
+import type { PrepBulletsData } from "@/types/bullets";
+import type { SectionHeading } from "@/types/scraper";
+
+const MODEL = "claude-sonnet-4-20250514";
+
+const CURATED_SOURCES: TranscriptSource[] = [
+  "colossus",
+  "capital_allocators",
+  "acquired",
+];
+
+function isCuratedSource(source: TranscriptSource): boolean {
+  return CURATED_SOURCES.includes(source);
+}
+
+function findSectionAnchor(
+  sectionName: string,
+  sections: SectionHeading[]
+): string | null {
+  // Exact match first
+  const exact = sections.find(
+    (s) => s.heading.toLowerCase() === sectionName.toLowerCase()
+  );
+  if (exact) return exact.anchor;
+
+  // Fuzzy: check if section name is contained in heading or vice versa
+  const partial = sections.find((s) => {
+    const h = s.heading.toLowerCase();
+    const n = sectionName.toLowerCase();
+    return h.includes(n) || n.includes(h);
+  });
+  if (partial) return partial.anchor;
+
+  return null;
+}
+
+export async function generatePrepBullets(
+  cleanedTranscript: string,
+  entityTags: EntityTags,
+  sections: SectionHeading[],
+  transcriptSource: TranscriptSource
+): Promise<BulletsStepOutput> {
+  const client = createAnthropicClient();
+  const curated = isCuratedSource(transcriptSource);
+
+  const systemPrompt = curated
+    ? GENERATE_BULLETS_PROMPT_CURATED
+    : GENERATE_BULLETS_PROMPT_YOUTUBE;
+
+  const sectionList = sections.map((s) => s.heading).join("\n- ");
+
+  const userContent = curated
+    ? `## Entity Tags\n${JSON.stringify(entityTags, null, 2)}\n\n## Section Headings\n- ${sectionList}\n\n## Transcript\n${cleanedTranscript}`
+    : `## Entity Tags\n${JSON.stringify(entityTags, null, 2)}\n\n## Transcript\n${cleanedTranscript}`;
+
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 4096,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userContent }],
+  });
+
+  const block = response.content[0];
+  if (block.type !== "text") {
+    throw new Error("Unexpected response type from Claude: " + block.type);
+  }
+
+  let raw: {
+    bullets: Array<{
+      text: string;
+      supporting_quotes: Array<{
+        quote: string;
+        speaker?: string;
+        section?: string;
+        timestamp_seconds?: number;
+        timestamp_display?: string;
+      }>;
+    }>;
+    rowspace_angles: Array<{ text: string }>;
+  };
+
+  try {
+    raw = JSON.parse(block.text);
+  } catch (e) {
+    throw new Error(
+      `Failed to parse bullets JSON: ${e instanceof Error ? e.message : String(e)}\nRaw response: ${block.text.slice(0, 500)}`
+    );
+  }
+
+  const prepBullets: PrepBulletsData = {
+    bullets: raw.bullets.map((b) => ({
+      text: b.text,
+      supporting_quotes: b.supporting_quotes.map((sq) => {
+        if (curated) {
+          const anchor = sq.section
+            ? findSectionAnchor(sq.section, sections)
+            : null;
+          return {
+            quote: sq.quote,
+            speaker: sq.speaker ?? null,
+            section: sq.section ?? null,
+            section_anchor: anchor,
+            timestamp_seconds: null,
+            timestamp_display: null,
+          };
+        }
+        // YouTube / non-curated
+        return {
+          quote: sq.quote,
+          speaker: sq.speaker ?? null,
+          section: null,
+          section_anchor: null,
+          timestamp_seconds: sq.timestamp_seconds ?? null,
+          timestamp_display: sq.timestamp_display ?? null,
+        };
+      }),
+      vote: null,
+      vote_note: null,
+    })),
+    rowspace_angles: raw.rowspace_angles.map((a) => ({
+      text: a.text,
+      vote: null,
+      vote_note: null,
+    })),
+  };
+
+  return { prep_bullets: prepBullets };
+}
