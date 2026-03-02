@@ -1,14 +1,14 @@
-# Meeting Prep Tool — v3 PRD
+# Meeting Prep Tool — v4 PRD
 
 ## One-liner
 
-A living repository of indexed long-form content (podcasts, conferences, interviews) where sales teams look up a fund name and get instant AI-generated meeting prep — key talking points with sourced quotes, investment thesis, and navigable transcripts with YouTube timestamps.
+A living repository of indexed long-form content (podcasts, conference panels, fireside chats, interviews) where sales teams look up a fund name and get instant AI-generated meeting prep — key talking points with sourced quotes, investment thesis, and navigable transcripts with timestamps.
 
 ## Why this exists
 
 Before every meeting, someone would ideally listen to the fund's appearances on podcasts (Invest Like the Best, Capital Allocators, etc.) or speaker events (Goldman Sachs Talks, Milken panels, etc.). They would then synthesize this to understand how we can best pitch Rowspace. Of course, nobody has time to do that for every meeting. The result: our pitch is generic, and potential deal opportunities become "sounds interesting, check back in later because we're too busy to scope out how this is relevant for us."
 
-This tool replaces an hour of manual podcast/video searching and listening with a searchable knowledge base where you type "Apollo" and get back every relevant appearance with AI-generated prep bullets — instantly. Walk into every meeting sounding like you've been paying attention.
+This tool replaces an hour of manual searching and listening with a searchable knowledge base where you type "Apollo" and get back every relevant appearance with AI-generated prep bullets — instantly. Walk into every meeting sounding like you've been paying attention.
 
 ### What this surfaces that a 5-minute Google + ChatGPT pass doesn't
 
@@ -36,11 +36,11 @@ This is the primary ingestion path for v1. Two transcript sources:
 
 **YouTube (fallback).** Conference panels, fireside chats, one-off interviews, and any source without published transcripts. YouTube recently disabled auto-captions on some channels (including ILTB), so this path may require downloading audio + running through AssemblyAI/Whisper for sources without captions. For v1, YouTube is the fallback for content not covered by curated sources.
 
-**Bulk import** is the v0 bootstrap mechanism. Paste 50 Colossus episode URLs → system scrapes and processes them all → repository is seeded with high-quality, fully analyzed content.
+**Bulk import** is the v0 bootstrap mechanism. Paste 50 Colossus URLs → system scrapes and processes them all → repository is seeded with high-quality, fully analyzed content.
 
 ### Path 2: Passive (Subscribe to Sources)
 
-"Watch this podcast. When a new episode drops, pull the transcript and index it." Configured once per source, runs on a schedule.
+"Watch this source. When new content drops, pull the transcript and index it." Configured once per source, runs on a schedule.
 
 Best for curated sources with predictable structures and high-quality human-edited transcripts:
 
@@ -51,7 +51,7 @@ Best for curated sources with predictable structures and high-quality human-edit
 | Acquired | Deep dives on major firms/deals | Human-edited, excellent |
 | Odd Lots (Bloomberg) | Macro/markets perspectives | Varies |
 
-Passive subscriptions are a v1 stretch goal / early v2 feature. The active path handles everything these sources produce — just paste the YouTube URLs. Subscriptions add convenience (no manual checking for new episodes), not coverage.
+Passive subscriptions are a v1 stretch goal / early v2 feature. The active path handles everything these sources produce — just paste the URLs. Subscriptions add convenience (no manual checking for new content), not coverage.
 
 ### Processing Pipeline (Both Paths)
 
@@ -83,7 +83,7 @@ Step 3: Entity extraction (LLM)
         │
         ▼
 Step 4: Prep bullet generation (LLM) ← PRE-GENERATED
-  → 3-5 prep bullets per episode
+  → 3-5 prep bullets per appearance
   → Each bullet includes 1-3 supporting quotes with timestamps
   → Stored in database, ready for instant retrieval
         │
@@ -92,8 +92,8 @@ Step 5: Index in repository
   → Full-text search (Postgres tsvector) on cleaned transcript
   → Entity tags as searchable JSONB
   → Pre-generated bullets stored as JSONB
-  → Source metadata (URL, date, title, host, guest(s))
-  → episode_date as proper DATE field (for sorting, filtering, recency)
+  → Source metadata (URL, date, title, source name, speakers)
+  → appearance_date as proper DATE field (for sorting, filtering, recency)
 ```
 
 The entity extraction step is where the LLM earns its keep. Simple full-text search for "Apollo" misses "Rowan's firm" and "Redding Ridge." LLM-assisted tagging during indexing catches these.
@@ -104,26 +104,26 @@ The entity extraction step is where the LLM earns its keep. Simple full-text sea
 |---------|---------------|-----|
 | Cleaned transcript | Ingestion | One-time cost, always ready |
 | Entity tags | Ingestion | Must exist for matching to work |
-| Per-episode prep bullets + quotes | Ingestion | Instant lookup, no waiting |
-| Fund overview (cross-episode synthesis) | On-demand, then cached | Depends on which episodes match the query; cache invalidated when new episodes for that fund are added |
+| Per-appearance prep bullets + quotes | Ingestion | Instant lookup, no waiting |
+| Fund overview (cross-appearance synthesis) | On-demand, then cached | Depends on which appearances match the query; cache invalidated when new appearances for that fund are added |
 
-Fund overview is the one piece generated on-demand because it synthesizes across a dynamic set of matching episodes. Once generated for a fund, it's cached and only regenerated when new content for that fund is ingested.
+Fund overview is the one piece generated on-demand because it synthesizes across a dynamic set of matching appearances. Once generated for a fund, it's cached and only regenerated when new content for that fund is ingested.
 
 ---
 
 ## Data Model
 
-### Episodes Table
+### Appearances Table
 
 | Field | Type | Notes |
 |-------|------|-------|
 | id | UUID | Primary key |
 | source_url | TEXT | YouTube URL or podcast site URL. Kept for reprocessing (e.g., future speaker diarization) |
-| source_type | TEXT | "youtube", "colossus", "capital_allocators", etc. |
-| title | TEXT | Episode title |
-| episode_date | DATE | Proper date field — used for sorting, filtering, recency weighting, age flags |
-| host_name | TEXT | |
-| guest_names | TEXT[] | Array of guest names |
+| transcript_source | TEXT | Which scraper pulled this: "colossus", "capital_allocators", "acquired", "youtube_captions", "youtube_whisper" (future). System field — determines cleaning pass intensity. |
+| source_name | TEXT | Human-readable source: "Invest Like the Best", "Capital Allocators", "Goldman Sachs Talks", "Milken Institute Panel", etc. Free text — displayed in UI. |
+| title | TEXT | Appearance title |
+| appearance_date | DATE | Proper date field — used for sorting, filtering, recency weighting, age flags |
+| speakers | JSONB | Array of speakers with roles: `[{"name": "Marc Rowan", "role": "guest", "affiliation": "Apollo"}, {"name": "Patrick O'Shaughnessy", "role": "host"}]`. Roles: "host", "guest", "panelist", "moderator", "interviewer". |
 | raw_transcript | TEXT | Unmodified transcript as extracted. Never overwritten. Source of truth. |
 | raw_caption_data | JSONB | YouTube caption segments with timestamps (preserved for reprocessing) |
 | cleaned_transcript | TEXT | LLM-cleaned version with [MM:SS] timestamps and speaker attribution |
@@ -140,10 +140,10 @@ Fund overview is the one piece generated on-demand because it synthesizes across
 |-------|------|-------|
 | fund_name | TEXT | Primary key (normalized fund name) |
 | overview_text | TEXT | LLM-generated fund overview |
-| episode_ids | UUID[] | Which episodes contributed to this overview |
+| appearance_ids | UUID[] | Which appearances contributed to this overview |
 | generated_at | TIMESTAMP | Cache timestamp |
 
-Invalidated when a new episode is ingested that matches this fund.
+Invalidated when a new appearance is ingested that matches this fund.
 
 ### Domain Mapping Table (for future calendar integration)
 
@@ -206,7 +206,7 @@ A simple web page. Type a fund name → get results instantly (all content is pr
 2. Full-text search on cleaned transcripts (catches direct mentions)
 3. LLM-assisted fuzzy match as tiebreaker ("did the user mean X?") — only if steps 1-2 return nothing
 
-**Results are sorted by recency** (newest episodes first). Episodes older than 3 years get a subtle age flag: "⚠️ 2019 — thesis may have evolved."
+**Results are sorted by recency** (newest appearances first). Appearances older than 3 years get a subtle age flag: "⚠️ 2019 — thesis may have evolved."
 
 **Output:**
 
@@ -224,8 +224,8 @@ secondaries infrastructure.
 
 ─────────────────────────
 Invest Like the Best — "Marc Rowan on Apollo's Evolution"
-March 2024 · Host: Patrick O'Shaughnessy
-🔗 YouTube link
+March 2024 · Patrick O'Shaughnessy (host), Marc Rowan (guest)
+🔗 Source link
 
 Key Takeaways:                                          👍 👎
 • Apollo is shifting toward retirement services as primary growth
@@ -241,17 +241,17 @@ Rowspace Angles:                                         👍 👎
 
 [Generate Notion Doc] [View Cleaned Transcript] [View Raw Transcript]
 ─────────────────────────
-⚠️ Episode from 2020 — thesis may have evolved
+⚠️ Appearance from 2020 — thesis may have evolved
 Goldman Sachs Talks — Apollo Panel at Investor Day
-November 2020 · 🔗 YouTube link
+November 2020 · 🔗 Source link
 ...
 ```
 
-**Citation tooltips (web UI):** Superscript markers on bullets. Hover → tooltip shows supporting quote + clickable `[▶ 14:23]` YouTube timestamp link. Clean surface, evidence on demand.
+**Citation tooltips (web UI):** Superscript markers on bullets. Hover → tooltip shows supporting quote + clickable `[▶ 14:23]` timestamp link (opens source at that moment). Clean surface, evidence on demand.
 
-**"Generate Notion Doc" button:** One click → formatted Notion doc with bullets in body text, supporting quotes as Notion comments with YouTube timestamp URLs.
+**"Generate Notion Doc" button:** One click → formatted Notion doc with bullets in body text, supporting quotes as Notion comments with source timestamp URLs.
 
-**"View Cleaned Transcript":** Timestamped, paragraph-broken, speaker-attributed version. Click any `[MM:SS]` → opens YouTube at that moment.
+**"View Cleaned Transcript":** Timestamped, paragraph-broken, speaker-attributed version. Click any `[MM:SS]` → opens source at that moment.
 
 **"View Raw Transcript":** Unmodified original. Available for verification if the cleaned version seems off.
 
@@ -259,15 +259,15 @@ November 2020 · 🔗 YouTube link
 
 Each prep bullet synthesizes an insight — potentially drawing from multiple parts of the transcript. Supporting quotes link back to specific moments:
 
-**Web UI:** Bullets display with small citation markers (superscript ¹²). Hover a marker → tooltip shows the direct quote + clickable `[▶ 14:23]` YouTube timestamp link. The surface is clean (bullets only); evidence is one hover away.
+**Web UI:** Bullets display with small citation markers (superscript ¹²). Hover a marker → tooltip shows the direct quote + clickable `[▶ 14:23]` source timestamp link. The surface is clean (bullets only); evidence is one hover away.
 
-**Notion doc:** Same bullets as body text. Supporting quotes with YouTube timestamp URLs live in Notion comments attached to each bullet. Skimming = bullets only. Verifying = open comment thread.
+**Notion doc:** Same bullets as body text. Supporting quotes with source timestamp URLs live in Notion comments attached to each bullet. Skimming = bullets only. Verifying = open comment thread.
 
 **Cleaned transcript timestamps:** Independently of the bullets, the cleaned transcript preserves timestamps at each topical paragraph break. During the cleaning step, the LLM groups caption segments into topical paragraphs and assigns each the start timestamp of its first segment. These render as clickable margin timestamps in both the web UI and the Notion doc.
 
 ### Interface 2: URL Submission
 
-**Single URL:** Paste a YouTube or podcast URL → system queues it for processing → status updates in real-time → content appears in repository once complete.
+**Single URL:** Paste a URL (YouTube video, podcast site page, etc.) → system queues it for processing → status updates in real-time → content appears in repository once complete.
 
 **Bulk import:** Paste or upload a list of URLs (one per line, or CSV). System queues them all. Progress indicator: "Processing 47/50 — 3 failed (retry available)." This is how you bootstrap the repository on day one.
 
@@ -290,17 +290,17 @@ complexity-premium investing — seeks situations others avoid.
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-Episode 1: "Marc Rowan on Apollo's Evolution"
+Appearance 1: "Marc Rowan on Apollo's Evolution"
 Source: Invest Like the Best · March 2024
-Link: [YouTube URL]
+Link: [Source URL]
 
 Key Takeaways:
 • Apollo evaluates deals on complexity premium — they seek
   situations others find too messy ¹²
   [Notion comment ¹: "We're not trying to generate the highest
-   return..." ▶ 14:23 → youtube.com/watch?v=xxx&t=863]
+   return..." ▶ 14:23 → [source URL with timestamp]]
   [Notion comment ²: "The best deals we've done in the last
-   five years..." ▶ 30:47 → youtube.com/watch?v=xxx&t=1847]
+   five years..." ▶ 30:47 → [source URL with timestamp]]
 • [Bullet 2 with supporting quote comments...]
 • [Bullet 3...]
 
@@ -311,19 +311,19 @@ Full Transcript (cleaned, with timestamps):
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 
-⚠️ Episode from 2020 — thesis may have evolved
+⚠️ Appearance from 2020 — thesis may have evolved
 
-Episode 2: Apollo Panel at Investor Day
+Appearance 2: Apollo Panel at Investor Day
 Source: Goldman Sachs Talks · November 2020
-Link: [YouTube URL]
+Link: [Source URL]
 ...
 ```
 
-Supporting quotes live as Notion comments — the doc body stays clean and scannable. Quick prep = read bullets. Going deeper = open comments for evidence + click through to YouTube timestamps.
+Supporting quotes live as Notion comments — the doc body stays clean and scannable. Quick prep = read bullets. Going deeper = open comments for evidence + click through to source timestamps.
 
-The Fund Overview at the top synthesizes across ALL matching transcripts. Recency-weighted: the LLM is instructed to prioritize recent appearances and note when older episodes may reflect outdated views.
+The Fund Overview at the top synthesizes across ALL matching appearances. Recency-weighted: the LLM is instructed to prioritize recent appearances and note when older appearances may reflect outdated views.
 
-**If no matching episodes found:** Still creates a doc, but says "No podcast/video appearances found for [Fund Name]. Consider manual research." Absence of data is visible, not silent.
+**If no matching appearances found:** Still creates a doc, but says "No public appearances found for [Fund Name]. Consider manual research." Absence of data is visible, not silent.
 
 ### Interface 4: Admin / Status
 
@@ -351,8 +351,9 @@ Rules:
 - Begin each paragraph with the timestamp [MM:SS] of its first
   caption segment
 - Where speakers are identifiable from context (host vs guest,
-  names used, role references), add speaker labels
-  (e.g., "Patrick:" / "Marc Rowan:")
+  moderator vs panelist, interviewer vs subject, names used,
+  role references), add speaker labels
+  (e.g., "Patrick:" / "Marc Rowan:" / "Moderator:")
 - Do NOT rewrite, summarize, or alter meaning
 - This is a readability and formatting pass only
 
@@ -383,7 +384,8 @@ to find this transcript when searching for any related entity.
 
 ```
 You are preparing a sales team for a meeting with an investment
-fund. Below is a podcast/interview transcript where someone from
+fund. Below is a transcript from a public appearance (podcast,
+conference panel, fireside chat, or interview) where someone from
 or related to this fund spoke in depth.
 
 Generate 3-5 bullets most useful for a sales conversation:
@@ -458,7 +460,7 @@ Both versions are always stored. They serve different purposes:
 | Version | What it is | When to use |
 |---------|-----------|-------------|
 | Raw transcript | Exactly as extracted from YouTube/source. Unmodified. | Source of truth. Verification. Reprocessing (e.g., re-running with improved prompts or adding speaker diarization later). |
-| Cleaned transcript | LLM-processed: fillers removed, paragraphs added, timestamps assigned, speaker attribution attempted. | Primary reading surface. What users see by default. Navigable with YouTube timestamps. |
+| Cleaned transcript | LLM-processed: fillers removed, paragraphs added, timestamps assigned, speaker attribution attempted. | Primary reading surface. What users see by default. Navigable with clickable timestamps. |
 
 **Speaker attribution in v1:** The LLM attempts to identify speakers from context (names mentioned, host/guest dynamics, role references). This is best-effort text inference, not audio analysis — a categorically weaker approach than true speaker diarization. Expect reliable results for two-person interviews with clear host/guest dynamics (host regularly names the guest, guest gives long substantive answers). Expect degraded results for panels and flowing conversations where multiple speakers contribute similar-length points without being named. Wrong attribution is less damaging than it sounds — the quote is still useful even if labeled "Speaker" instead of "Marc Rowan" — but set user expectations accordingly. Audio-based diarization in v2 replaces this entirely.
 
@@ -468,11 +470,11 @@ Both versions are always stored. They serve different purposes:
 
 ## Recency Handling
 
-Investment theses shift. A fund's 2019 podcast appearance may describe a strategy they've since abandoned. The system handles this at multiple levels:
+Investment theses shift. A fund's 2019 appearance may describe a strategy they've since abandoned. The system handles this at multiple levels:
 
-**Data layer:** `episode_date` is a proper DATE field. All queries sort by recency (newest first) by default.
+**Data layer:** `appearance_date` is a proper DATE field. All queries sort by recency (newest first) by default.
 
-**UI layer:** Episodes older than 3 years display a subtle age flag: "⚠️ 2020 — thesis may have evolved." Configurable threshold.
+**UI layer:** Appearances older than 3 years display a subtle age flag: "⚠️ 2020 — thesis may have evolved." Configurable threshold.
 
 **Fund overview prompt:** The LLM is instructed to weight recent appearances more heavily and explicitly note when older appearances contradict newer ones ("Apollo's approach appears to have shifted from X in 2019 to Y in 2024").
 
@@ -513,7 +515,7 @@ For the eventual calendar integration, the system needs to map email domains to 
 ## Build Sequence
 
 ### Phase 0: Bootstrap + Pipeline (~3-4 days)
-- Supabase schema (episodes table with all fields, fund overview cache, domain mapping)
+- Supabase schema (appearances table with all fields, fund overview cache, domain mapping)
 - Bulk URL submission UI (textarea, paste URLs, submit)
 - Colossus scraper (authenticated, rate-limited ~1-2 sec between requests) for ILTB transcripts
 - YouTube Data API integration as fallback (for sources without published transcripts)
@@ -530,21 +532,21 @@ For the eventual calendar integration, the system needs to map email domains to 
 - Search page: text input → instant results (pure retrieval, no LLM calls)
 - Matching logic: entity tags first, full-text search second
 - Fund overview generation (on-demand for first query, then cached)
-- Results display: fund overview + per-episode cards with pre-generated bullets + Rowspace angles
+- Results display: fund overview + per-appearance cards with pre-generated bullets + Rowspace angles
 - Thumbs up/down on individual bullets and Rowspace angles (with optional note)
-- Citation tooltips (hover → supporting quote + YouTube timestamp link)
+- Citation tooltips (hover → supporting quote + source timestamp link)
 - Cleaned transcript expandable view with clickable timestamps
 - Raw transcript view (toggle)
-- Recency sorting + age flags on old episodes
+- Recency sorting + age flags on old appearances
 - **Milestone:** Type "Apollo" → instant results with bullets, quotes, timestamps, Rowspace angles, fund overview. Can rate individual bullets.
 
 ### Phase 2: Notion Output (~1-2 days)
 - Notion API integration
 - "Generate Notion Doc" button on results page
-- Structured doc: fund overview + per-episode bullets + Notion comments for quotes
+- Structured doc: fund overview + per-appearance bullets + Notion comments for quotes
 - Cleaned transcript with timestamps in sub-pages or expandable sections
-- Recency flags on old episodes
-- **Milestone:** One click → formatted Notion doc with bullet comments linking to YouTube timestamps
+- Recency flags on old appearances
+- **Milestone:** One click → formatted Notion doc with bullet comments linking to source timestamps
 
 ### Phase 3: Single URL + Admin (~1-2 days)
 - Single URL paste interface (for one-offs)
@@ -562,9 +564,9 @@ For the eventual calendar integration, the system needs to map email domains to 
 ### Phase 5: Passive Subscriptions (stretch / early v2) (~2-3 days)
 - Scraper for Invest Like the Best (Colossus website — human-edited transcripts)
 - Scraper for 1-2 additional curated sources
-- Vercel cron job to check for new episodes daily/weekly
+- Vercel cron job to check for new content daily/weekly
 - Auto-ingestion through full pipeline
-- **Milestone:** New ILTB episodes appear in repository automatically
+- **Milestone:** New ILTB appearances appear in repository automatically
 
 ### Phase 6: Calendar Integration (v1.5 / v2) (~3-4 days)
 - Google Calendar OAuth
@@ -583,13 +585,13 @@ For the eventual calendar integration, the system needs to map email domains to 
 
 ## Bootstrap Strategy
 
-Day one: paste bulk episode URLs from curated sources to seed the repository.
+Day one: paste bulk URLs from curated sources to seed the repository.
 
 **Starting corpus suggestion:**
-- Invest Like the Best (Colossus): last 50 episodes (human-edited transcripts, free Google auth)
-- Capital Allocators: last 30 episodes (published transcripts)
-- Acquired: last 20 episodes (published transcripts)
-- Odd Lots: last 20 episodes (published transcripts)
+- Invest Like the Best (Colossus): last 50 appearances (human-edited transcripts, free Google auth)
+- Capital Allocators: last 30 appearances (published transcripts)
+- Acquired: last 20 appearances (published transcripts)
+- Odd Lots: last 20 appearances (published transcripts)
 - Goldman Sachs Talks / Milken / major conference panels: 10-20 relevant YouTube videos (auto-captions or audio transcription as fallback)
 
 That's ~120-140 transcripts covering probably 80+ unique funds. The curated sources provide dramatically better input quality than YouTube auto-captions — proper speaker labels, punctuation, and edited for readability. Enough to make the lookup tool immediately useful for Rowspace.
@@ -610,7 +612,7 @@ As the team uses the tool, they'll naturally add more content via single URL sub
 
 ### Entity Matching
 
-**Entity extraction drift.** LLM-based alias resolution and parent/subsidiary mapping will work ~80% of the time and fail silently ~20%. False positives (wrong fund matched to an episode) are worse than false negatives (missed a relevant mention). Mitigation for v1: manually review entity tags for the first 50 transcripts, tune the extraction prompt. Accept some noise. The admin UI lets you spot and fix bad tags. Formal confidence scores and audit logs are v2.
+**Entity extraction drift.** LLM-based alias resolution and parent/subsidiary mapping will work ~80% of the time and fail silently ~20%. False positives (wrong fund matched to an appearance) are worse than false negatives (missed a relevant mention). Mitigation for v1: manually review entity tags for the first 50 transcripts, tune the extraction prompt. Accept some noise. The admin UI lets you spot and fix bad tags. Formal confidence scores and audit logs are v2.
 
 **Fund name matching is fuzzy.** "Bridgewater Associates" might appear as "Bridgewater," "Ray Dalio's fund," or just "Ray Dalio." Mitigation: entity extraction prompt explicitly asks for informal references and aliases. Match on fund names AND key people.
 
@@ -618,7 +620,7 @@ As the team uses the tool, they'll naturally add more content via single URL sub
 
 **YouTube Data API quotas.** Default quota is 10,000 units/day. Each caption request costs ~200 units. That's ~50 transcripts/day — plenty for bulk import and ongoing ingestion. Shouldn't be a bottleneck.
 
-**Transcript length vs. context window.** Long episodes (2+ hours) produce transcripts of 15-20K words. Claude handles this comfortably for single operations (cleaning, bullet generation). Entity extraction on very long transcripts could miss cross-section themes if chunked. Mitigation for v1: send full transcripts (within Claude's context window). Only build chunking logic if you actually hit the limit. Most podcast episodes are 60-90 minutes and well within bounds. See "On the Horizon" for chunking strategy when this becomes relevant.
+**Transcript length vs. context window.** Long appearances (2+ hours) produce transcripts of 15-20K words. Claude handles this comfortably for single operations (cleaning, bullet generation). Entity extraction on very long transcripts could miss cross-section themes if chunked. Mitigation for v1: send full transcripts (within Claude's context window). Only build chunking logic if you actually hit the limit. Most podcast appearances are 60-90 minutes and well within bounds. See "On the Horizon" for chunking strategy when this becomes relevant.
 
 **Processing latency at ingestion.** Each transcript runs through 3 LLM calls. At ~30-60 seconds per call, that's 2-3 minutes per transcript. For bulk import of 130 transcripts, that's ~4-6 hours of processing. Mitigation: queue-based processing with clear progress indicators. Processing happens in background; user can use the tool for already-completed content while the rest processes.
 
@@ -665,7 +667,7 @@ As the team uses the tool, they'll naturally add more content via single URL sub
 - Auto-enrichment for domain → company mapping
 - Shared transcript repository across customers (anonymized)
 - "Current Focus" vs "Historical Themes" sections in fund overview
-- Transcript chunking for cross-episode synthesis at scale — see "On the Horizon"
+- Transcript chunking for cross-appearance synthesis at scale — see "On the Horizon"
 
 ---
 
@@ -685,9 +687,9 @@ Only relevant for YouTube/conference content — curated sources (Colossus, Capi
 
 Two related problems that emerge at scale:
 
-**Long individual transcripts.** Episodes over 2 hours produce 15-20K+ word transcripts. v1 sends full transcripts to Claude, which handles this comfortably for most episodes. If transcripts exceed context window limits, the chunking strategy is: split by topical segments (using timestamps), process each chunk for entity extraction and bullet generation independently, then merge results. Risk: cross-chunk themes may be missed. Mitigation: overlap chunks by 2-3 paragraphs to preserve context at boundaries.
+**Long individual transcripts.** Appearances over 2 hours produce 15-20K+ word transcripts. v1 sends full transcripts to Claude, which handles this comfortably for most appearances. If transcripts exceed context window limits, the chunking strategy is: split by topical segments (using timestamps), process each chunk for entity extraction and bullet generation independently, then merge results. Risk: cross-chunk themes may be missed. Mitigation: overlap chunks by 2-3 paragraphs to preserve context at boundaries.
 
-**Cross-episode synthesis at scale.** The fund overview synthesizes across all matching episodes. When a fund has 3-5 appearances, this is straightforward. At 15-20+ appearances, the combined bullet/metadata payload may get large. Strategy: feed the fund overview prompt the pre-generated bullets and metadata (not full transcripts) for each episode, which is much more compact. If even that exceeds limits, use a map-reduce approach: summarize in batches of 5-7 episodes, then synthesize the batch summaries. Trigger: when any single fund has 15+ episodes in the repository.
+**Cross-appearance synthesis at scale.** The fund overview synthesizes across all matching appearances. When a fund has 3-5 appearances, this is straightforward. At 15-20+ appearances, the combined bullet/metadata payload may get large. Strategy: feed the fund overview prompt the pre-generated bullets and metadata (not full transcripts) for each appearance, which is much more compact. If even that exceeds limits, use a map-reduce approach: summarize in batches of 5-7 appearances, then synthesize the batch summaries. Trigger: when any single fund has 15+ appearances in the repository.
 
 Both chunking strategies are implementation details that don't change the data model or user experience — they're pipeline optimizations triggered by scale.
 
@@ -718,12 +720,12 @@ Both chunking strategies are implementation details that don't change the data m
 6. **Processing failure policy.** When a transcript fails at the entity extraction step, should it still be searchable via full-text? (Probably yes — partial processing is better than nothing.)
 
 ### Can answer during dogfooding (Phase 4)
-7. **Are 3-5 bullets the right number?** Might some episodes warrant more? Should the prompt be adaptive based on transcript length?
+7. **Are 3-5 bullets the right number?** Might some appearances warrant more? Should the prompt be adaptive based on transcript length?
 8. **Is the fund overview synthesis useful at the current prompt quality?** Or does it smooth over the specific insights that matter?
-9. **How often do users actually click through to YouTube timestamps?** If rarely, the citation complexity may not be worth maintaining.
+9. **How often do users actually click through to source timestamps?** If rarely, the citation complexity may not be worth maintaining.
 10. **Are Rowspace angles useful or generic?** Does the LLM produce actionable pitch hooks, or does it default to vague suggestions? Thumbs up/down data will reveal this.
 
 ### Future architecture questions
 11. **When to add speaker diarization?** After how many users complain about speaker attribution? After Assembled pilot?
 12. **Reprocessing strategy.** When you improve a prompt, do you reprocess all existing transcripts? Only recent ones? This has cost implications at scale.
-13. **Should the repository be shared across customers in v3?** A fund's podcast appearance is the same content regardless of who's looking it up. Shared indexing saves cost; per-customer indexing preserves privacy of what funds each team is researching.
+13. **Should the repository be shared across customers in v3?** A fund's appearance is the same content regardless of who's looking it up. Shared indexing saves cost; per-customer indexing preserves privacy of what funds each team is researching.
