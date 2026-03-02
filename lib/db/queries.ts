@@ -8,7 +8,7 @@ import type {
   EntitiesStepOutput,
   BulletsStepOutput,
 } from "./types";
-import type { ProcessingStatus } from "@/types/appearance";
+import type { ProcessingStatus, EntityTags } from "@/types/appearance";
 
 // ---------------------------------------------------------------------------
 // Read
@@ -169,41 +169,80 @@ export async function writeExtractResult(
 
 export async function writeCleanResult(
   id: string,
-  output: CleanStepOutput
-): Promise<void> {
+  output: CleanStepOutput,
+  options?: { force?: boolean }
+): Promise<boolean> {
   const supabase = createServerClient();
+
+  if (!options?.force) {
+    const { data } = await supabase
+      .from("appearances")
+      .select("cleaned_transcript")
+      .eq("id", id)
+      .single();
+
+    if (data?.cleaned_transcript != null) return false;
+  }
+
   const { error } = await supabase
     .from("appearances")
     .update({ cleaned_transcript: output.cleaned_transcript })
     .eq("id", id);
 
   if (error) throw error;
+  return true;
 }
 
 export async function writeEntitiesResult(
   id: string,
-  output: EntitiesStepOutput
-): Promise<void> {
+  output: EntitiesStepOutput,
+  options?: { force?: boolean }
+): Promise<boolean> {
   const supabase = createServerClient();
+
+  if (!options?.force) {
+    const { data } = await supabase
+      .from("appearances")
+      .select("entity_tags")
+      .eq("id", id)
+      .single();
+
+    if (data && Object.keys(data.entity_tags ?? {}).length > 0) return false;
+  }
+
   const { error } = await supabase
     .from("appearances")
     .update({ entity_tags: output.entity_tags })
     .eq("id", id);
 
   if (error) throw error;
+  return true;
 }
 
 export async function writeBulletsResult(
   id: string,
-  output: BulletsStepOutput
-): Promise<void> {
+  output: BulletsStepOutput,
+  options?: { force?: boolean }
+): Promise<boolean> {
   const supabase = createServerClient();
+
+  if (!options?.force) {
+    const { data } = await supabase
+      .from("appearances")
+      .select("prep_bullets")
+      .eq("id", id)
+      .single();
+
+    if (data && Object.keys(data.prep_bullets ?? {}).length > 0) return false;
+  }
+
   const { error } = await supabase
     .from("appearances")
     .update({ prep_bullets: output.prep_bullets })
     .eq("id", id);
 
   if (error) throw error;
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -221,4 +260,54 @@ export async function invalidateFundOverviewCache(
     .in("fund_name", fundNames);
 
   if (error) throw error;
+}
+
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+
+export async function searchByFundName(
+  fundName: string
+): Promise<AppearanceRow[]> {
+  const supabase = createServerClient();
+
+  // Tier 1: Entity tag containment — fund name in entity_tags.fund_names
+  const { data: tagHits, error: tagErr } = await supabase
+    .from("appearances")
+    .select("*")
+    .contains("entity_tags", { fund_names: [{ name: fundName }] })
+    .eq("processing_status", "complete")
+    .order("appearance_date", { ascending: false });
+
+  if (tagErr) throw tagErr;
+
+  // Tier 2: Full-text search on transcript
+  const { data: ftsHits, error: ftsErr } = await supabase
+    .from("appearances")
+    .select("*")
+    .textSearch("transcript_search_vector", fundName, { type: "plain" })
+    .eq("processing_status", "complete")
+    .order("appearance_date", { ascending: false });
+
+  if (ftsErr) throw ftsErr;
+
+  // Merge & deduplicate — entity tag matches first (higher confidence)
+  const seen = new Set<string>();
+  const results: AppearanceRow[] = [];
+  for (const row of [...(tagHits ?? []), ...(ftsHits ?? [])]) {
+    if (!seen.has(row.id)) {
+      seen.add(row.id);
+      results.push(row as AppearanceRow);
+    }
+  }
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+export function extractFundNames(entityTags: EntityTags): string[] {
+  return (entityTags.fund_names ?? []).map((f) => f.name);
 }
