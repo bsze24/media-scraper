@@ -136,13 +136,12 @@ export async function updateProcessingStatus(
   error?: string
 ): Promise<void> {
   const supabase = createServerClient();
-  const update: Record<string, unknown> = { processing_status: status };
-  if (error !== undefined) {
-    update.processing_error = error;
-  }
   const { error: dbError } = await supabase
     .from("appearances")
-    .update(update)
+    .update({
+      processing_status: status,
+      processing_error: error ?? null,
+    })
     .eq("id", id);
 
   if (dbError) throw dbError;
