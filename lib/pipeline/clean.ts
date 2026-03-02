@@ -13,7 +13,7 @@ export async function cleanTranscript(
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 16384,
+    max_tokens: 64000,
     system: CLEAN_TRANSCRIPT_PROMPT,
     messages: [{ role: "user", content: rawTranscript }],
   },{timeout: 600000,
