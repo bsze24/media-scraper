@@ -30,13 +30,13 @@ Two ingestion paths feed the same repository:
 
 User pastes a URL (or many URLs). System pulls the transcript, processes it through the full pipeline, and indexes it — including pre-generated prep bullets. Content is ready for instant lookup once processing completes.
 
-This is the primary ingestion path for v1. Handles:
-- YouTube videos (auto-captions via YouTube Data API)
-- Any podcast/video hosted on YouTube
-- Conference talks, fireside chats, keynotes
-- One-offs someone on the team found
+This is the primary ingestion path for v1. Two transcript sources:
 
-**Bulk import** is the v0 bootstrap mechanism. Paste 50 YouTube URLs of Invest Like the Best episodes → system processes them all → repository is seeded with fully analyzed content.
+**Curated podcast sites (primary).** ILTB (Colossus), Capital Allocators, Acquired, and Odd Lots all publish human-edited transcripts behind free or low-cost auth. These are dramatically better than auto-captions — proper punctuation, speaker labels, no filler artifacts. The system authenticates and scrapes transcripts from these sites. Speaker attribution is already done for you.
+
+**YouTube (fallback).** Conference panels, fireside chats, one-off interviews, and any source without published transcripts. YouTube recently disabled auto-captions on some channels (including ILTB), so this path may require downloading audio + running through AssemblyAI/Whisper for sources without captions. For v1, YouTube is the fallback for content not covered by curated sources.
+
+**Bulk import** is the v0 bootstrap mechanism. Paste 50 Colossus episode URLs → system scrapes and processes them all → repository is seeded with high-quality, fully analyzed content.
 
 ### Path 2: Passive (Subscribe to Sources)
 
@@ -62,18 +62,15 @@ Raw URL (YouTube, podcast site, etc.)
         │
         ▼
 Step 1: Transcript extraction
-  → YouTube: auto-captions via Data API (with timestamps)
-  → Curated sites: scrape published transcript
+  → Curated sites (primary): scrape human-edited transcript (already has speaker labels, punctuation)
+  → YouTube: auto-captions via Data API (with timestamps), or audio download + AssemblyAI/Whisper if captions unavailable
   → Store RAW transcript (never deleted, source of truth)
         │
         ▼
 Step 2: Transcript cleaning (LLM)
-  → Remove verbal fillers (um, uh, you know, like, sort of)
-  → Clean false starts
-  → Group caption segments into topical paragraphs
-  → Assign [MM:SS] timestamp at each paragraph break
-  → Attempt speaker attribution from context where identifiable
-  → Preserve original meaning — readability pass, not rewrite
+  → For curated transcripts: lighter pass — add [MM:SS] timestamps, standardize formatting, verify speaker labels
+  → For YouTube captions: heavier pass — remove verbal fillers, clean false starts, group into paragraphs, attempt speaker attribution from context
+  → Both: preserve original meaning — readability pass, not rewrite
   → Store CLEANED transcript alongside raw (both kept)
         │
         ▼
@@ -518,15 +515,16 @@ For the eventual calendar integration, the system needs to map email domains to 
 ### Phase 0: Bootstrap + Pipeline (~3-4 days)
 - Supabase schema (episodes table with all fields, fund overview cache, domain mapping)
 - Bulk URL submission UI (textarea, paste URLs, submit)
-- YouTube Data API integration (URL → extract auto-captions with timestamps)
-- **Speaker attribution smoke test:** Before bulk processing, run 3-5 YouTube auto-caption transcripts through the cleaning prompt (one clean ILTB interview, one messier panel, one conference talk). Evaluate how well the LLM identifies speakers from text context alone. Tune prompt if needed before processing 130 transcripts.
+- Colossus scraper (authenticated, rate-limited ~1-2 sec between requests) for ILTB transcripts
+- YouTube Data API integration as fallback (for sources without published transcripts)
+- **Speaker attribution smoke test:** Before bulk processing, run 3-5 transcripts through the cleaning prompt — compare curated source (speaker labels already present) vs YouTube caption (LLM must infer). Validate that the pipeline handles both gracefully.
 - Claude API integration for all three processing steps:
-  - Transcript cleaning (with timestamps, speaker attribution)
+  - Transcript cleaning (lighter for curated sources, heavier for YouTube captions)
   - Entity extraction (funds, people, aliases, parent relationships)
   - Prep bullet generation (with supporting quotes, timestamps, and Rowspace angles)
 - Store raw transcript, cleaned transcript, entity tags, and pre-generated bullets
 - Queue processing with status tracking and progress visibility
-- **Milestone:** Paste 20 ILTB YouTube URLs → all transcripts extracted, cleaned, entity-tagged, and bullets pre-generated. Can query database for "Apollo" and get instant results.
+- **Milestone:** Paste 20 ILTB Colossus URLs → all transcripts scraped, cleaned, entity-tagged, and bullets pre-generated. Can query database for "Apollo" and get instant results.
 
 ### Phase 1: Lookup UI (~3-4 days)
 - Search page: text input → instant results (pure retrieval, no LLM calls)
@@ -585,15 +583,16 @@ For the eventual calendar integration, the system needs to map email domains to 
 
 ## Bootstrap Strategy
 
-Day one: paste bulk YouTube URLs to seed the repository.
+Day one: paste bulk episode URLs from curated sources to seed the repository.
 
 **Starting corpus suggestion:**
-- Invest Like the Best: last 50 episodes (most have YouTube versions)
-- Capital Allocators: last 30 episodes
-- Acquired: last 20 episodes
-- Goldman Sachs Talks / Milken / major conference panels: 20-30 relevant videos
+- Invest Like the Best (Colossus): last 50 episodes (human-edited transcripts, free Google auth)
+- Capital Allocators: last 30 episodes (published transcripts)
+- Acquired: last 20 episodes (published transcripts)
+- Odd Lots: last 20 episodes (published transcripts)
+- Goldman Sachs Talks / Milken / major conference panels: 10-20 relevant YouTube videos (auto-captions or audio transcription as fallback)
 
-That's ~120-130 transcripts covering probably 80+ unique funds. Enough to make the lookup tool immediately useful for Rowspace.
+That's ~120-140 transcripts covering probably 80+ unique funds. The curated sources provide dramatically better input quality than YouTube auto-captions — proper speaker labels, punctuation, and edited for readability. Enough to make the lookup tool immediately useful for Rowspace.
 
 As the team uses the tool, they'll naturally add more content via single URL submission ("I found this great panel with our prospect"). The repository grows organically.
 
@@ -603,9 +602,9 @@ As the team uses the tool, they'll naturally add more content via single URL sub
 
 ### Content & Quality
 
-**YouTube auto-caption quality.** Auto-captions are noisy — missing punctuation, wrong words, no speaker attribution. The LLM cleaning step must be robust. Mitigation: for important sources (ILTB, Capital Allocators), prefer published human-edited transcripts when available. YouTube captions as fallback. Store raw version for verification. See "On the Horizon" for the upgrade path to AssemblyAI/Whisper when caption quality proves insufficient.
+**YouTube auto-caption quality (fallback path only).** With curated sources (Colossus, Capital Allocators, Acquired, Odd Lots) as the primary ingestion path, YouTube captions are only needed for conference panels and one-off videos without published transcripts. Some channels have recently disabled auto-captions entirely. For YouTube content without captions, the fallback is audio download + AssemblyAI/Whisper. See "On the Horizon" for details.
 
-**Transcript cleaning may introduce distortion.** Removing fillers and cleaning false starts could subtly alter meaning. Mitigation: keep raw transcript always accessible. Cleaning prompt emphasizes "readability pass, not rewrite" and "when in doubt, keep it." Speaker attribution is best-effort, not guaranteed.
+**Transcript cleaning may introduce distortion.** Removing fillers and cleaning false starts could subtly alter meaning. Mitigation: keep raw transcript always accessible. Cleaning prompt emphasizes "readability pass, not rewrite" and "when in doubt, keep it." For curated sources with human-edited transcripts, the cleaning step is much lighter (formatting + timestamps only). Speaker attribution from text is best-effort for YouTube content; curated sources already have speaker labels.
 
 **Prompt quality.** Prep bullets are only as good as the prompt. If they're generic, the tool is useless. Mitigation: BZ is both builder and user — tight feedback loop. Iterate on prompts with real transcripts and real meetings. Pre-generation means you can re-run prompts on existing content when you improve them.
 
@@ -674,13 +673,13 @@ As the team uses the tool, they'll naturally add more content via single URL sub
 
 These aren't v2/v3 features — they're known quality and scale improvements that become relevant as the repository grows. The v1 architecture supports all of them without a rewrite.
 
-### Transcript accuracy upgrade
+### Transcript accuracy upgrade (YouTube path only)
 
-v1 uses YouTube auto-captions (roughly 85-90% accurate for clear English podcast audio) cleaned by LLM. The upgrade path: download audio from the stored source URL (yt-dlp) → run through AssemblyAI or Whisper (~95-98% accuracy for clean audio, ~$0.15-0.37/hour). This is a pipeline swap, not a rearchitecture — source URLs are stored as first-class fields, raw transcripts are preserved, and reprocessing just re-runs the pipeline on better input. Trigger: when auto-caption quality is visibly degrading bullet quality (noticeable in thumbs-down patterns).
+Only relevant for YouTube/conference content — curated sources already provide human-edited transcripts. v1 uses YouTube auto-captions (roughly 85-90% accurate for clear English podcast audio) cleaned by LLM, when captions are available. Some channels have recently disabled auto-captions entirely. The upgrade path: download audio from the stored source URL (yt-dlp) → run through AssemblyAI or Whisper (~95-98% accuracy for clean audio, ~$0.15-0.37/hour). This is a pipeline swap, not a rearchitecture — source URLs are stored as first-class fields, raw transcripts are preserved, and reprocessing just re-runs the pipeline on better input. Trigger: when YouTube content without auto-captions becomes a meaningful share of the repository, or when caption quality visibly degrades bullet quality.
 
 ### Speaker diarization from audio
 
-v1 uses LLM text-based speaker attribution (best-effort, reliable for two-person interviews, degrades for panels). The upgrade: download audio → run through a diarization service (AssemblyAI, pyannote) that identifies speakers from voice signatures (~90%+ accuracy for 2-speaker podcasts, ~85% for panels). Map speaker labels back to transcript timestamps. Same reprocessing pattern as transcript accuracy — stored source URLs make this a queue job, not a migration. Trigger: when speaker attribution errors are frequent enough to erode trust, likely around Assembled pilot.
+Only relevant for YouTube/conference content — curated sources (Colossus, Capital Allocators, Acquired, Odd Lots) already have human-edited speaker labels. v1 uses LLM text-based speaker attribution for YouTube content (best-effort, reliable for two-person interviews, degrades for panels). The upgrade: download audio → run through a diarization service (AssemblyAI, pyannote) that identifies speakers from voice signatures (~90%+ accuracy for 2-speaker podcasts, ~85% for panels). Map speaker labels back to transcript timestamps. Stored source URLs make this a queue job, not a migration. Trigger: when YouTube-sourced content is a significant share of the repository and speaker attribution errors are frequent enough to erode trust.
 
 ### Transcript chunking
 
@@ -709,9 +708,9 @@ Both chunking strategies are implementation details that don't change the data m
 ## Parking Lot (Open Questions)
 
 ### Must answer before building
-1. **Spot-check transcript availability.** Pick 10 ILTB YouTube URLs — do auto-captions exist and are they usable quality? This validates the entire bootstrap strategy.
-2. **Share 2-3 examples of manual prep that worked.** Real notes from real meetings. The LLM prompt needs a quality target to iterate against.
-3. **How many active prospect funds does Rowspace track?** Determines whether 130 transcripts gives good coverage or is a starting point.
+1. ~~**Spot-check transcript availability.**~~ ✓ ANSWERED: ILTB (Colossus), Capital Allocators, Acquired, and Odd Lots all publish human-edited transcripts. Colossus requires free Google auth. YouTube auto-captions recently disabled on some channels (including ILTB). Curated sources are the primary ingestion path; YouTube is fallback.
+2. ~~**Share 2-3 examples of manual prep that worked.**~~ DEFERRED to Phase 0 — first 20 processed transcripts serve as the tuning round. BZ will know instantly whether bullets are useful.
+3. **How many active prospect funds does Rowspace track?** ~1,000. 130 seed transcripts covers ~13% — good starting point, not comprehensive. Single-URL submission (Phase 3) lets team fill gaps as meetings come up.
 
 ### Should answer during Phase 0-1
 4. **Recency threshold.** 3 years as the "⚠️ thesis may have evolved" cutoff — is that right? Or should it be 2 years? 5 years?
