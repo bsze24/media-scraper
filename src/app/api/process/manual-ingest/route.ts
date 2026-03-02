@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { checkAdminToken, unauthorizedResponse } from "@lib/api/auth";
 import { insertManualAppearance } from "@lib/db/queries";
 import type { SpeakerRole } from "@/types/appearance";
 
@@ -29,16 +30,9 @@ const bodySchema = z.object({
   speakers: z.array(speakerSchema).min(1),
 });
 
-function checkAdminToken(req: NextRequest): boolean {
-  const token = req.headers.get("x-admin-token");
-  const expected = process.env.ADMIN_TOKEN;
-  if (!expected) return false;
-  return token === expected;
-}
-
 export async function POST(req: NextRequest) {
   if (!checkAdminToken(req)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorizedResponse();
   }
 
   let body: unknown;
