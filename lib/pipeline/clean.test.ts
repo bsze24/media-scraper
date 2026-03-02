@@ -7,41 +7,46 @@ vi.mock("@lib/anthropic/client", () => ({
 import { createAnthropicClient } from "@lib/anthropic/client";
 import { cleanTranscript } from "./clean";
 
-const mockCreate = vi.fn();
+const mockStream = vi.fn();
+
+function makeMockStream(text: string) {
+  return {
+    on: vi.fn().mockReturnThis(),
+    finalText: vi.fn().mockResolvedValue(text),
+    currentMessage: { usage: { output_tokens: 42 } },
+  };
+}
 
 beforeEach(() => {
   vi.mocked(createAnthropicClient).mockReturnValue({
-    messages: { create: mockCreate },
+    messages: { stream: mockStream },
   } as unknown as ReturnType<typeof createAnthropicClient>);
-  mockCreate.mockReset();
+  mockStream.mockReset();
 });
 
 describe("cleanTranscript", () => {
   it("returns cleaned_transcript from Claude response", async () => {
     const cleaned = "Patrick:\nThis is a cleaned transcript.";
-    mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: cleaned }],
-    });
+    mockStream.mockReturnValue(makeMockStream(cleaned));
 
     const result = await cleanTranscript("Patrick:\nUm, this is a, you know, raw transcript.");
 
     expect(result).toEqual({ cleaned_transcript: cleaned });
-    expect(mockCreate).toHaveBeenCalledOnce();
-    expect(mockCreate).toHaveBeenCalledWith(
+    expect(mockStream).toHaveBeenCalledOnce();
+    expect(mockStream).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "claude-sonnet-4-20250514",
         messages: [{ role: "user", content: "Patrick:\nUm, this is a, you know, raw transcript." }],
-      })
+      }),
+      expect.objectContaining({ timeout: 600_000 })
     );
   });
 
-  it("throws on unexpected response type", async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: "tool_use", id: "x", name: "y", input: {} }],
-    });
+  it("throws when finalText rejects", async () => {
+    const stream = makeMockStream("");
+    stream.finalText.mockRejectedValue(new Error("Stream error"));
+    mockStream.mockReturnValue(stream);
 
-    await expect(cleanTranscript("test")).rejects.toThrow(
-      "Unexpected response type"
-    );
+    await expect(cleanTranscript("test")).rejects.toThrow("Stream error");
   });
 });

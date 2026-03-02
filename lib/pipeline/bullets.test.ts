@@ -10,13 +10,21 @@ import { GENERATE_BULLETS_PROMPT_CURATED } from "@lib/prompts/bullets";
 import type { EntityTags } from "@/types/appearance";
 import type { SectionHeading } from "@/types/scraper";
 
-const mockCreate = vi.fn();
+const mockStream = vi.fn();
+
+function makeMockStream(text: string) {
+  return {
+    on: vi.fn().mockReturnThis(),
+    finalText: vi.fn().mockResolvedValue(text),
+    currentMessage: { usage: { output_tokens: 42 } },
+  };
+}
 
 beforeEach(() => {
   vi.mocked(createAnthropicClient).mockReturnValue({
-    messages: { create: mockCreate },
+    messages: { stream: mockStream },
   } as unknown as ReturnType<typeof createAnthropicClient>);
-  mockCreate.mockReset();
+  mockStream.mockReset();
 });
 
 const ENTITY_TAGS: EntityTags = {
@@ -73,9 +81,9 @@ const MOCK_LLM_RESPONSE = {
 
 describe("generatePrepBullets", () => {
   it("returns PrepBulletsData with correct shape", async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: JSON.stringify(MOCK_LLM_RESPONSE) }],
-    });
+    mockStream.mockReturnValue(
+      makeMockStream(JSON.stringify(MOCK_LLM_RESPONSE))
+    );
 
     const result = await generatePrepBullets(
       "cleaned transcript...",
@@ -89,9 +97,9 @@ describe("generatePrepBullets", () => {
   });
 
   it("initializes vote and vote_note as null on bullets", async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: JSON.stringify(MOCK_LLM_RESPONSE) }],
-    });
+    mockStream.mockReturnValue(
+      makeMockStream(JSON.stringify(MOCK_LLM_RESPONSE))
+    );
 
     const result = await generatePrepBullets(
       "transcript",
@@ -107,9 +115,9 @@ describe("generatePrepBullets", () => {
   });
 
   it("initializes vote and vote_note as null on rowspace angles", async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: JSON.stringify(MOCK_LLM_RESPONSE) }],
-    });
+    mockStream.mockReturnValue(
+      makeMockStream(JSON.stringify(MOCK_LLM_RESPONSE))
+    );
 
     const result = await generatePrepBullets(
       "transcript",
@@ -125,9 +133,9 @@ describe("generatePrepBullets", () => {
   });
 
   it("maps section names to section_anchor for curated sources", async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: JSON.stringify(MOCK_LLM_RESPONSE) }],
-    });
+    mockStream.mockReturnValue(
+      makeMockStream(JSON.stringify(MOCK_LLM_RESPONSE))
+    );
 
     const result = await generatePrepBullets(
       "transcript",
@@ -144,9 +152,9 @@ describe("generatePrepBullets", () => {
   });
 
   it("sets timestamp fields to null for curated sources", async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: JSON.stringify(MOCK_LLM_RESPONSE) }],
-    });
+    mockStream.mockReturnValue(
+      makeMockStream(JSON.stringify(MOCK_LLM_RESPONSE))
+    );
 
     const result = await generatePrepBullets(
       "transcript",
@@ -164,23 +172,24 @@ describe("generatePrepBullets", () => {
   });
 
   it("uses curated prompt for colossus source", async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: JSON.stringify(MOCK_LLM_RESPONSE) }],
-    });
+    mockStream.mockReturnValue(
+      makeMockStream(JSON.stringify(MOCK_LLM_RESPONSE))
+    );
 
     await generatePrepBullets("transcript", ENTITY_TAGS, SECTIONS, "colossus");
 
-    expect(mockCreate).toHaveBeenCalledWith(
+    expect(mockStream).toHaveBeenCalledWith(
       expect.objectContaining({
         system: GENERATE_BULLETS_PROMPT_CURATED,
-      })
+      }),
+      expect.anything()
     );
   });
 
   it("uses curated prompt for capital_allocators source", async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: JSON.stringify(MOCK_LLM_RESPONSE) }],
-    });
+    mockStream.mockReturnValue(
+      makeMockStream(JSON.stringify(MOCK_LLM_RESPONSE))
+    );
 
     await generatePrepBullets(
       "transcript",
@@ -189,10 +198,11 @@ describe("generatePrepBullets", () => {
       "capital_allocators"
     );
 
-    expect(mockCreate).toHaveBeenCalledWith(
+    expect(mockStream).toHaveBeenCalledWith(
       expect.objectContaining({
         system: GENERATE_BULLETS_PROMPT_CURATED,
-      })
+      }),
+      expect.anything()
     );
   });
 
@@ -214,9 +224,9 @@ describe("generatePrepBullets", () => {
       rowspace_angles: [{ text: "Angle text." }],
     };
 
-    mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: JSON.stringify(youtubeResponse) }],
-    });
+    mockStream.mockReturnValue(
+      makeMockStream(JSON.stringify(youtubeResponse))
+    );
 
     const result = await generatePrepBullets(
       "transcript",
@@ -250,11 +260,9 @@ describe("generatePrepBullets", () => {
       rowspace_angles: [],
     };
 
-    mockCreate.mockResolvedValue({
-      content: [
-        { type: "text", text: JSON.stringify(responseWithPartialSection) },
-      ],
-    });
+    mockStream.mockReturnValue(
+      makeMockStream(JSON.stringify(responseWithPartialSection))
+    );
 
     const result = await generatePrepBullets(
       "transcript",
@@ -270,9 +278,9 @@ describe("generatePrepBullets", () => {
   });
 
   it("throws descriptive error on malformed JSON", async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: "```json\n{invalid}\n```" }],
-    });
+    mockStream.mockReturnValue(
+      makeMockStream("```json\n{invalid}\n```")
+    );
 
     await expect(
       generatePrepBullets("transcript", ENTITY_TAGS, SECTIONS, "colossus")

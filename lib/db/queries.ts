@@ -305,6 +305,39 @@ export async function searchByFundName(
 }
 
 // ---------------------------------------------------------------------------
+// Aggregation
+// ---------------------------------------------------------------------------
+
+export async function countByStatus(): Promise<
+  Record<ProcessingStatus | "total", number>
+> {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from("appearances")
+    .select("processing_status");
+
+  if (error) throw error;
+
+  const counts: Record<ProcessingStatus | "total", number> = {
+    queued: 0,
+    extracting: 0,
+    cleaning: 0,
+    analyzing: 0,
+    complete: 0,
+    failed: 0,
+    total: 0,
+  };
+
+  for (const row of data ?? []) {
+    const s = row.processing_status as ProcessingStatus;
+    if (s in counts) counts[s]++;
+    counts.total++;
+  }
+
+  return counts;
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

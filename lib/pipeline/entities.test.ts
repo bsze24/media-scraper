@@ -7,13 +7,21 @@ vi.mock("@lib/anthropic/client", () => ({
 import { createAnthropicClient } from "@lib/anthropic/client";
 import { extractEntities } from "./entities";
 
-const mockCreate = vi.fn();
+const mockStream = vi.fn();
+
+function makeMockStream(text: string) {
+  return {
+    on: vi.fn().mockReturnThis(),
+    finalText: vi.fn().mockResolvedValue(text),
+    currentMessage: { usage: { output_tokens: 42 } },
+  };
+}
 
 beforeEach(() => {
   vi.mocked(createAnthropicClient).mockReturnValue({
-    messages: { create: mockCreate },
+    messages: { stream: mockStream },
   } as unknown as ReturnType<typeof createAnthropicClient>);
-  mockCreate.mockReset();
+  mockStream.mockReset();
 });
 
 const VALID_ENTITIES = {
@@ -37,9 +45,9 @@ const VALID_ENTITIES = {
 
 describe("extractEntities", () => {
   it("returns parsed EntityTags from Claude response", async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: JSON.stringify(VALID_ENTITIES) }],
-    });
+    mockStream.mockReturnValue(
+      makeMockStream(JSON.stringify(VALID_ENTITIES))
+    );
 
     const result = await extractEntities("Some cleaned transcript...");
 
@@ -54,9 +62,7 @@ describe("extractEntities", () => {
   });
 
   it("throws descriptive error on malformed JSON", async () => {
-    mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: "not valid json {{{" }],
-    });
+    mockStream.mockReturnValue(makeMockStream("not valid json {{{"));
 
     await expect(extractEntities("test")).rejects.toThrow(
       /Failed to parse entity extraction JSON/
@@ -70,9 +76,7 @@ describe("extractEntities", () => {
       sectors_themes: [],
       portfolio_companies: [],
     };
-    mockCreate.mockResolvedValue({
-      content: [{ type: "text", text: JSON.stringify(empty) }],
-    });
+    mockStream.mockReturnValue(makeMockStream(JSON.stringify(empty)));
 
     const result = await extractEntities("test");
     expect(result.entity_tags.fund_names).toEqual([]);

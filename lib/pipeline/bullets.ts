@@ -9,6 +9,8 @@ import type { PrepBulletsData } from "@/types/bullets";
 import type { SectionHeading } from "@/types/scraper";
 
 const MODEL = "claude-sonnet-4-20250514";
+const TIMEOUT_MS = 600_000;
+const LOG_INTERVAL_MS = 5_000;
 
 const CURATED_SOURCES: TranscriptSource[] = [
   "colossus",
@@ -60,76 +62,97 @@ export async function generatePrepBullets(
     ? `## Entity Tags\n${JSON.stringify(entityTags, null, 2)}\n\n## Section Headings\n- ${sectionList}\n\n## Transcript\n${cleanedTranscript}`
     : `## Entity Tags\n${JSON.stringify(entityTags, null, 2)}\n\n## Transcript\n${cleanedTranscript}`;
 
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 4096,
-    system: systemPrompt,
-    messages: [{ role: "user", content: userContent }],
+  console.log(
+    `[bullets] starting (${curated ? "curated" : "youtube"}), transcript length: ${cleanedTranscript.length} chars`
+  );
+
+  const stream = client.messages.stream(
+    {
+      model: MODEL,
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userContent }],
+    },
+    { timeout: TIMEOUT_MS }
+  );
+
+  let outputTokens = 0;
+  const logTimer = setInterval(() => {
+    const tokens = stream.currentMessage?.usage.output_tokens ?? outputTokens;
+    console.log(`[bullets] streaming… ${tokens} output tokens so far`);
+  }, LOG_INTERVAL_MS);
+
+  stream.on("text", () => {
+    outputTokens++;
   });
 
-  const block = response.content[0];
-  if (block.type !== "text") {
-    throw new Error("Unexpected response type from Claude: " + block.type);
-  }
-
-  let raw: {
-    bullets: Array<{
-      text: string;
-      supporting_quotes: Array<{
-        quote: string;
-        speaker?: string;
-        section?: string;
-        timestamp_seconds?: number;
-        timestamp_display?: string;
-      }>;
-    }>;
-    rowspace_angles: Array<{ text: string }>;
-  };
-
   try {
-    raw = JSON.parse(block.text);
-  } catch (e) {
-    throw new Error(
-      `Failed to parse bullets JSON: ${e instanceof Error ? e.message : String(e)}\nRaw response: ${block.text.slice(0, 500)}`
+    const text = await stream.finalText();
+    console.log(
+      `[bullets] complete, ${stream.currentMessage?.usage.output_tokens ?? outputTokens} output tokens`
     );
-  }
 
-  const prepBullets: PrepBulletsData = {
-    bullets: raw.bullets.map((b) => ({
-      text: b.text,
-      supporting_quotes: b.supporting_quotes.map((sq) => {
-        if (curated) {
-          const anchor = sq.section
-            ? findSectionAnchor(sq.section, sections)
-            : null;
+    let raw: {
+      bullets: Array<{
+        text: string;
+        supporting_quotes: Array<{
+          quote: string;
+          speaker?: string;
+          section?: string;
+          timestamp_seconds?: number;
+          timestamp_display?: string;
+        }>;
+      }>;
+      rowspace_angles: Array<{ text: string }>;
+    };
+
+    try {
+      raw = JSON.parse(text);
+    } catch (e) {
+      throw new Error(
+        `Failed to parse bullets JSON: ${e instanceof Error ? e.message : String(e)}\nRaw response: ${text.slice(0, 500)}`
+      );
+    }
+
+    const prepBullets: PrepBulletsData = {
+      bullets: raw.bullets.map((b) => ({
+        text: b.text,
+        supporting_quotes: b.supporting_quotes.map((sq) => {
+          if (curated) {
+            const anchor = sq.section
+              ? findSectionAnchor(sq.section, sections)
+              : null;
+            return {
+              quote: sq.quote,
+              speaker: sq.speaker ?? null,
+              section: sq.section ?? null,
+              section_anchor: anchor,
+              timestamp_seconds: null,
+              timestamp_display: null,
+            };
+          }
+          // YouTube / non-curated
           return {
             quote: sq.quote,
             speaker: sq.speaker ?? null,
-            section: sq.section ?? null,
-            section_anchor: anchor,
-            timestamp_seconds: null,
-            timestamp_display: null,
+            section: null,
+            section_anchor: null,
+            timestamp_seconds: sq.timestamp_seconds ?? null,
+            timestamp_display: sq.timestamp_display ?? null,
           };
-        }
-        // YouTube / non-curated
-        return {
-          quote: sq.quote,
-          speaker: sq.speaker ?? null,
-          section: null,
-          section_anchor: null,
-          timestamp_seconds: sq.timestamp_seconds ?? null,
-          timestamp_display: sq.timestamp_display ?? null,
-        };
-      }),
-      vote: null,
-      vote_note: null,
-    })),
-    rowspace_angles: raw.rowspace_angles.map((a) => ({
-      text: a.text,
-      vote: null,
-      vote_note: null,
-    })),
-  };
+        }),
+        vote: null,
+        vote_note: null,
+      })),
+      rowspace_angles: raw.rowspace_angles.map((a) => ({
+        text: a.text,
+        vote: null,
+        vote_note: null,
+      })),
+    };
 
-  return { prep_bullets: prepBullets };
+    return { prep_bullets: prepBullets };
+  } finally {
+    clearInterval(logTimer);
+  }
 }
