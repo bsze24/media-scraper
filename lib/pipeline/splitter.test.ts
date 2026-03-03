@@ -1,21 +1,21 @@
 import { describe, it, expect } from "vitest";
 import {
-  splitIntoChunks,
+  splitForProcessing,
   mergeCleaned,
   mergeEntityTags,
   mergePrepBullets,
-} from "./chunker";
+} from "./splitter";
 import type { EntityTags } from "@/types/appearance";
 import type { PrepBulletsData } from "@/types/bullets";
 
 // ---------------------------------------------------------------------------
-// splitIntoChunks
+// splitForProcessing
 // ---------------------------------------------------------------------------
 
-describe("splitIntoChunks", () => {
+describe("splitForProcessing", () => {
   it("returns single chunk for short transcript", () => {
     const text = "Patrick:\nHello world.";
-    const result = splitIntoChunks(text, [], 120_000);
+    const result = splitForProcessing(text, [], 120_000);
     expect(result).toEqual([text]);
   });
 
@@ -29,7 +29,7 @@ describe("splitIntoChunks", () => {
       { heading: "## Section B", anchor: "b" },
     ];
 
-    const result = splitIntoChunks(raw, sections, 80_000);
+    const result = splitForProcessing(raw, sections, 80_000);
     expect(result.length).toBeGreaterThan(1);
     // Each chunk should be non-empty
     for (const chunk of result) {
@@ -45,7 +45,7 @@ describe("splitIntoChunks", () => {
     }
     const raw = blocks.join("\n\n");
 
-    const result = splitIntoChunks(raw, [], 50_000);
+    const result = splitForProcessing(raw, [], 50_000);
     expect(result.length).toBeGreaterThan(1);
     // Verify no chunk exceeds target by too much
     for (const chunk of result) {
@@ -55,7 +55,7 @@ describe("splitIntoChunks", () => {
 
   it("hard-splits very long single-block text", () => {
     const raw = "x".repeat(200_000);
-    const result = splitIntoChunks(raw, [], 80_000);
+    const result = splitForProcessing(raw, [], 80_000);
     expect(result.length).toBeGreaterThan(1);
   });
 });

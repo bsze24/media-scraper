@@ -48,12 +48,12 @@ vi.mock("@lib/scrapers/parse-turns", () => ({
   parseTurns: (...args: unknown[]) => mockParseTurns(...args),
 }));
 
-const mockSplitIntoChunks = vi.fn();
+const mockSplitForProcessing = vi.fn();
 const mockMergeCleaned = vi.fn();
 const mockMergeEntityTags = vi.fn();
 const mockMergePrepBullets = vi.fn();
-vi.mock("@lib/pipeline/chunker", () => ({
-  splitIntoChunks: (...args: unknown[]) => mockSplitIntoChunks(...args),
+vi.mock("@lib/pipeline/splitter", () => ({
+  splitForProcessing: (...args: unknown[]) => mockSplitForProcessing(...args),
   mergeCleaned: (...args: unknown[]) => mockMergeCleaned(...args),
   mergeEntityTags: (...args: unknown[]) => mockMergeEntityTags(...args),
   mergePrepBullets: (...args: unknown[]) => mockMergePrepBullets(...args),
@@ -374,8 +374,8 @@ describe("processAppearance — chunked path", () => {
     mockGetAppearanceById.mockResolvedValue(makeRow());
     mockExtract.mockResolvedValue(longScraperResult);
 
-    // splitIntoChunks returns 2 chunks for the raw transcript
-    mockSplitIntoChunks.mockReturnValue(["chunk1_raw", "chunk2_raw"]);
+    // splitForProcessing returns 2 chunks for the raw transcript
+    mockSplitForProcessing.mockReturnValue(["chunk1_raw", "chunk2_raw"]);
 
     // Clean step: each chunk produces cleaned output
     mockCleanTranscript
@@ -415,8 +415,8 @@ describe("processAppearance — chunked path", () => {
 
     await processAppearance("row-1");
 
-    // splitIntoChunks called for raw transcript
-    expect(mockSplitIntoChunks).toHaveBeenCalled();
+    // splitForProcessing called for raw transcript
+    expect(mockSplitForProcessing).toHaveBeenCalled();
 
     // cleanTranscript called once per chunk
     expect(mockCleanTranscript).toHaveBeenCalledTimes(2);
@@ -468,8 +468,8 @@ describe("processAppearance — chunked path", () => {
 
     await processAppearance("row-1");
 
-    // splitIntoChunks should not be called for short transcripts
-    expect(mockSplitIntoChunks).not.toHaveBeenCalled();
+    // splitForProcessing should not be called for short transcripts
+    expect(mockSplitForProcessing).not.toHaveBeenCalled();
     expect(mockMergeCleaned).not.toHaveBeenCalled();
     expect(mockMergeEntityTags).not.toHaveBeenCalled();
     expect(mockMergePrepBullets).not.toHaveBeenCalled();

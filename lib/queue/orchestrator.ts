@@ -17,11 +17,11 @@ import { cleanTranscript } from "@lib/pipeline/clean";
 import { extractEntities } from "@lib/pipeline/entities";
 import { generatePrepBullets } from "@lib/pipeline/bullets";
 import {
-  splitIntoChunks,
+  splitForProcessing,
   mergeCleaned,
   mergeEntityTags,
   mergePrepBullets,
-} from "@lib/pipeline/chunker";
+} from "@lib/pipeline/splitter";
 import type {
   ExtractStepOutput,
   EntitiesStepOutput,
@@ -83,7 +83,7 @@ export async function processAppearance(id: string): Promise<void> {
     const CHUNK_THRESHOLD = 120_000;
     const needsChunking = rawTranscript.length >= CHUNK_THRESHOLD;
     const chunks = needsChunking
-      ? splitIntoChunks(rawTranscript, sections)
+      ? splitForProcessing(rawTranscript, sections)
       : null;
 
     // Step 2: Clean
@@ -106,7 +106,7 @@ export async function processAppearance(id: string): Promise<void> {
     await updateProcessingStatus(id, "analyzing");
     let finalEntities: EntitiesStepOutput;
     if (chunks) {
-      const cleanedChunks = splitIntoChunks(finalCleaned, sections);
+      const cleanedChunks = splitForProcessing(finalCleaned, sections);
       const entityChunks = [];
       for (const chunk of cleanedChunks) {
         entityChunks.push(await extractEntities(chunk));
@@ -122,7 +122,7 @@ export async function processAppearance(id: string): Promise<void> {
     // Step 4: Bullets (still "analyzing")
     let finalBullets: BulletsStepOutput;
     if (chunks) {
-      const cleanedChunks = splitIntoChunks(finalCleaned, sections);
+      const cleanedChunks = splitForProcessing(finalCleaned, sections);
       const bulletChunks = [];
       for (const chunk of cleanedChunks) {
         bulletChunks.push(

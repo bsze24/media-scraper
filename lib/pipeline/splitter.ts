@@ -18,7 +18,7 @@ const DEFAULT_TARGET_CHARS = 120_000;
  *
  * Short transcripts (<targetChunkChars) return a single-element array.
  */
-export function splitIntoChunks(
+export function splitForProcessing(
   rawTranscript: string,
   sections: SectionHeading[],
   targetChunkChars: number = DEFAULT_TARGET_CHARS
