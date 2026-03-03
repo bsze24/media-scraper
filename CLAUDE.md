@@ -21,6 +21,10 @@ Backend: Supabase (Postgres) for storage, full-text search (tsvector), and JSONB
 entity/bullet storage. Claude API (Anthropic SDK) for transcript processing pipeline.
 Deployed on Vercel.
 
+## Context files — read these before starting any task
+- docs/prd.md — full product requirements
+- docs/implementation-plan-v2.md — current build plan by phase
+
 ## Architecture rules
 - All LLM processing happens at INGESTION time, never at query time.
   Lookup is pure database retrieval — instant, deterministic, no waiting for Claude.

@@ -10,10 +10,15 @@ import { cleanTranscript } from "./clean";
 const mockStream = vi.fn();
 
 function makeMockStream(text: string) {
+  const chunks = [
+    { type: "content_block_delta", delta: { type: "text_delta", text } },
+  ];
   return {
-    on: vi.fn().mockReturnThis(),
-    finalText: vi.fn().mockResolvedValue(text),
-    currentMessage: { usage: { output_tokens: 42 } },
+    [Symbol.asyncIterator]: async function* () {
+      for (const chunk of chunks) {
+        yield chunk;
+      }
+    },
   };
 }
 
@@ -29,24 +34,39 @@ describe("cleanTranscript", () => {
     const cleaned = "Patrick:\nThis is a cleaned transcript.";
     mockStream.mockReturnValue(makeMockStream(cleaned));
 
-    const result = await cleanTranscript("Patrick:\nUm, this is a, you know, raw transcript.");
+    const result = await cleanTranscript(
+      "Patrick:\nUm, this is a, you know, raw transcript."
+    );
 
     expect(result).toEqual({ cleaned_transcript: cleaned });
     expect(mockStream).toHaveBeenCalledOnce();
     expect(mockStream).toHaveBeenCalledWith(
       expect.objectContaining({
         model: "claude-sonnet-4-20250514",
-        messages: [{ role: "user", content: "Patrick:\nUm, this is a, you know, raw transcript." }],
-      }),
-      expect.objectContaining({ timeout: 600_000 })
+        messages: [
+          {
+            role: "user",
+            content: "Patrick:\nUm, this is a, you know, raw transcript.",
+          },
+        ],
+      })
     );
   });
 
-  it("throws when finalText rejects", async () => {
-    const stream = makeMockStream("");
-    stream.finalText.mockRejectedValue(new Error("Stream error"));
-    mockStream.mockReturnValue(stream);
+  it("assembles text from multiple chunks", async () => {
+    const chunks = [
+      { type: "content_block_delta", delta: { type: "text_delta", text: "Hello " } },
+      { type: "content_block_delta", delta: { type: "text_delta", text: "world" } },
+    ];
+    mockStream.mockReturnValue({
+      [Symbol.asyncIterator]: async function* () {
+        for (const chunk of chunks) {
+          yield chunk;
+        }
+      },
+    });
 
-    await expect(cleanTranscript("test")).rejects.toThrow("Stream error");
+    const result = await cleanTranscript("test");
+    expect(result).toEqual({ cleaned_transcript: "Hello world" });
   });
 });

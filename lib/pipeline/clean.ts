@@ -11,20 +11,28 @@ export async function cleanTranscript(
 
   console.log(`[clean] starting, transcript length: ${rawTranscript.length} chars`);
 
-  const response = await client.messages.create({
+  let fullText = "";
+
+  const stream = await client.messages.stream({
     model: MODEL,
     max_tokens: 64000,
     system: CLEAN_TRANSCRIPT_PROMPT,
     messages: [{ role: "user", content: rawTranscript }],
-  },{timeout: 600000,
   });
 
-  const block = response.content[0];
-  if (block.type !== "text") {
-    throw new Error("Unexpected response type from Claude: " + block.type);
+  console.log(`[clean] stream created, waiting for chunks...`);
+
+  for await (const chunk of stream) {
+    console.log(`[clean] chunk type: ${chunk.type}`);
+    if (
+      chunk.type === "content_block_delta" &&
+      chunk.delta.type === "text_delta"
+    ) {
+      fullText += chunk.delta.text;
+    }
   }
 
-  console.log(`[clean] complete, cleaned length: ${block.text.length} chars`);
+  console.log(`[clean] complete, cleaned length: ${fullText.length} chars`);
 
-  return { cleaned_transcript: block.text };
+  return { cleaned_transcript: fullText };
 }
