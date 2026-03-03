@@ -69,7 +69,7 @@ export async function generatePrepBullets(
   const stream = client.messages.stream(
     {
       model: MODEL,
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: systemPrompt,
       messages: [{ role: "user", content: userContent }],
     },

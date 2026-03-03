@@ -41,6 +41,22 @@ vi.mock("@lib/scrapers/colossus", () => ({
   colossusDelay: () => mockColossusDelay(),
 }));
 
+const mockParseTurns = vi.fn();
+vi.mock("@lib/scrapers/parse-turns", () => ({
+  parseTurns: (...args: unknown[]) => mockParseTurns(...args),
+}));
+
+const mockSplitIntoChunks = vi.fn();
+const mockMergeCleaned = vi.fn();
+const mockMergeEntityTags = vi.fn();
+const mockMergePrepBullets = vi.fn();
+vi.mock("@lib/pipeline/chunker", () => ({
+  splitIntoChunks: (...args: unknown[]) => mockSplitIntoChunks(...args),
+  mergeCleaned: (...args: unknown[]) => mockMergeCleaned(...args),
+  mergeEntityTags: (...args: unknown[]) => mockMergeEntityTags(...args),
+  mergePrepBullets: (...args: unknown[]) => mockMergePrepBullets(...args),
+}));
+
 const mockCleanTranscript = vi.fn();
 vi.mock("@lib/pipeline/clean", () => ({
   cleanTranscript: (...args: unknown[]) => mockCleanTranscript(...args),
@@ -75,6 +91,8 @@ function makeRow(overrides: Partial<AppearanceRow> = {}): AppearanceRow {
     cleaned_transcript: null,
     entity_tags: {},
     prep_bullets: {},
+    turns: null,
+    turn_summaries: null,
     processing_status: "queued",
     processing_error: null,
     created_at: "2026-01-01T00:00:00Z",
@@ -111,6 +129,10 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: parseTurns returns a simple turn array
+  mockParseTurns.mockReturnValue([
+    { speaker: "Patrick", text: "Hello world", turn_index: 0 },
+  ]);
 });
 
 describe("processAppearance", () => {
@@ -149,6 +171,7 @@ describe("processAppearance", () => {
       speakers: [{ name: "Patrick", role: "host" }],
       raw_transcript: "Patrick:\nHello world",
       raw_caption_data: { episodeNumber: 100, sections: [{ heading: "Intro", anchor: "intro" }] },
+      turns: [{ speaker: "Patrick", text: "Hello world", turn_index: 0 }],
     });
 
     // Verify force: true on all write calls
@@ -338,5 +361,126 @@ describe("processOne", () => {
 
     const result = await processOne("row-1");
     expect(result).toEqual({ success: false, error: "boom" });
+  });
+});
+
+describe("processAppearance — chunked path", () => {
+  const longTranscript = "x".repeat(130_000); // >120k threshold
+  const longScraperResult: ScraperResult = {
+    ...scraperResult,
+    rawTranscript: longTranscript,
+  };
+
+  it("uses chunking for transcripts >= 120k chars", async () => {
+    mockGetAppearanceById.mockResolvedValue(makeRow());
+    mockExtract.mockResolvedValue(longScraperResult);
+
+    // splitIntoChunks returns 2 chunks for the raw transcript
+    mockSplitIntoChunks.mockReturnValue(["chunk1_raw", "chunk2_raw"]);
+
+    // Clean step: each chunk produces cleaned output
+    mockCleanTranscript
+      .mockResolvedValueOnce({ cleaned_transcript: "chunk1_clean" })
+      .mockResolvedValueOnce({ cleaned_transcript: "chunk2_clean" });
+    mockMergeCleaned.mockReturnValue("merged_clean");
+
+    // Entity step: re-split the cleaned text, then extract from each chunk
+    mockExtractEntities
+      .mockResolvedValueOnce({
+        entity_tags: { fund_names: [{ name: "Apollo", aliases: [], type: "primary" }] },
+      })
+      .mockResolvedValueOnce({
+        entity_tags: { fund_names: [{ name: "Bridgewater", aliases: [], type: "primary" }] },
+      });
+    mockMergeEntityTags.mockReturnValue({
+      fund_names: [
+        { name: "Apollo", aliases: [], type: "primary" },
+        { name: "Bridgewater", aliases: [], type: "primary" },
+      ],
+    });
+
+    // Bullets step
+    mockGeneratePrepBullets
+      .mockResolvedValueOnce({
+        prep_bullets: { bullets: [{ text: "b1" }], rowspace_angles: [] },
+      })
+      .mockResolvedValueOnce({
+        prep_bullets: { bullets: [{ text: "b2" }], rowspace_angles: [] },
+      });
+    mockMergePrepBullets.mockReturnValue({
+      bullets: [{ text: "b1" }, { text: "b2" }],
+      rowspace_angles: [],
+    });
+
+    mockExtractFundNames.mockReturnValue(["Apollo", "Bridgewater"]);
+
+    await processAppearance("row-1");
+
+    // splitIntoChunks called for raw transcript
+    expect(mockSplitIntoChunks).toHaveBeenCalled();
+
+    // cleanTranscript called once per chunk
+    expect(mockCleanTranscript).toHaveBeenCalledTimes(2);
+    expect(mockMergeCleaned).toHaveBeenCalledWith(["chunk1_clean", "chunk2_clean"]);
+
+    // extractEntities called for each cleaned chunk
+    expect(mockExtractEntities).toHaveBeenCalledTimes(2);
+    expect(mockMergeEntityTags).toHaveBeenCalled();
+
+    // generatePrepBullets called for each cleaned chunk
+    expect(mockGeneratePrepBullets).toHaveBeenCalledTimes(2);
+    expect(mockMergePrepBullets).toHaveBeenCalled();
+
+    // Final write calls use merged results
+    expect(mockWriteCleanResult).toHaveBeenCalledWith(
+      "row-1",
+      { cleaned_transcript: "merged_clean" },
+      { force: true }
+    );
+    expect(mockWriteBulletsResult).toHaveBeenCalledWith(
+      "row-1",
+      {
+        prep_bullets: {
+          bullets: [{ text: "b1" }, { text: "b2" }],
+          rowspace_angles: [],
+        },
+      },
+      { force: true }
+    );
+
+    // Status transitions still correct
+    const statusCalls = mockUpdateProcessingStatus.mock.calls.map(
+      (c: unknown[]) => c[1]
+    );
+    expect(statusCalls).toEqual([
+      "extracting",
+      "cleaning",
+      "analyzing",
+      "complete",
+    ]);
+  });
+
+  it("does not chunk short transcripts", async () => {
+    mockGetAppearanceById.mockResolvedValue(makeRow());
+    mockExtract.mockResolvedValue(scraperResult); // short transcript
+    mockCleanTranscript.mockResolvedValue({ cleaned_transcript: "cleaned" });
+    mockExtractEntities.mockResolvedValue({ entity_tags: {} });
+    mockGeneratePrepBullets.mockResolvedValue({
+      prep_bullets: { bullets: [] },
+    });
+    mockExtractFundNames.mockReturnValue([]);
+
+    await processAppearance("row-1");
+
+    // splitIntoChunks should not be called for short transcripts
+    expect(mockSplitIntoChunks).not.toHaveBeenCalled();
+    expect(mockMergeCleaned).not.toHaveBeenCalled();
+    expect(mockMergeEntityTags).not.toHaveBeenCalled();
+    expect(mockMergePrepBullets).not.toHaveBeenCalled();
+
+    // Single-pass pipeline
+    expect(mockCleanTranscript).toHaveBeenCalledTimes(1);
+    expect(mockExtractEntities).toHaveBeenCalledTimes(1);
+    expect(mockGeneratePrepBullets).toHaveBeenCalledTimes(1);
   });
 });

@@ -31,6 +31,12 @@ export interface Speaker {
   affiliation?: string;
 }
 
+export interface Turn {
+  speaker: string;
+  text: string;
+  turn_index: number;
+}
+
 export interface Appearance {
   id: string;
   source_url: string;
@@ -45,6 +51,7 @@ export interface Appearance {
   entity_tags: EntityTags;
   prep_bullets: PrepBulletsData;
   processing_status: ProcessingStatus;
+  turns: Turn[] | null;
   processing_error: string | null;
   created_at: string;
   updated_at: string;

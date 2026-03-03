@@ -4,6 +4,7 @@ import type {
   ProcessingStatus,
   Speaker,
   TranscriptSource,
+  Turn,
 } from "@/types/appearance";
 import type { PrepBulletsData } from "@/types/bullets";
 
@@ -21,6 +22,8 @@ export interface AppearanceRow {
   cleaned_transcript: string | null;
   entity_tags: EntityTags;
   prep_bullets: PrepBulletsData;
+  turns: Turn[] | null;
+  turn_summaries: Record<string, string> | null;
   processing_status: ProcessingStatus;
   processing_error: string | null;
   created_at: string;
@@ -55,6 +58,7 @@ export interface ExtractStepOutput {
   speakers?: Speaker[];
   raw_transcript: string;
   raw_caption_data?: Record<string, unknown> | null;
+  turns?: Turn[];
 }
 
 export interface CleanStepOutput {

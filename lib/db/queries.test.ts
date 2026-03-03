@@ -58,6 +58,8 @@ function makeTestRow(overrides: Partial<AppearanceRow> = {}): AppearanceRow {
     cleaned_transcript: "Cleaned text...",
     entity_tags: {},
     prep_bullets: {},
+    turns: null,
+    turn_summaries: null,
     processing_status: "complete",
     processing_error: null,
     created_at: "2024-01-15T00:00:00Z",

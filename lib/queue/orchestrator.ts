@@ -11,10 +11,21 @@ import {
 } from "@lib/db/queries";
 import { getScraperForUrl } from "@lib/scrapers/registry";
 import { colossusDelay } from "@lib/scrapers/colossus";
+import { parseTurns } from "@lib/scrapers/parse-turns";
 import { cleanTranscript } from "@lib/pipeline/clean";
 import { extractEntities } from "@lib/pipeline/entities";
 import { generatePrepBullets } from "@lib/pipeline/bullets";
-import type { ExtractStepOutput } from "@lib/db/types";
+import {
+  splitIntoChunks,
+  mergeCleaned,
+  mergeEntityTags,
+  mergePrepBullets,
+} from "@lib/pipeline/chunker";
+import type {
+  ExtractStepOutput,
+  EntitiesStepOutput,
+  BulletsStepOutput,
+} from "@lib/db/types";
 
 export async function processAppearance(id: string): Promise<void> {
   const row = await getAppearanceById(id);
@@ -39,32 +50,82 @@ export async function processAppearance(id: string): Promise<void> {
       speakers: result.speakers,
       raw_transcript: result.rawTranscript,
       raw_caption_data: result.captionData,
+      turns: parseTurns(result.rawTranscript),
     };
     await writeExtractResult(id, extractOutput);
 
+    const CHUNK_THRESHOLD = 120_000;
+    const needsChunking = result.rawTranscript.length >= CHUNK_THRESHOLD;
+    const chunks = needsChunking
+      ? splitIntoChunks(result.rawTranscript, result.sections)
+      : null;
+
     // Step 2: Clean
     await updateProcessingStatus(id, "cleaning");
-    const cleanOutput = await cleanTranscript(result.rawTranscript);
-    await writeCleanResult(id, cleanOutput, { force: true });
+    let finalCleaned: string;
+    if (chunks) {
+      const cleanedChunks: string[] = [];
+      for (const chunk of chunks) {
+        const out = await cleanTranscript(chunk);
+        cleanedChunks.push(out.cleaned_transcript);
+      }
+      finalCleaned = mergeCleaned(cleanedChunks);
+    } else {
+      const cleanOutput = await cleanTranscript(result.rawTranscript);
+      finalCleaned = cleanOutput.cleaned_transcript;
+    }
+    await writeCleanResult(id, { cleaned_transcript: finalCleaned }, { force: true });
 
     // Step 3: Entities
     await updateProcessingStatus(id, "analyzing");
-    const entitiesOutput = await extractEntities(cleanOutput.cleaned_transcript);
-    await writeEntitiesResult(id, entitiesOutput, { force: true });
+    let finalEntities: EntitiesStepOutput;
+    if (chunks) {
+      // Split cleaned text into same number of chunks for entity extraction
+      const cleanedChunks = splitIntoChunks(finalCleaned, result.sections);
+      const entityChunks = [];
+      for (const chunk of cleanedChunks) {
+        entityChunks.push(await extractEntities(chunk));
+      }
+      finalEntities = {
+        entity_tags: mergeEntityTags(entityChunks.map((e) => e.entity_tags)),
+      };
+    } else {
+      finalEntities = await extractEntities(finalCleaned);
+    }
+    await writeEntitiesResult(id, finalEntities, { force: true });
 
     // Step 4: Bullets (still "analyzing")
-    const bulletsOutput = await generatePrepBullets(
-      cleanOutput.cleaned_transcript,
-      entitiesOutput.entity_tags,
-      result.sections,
-      result.transcriptSource
-    );
-    await writeBulletsResult(id, bulletsOutput, { force: true });
+    let finalBullets: BulletsStepOutput;
+    if (chunks) {
+      const cleanedChunks = splitIntoChunks(finalCleaned, result.sections);
+      const bulletChunks = [];
+      for (const chunk of cleanedChunks) {
+        bulletChunks.push(
+          await generatePrepBullets(
+            chunk,
+            finalEntities.entity_tags,
+            result.sections,
+            result.transcriptSource
+          )
+        );
+      }
+      finalBullets = {
+        prep_bullets: mergePrepBullets(bulletChunks.map((b) => b.prep_bullets)),
+      };
+    } else {
+      finalBullets = await generatePrepBullets(
+        finalCleaned,
+        finalEntities.entity_tags,
+        result.sections,
+        result.transcriptSource
+      );
+    }
+    await writeBulletsResult(id, finalBullets, { force: true });
 
     // Done
     await updateProcessingStatus(id, "complete");
 
-    const fundNames = extractFundNames(entitiesOutput.entity_tags);
+    const fundNames = extractFundNames(finalEntities.entity_tags);
     await invalidateFundOverviewCache(fundNames);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
