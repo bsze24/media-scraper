@@ -89,8 +89,12 @@ export async function processAppearance(id: string): Promise<void> {
     // Step 2: Clean
     await updateProcessingStatus(id, "cleaning");
     let finalCleaned: string;
+    // Store per-chunk cleaned results so steps 3-4 can reuse them directly
+    // instead of re-splitting finalCleaned with raw section headings
+    // (which may not survive LLM cleaning).
+    let cleanedChunks: string[] | null = null;
     if (chunks) {
-      const cleanedChunks: string[] = [];
+      cleanedChunks = [];
       for (const chunk of chunks) {
         const out = await cleanTranscript(chunk);
         cleanedChunks.push(out.cleaned_transcript);
@@ -105,8 +109,7 @@ export async function processAppearance(id: string): Promise<void> {
     // Step 3: Entities
     await updateProcessingStatus(id, "analyzing");
     let finalEntities: EntitiesStepOutput;
-    if (chunks) {
-      const cleanedChunks = splitForProcessing(finalCleaned, sections);
+    if (cleanedChunks) {
       const entityChunks = [];
       for (const chunk of cleanedChunks) {
         entityChunks.push(await extractEntities(chunk));
@@ -121,8 +124,7 @@ export async function processAppearance(id: string): Promise<void> {
 
     // Step 4: Bullets (still "analyzing")
     let finalBullets: BulletsStepOutput;
-    if (chunks) {
-      const cleanedChunks = splitForProcessing(finalCleaned, sections);
+    if (cleanedChunks) {
       const bulletChunks = [];
       for (const chunk of cleanedChunks) {
         bulletChunks.push(

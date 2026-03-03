@@ -155,8 +155,6 @@ export function mergeCleaned(chunks: string[]): string {
 export function mergeEntityTags(chunks: EntityTags[]): EntityTags {
   const fundMap = new Map<string, FundName>();
   const peopleMap = new Map<string, KeyPerson>();
-  const sectorsSet = new Set<string>();
-  const companiesSet = new Set<string>();
 
   for (const tags of chunks) {
     for (const fund of tags.fund_names ?? []) {
@@ -196,14 +194,6 @@ export function mergeEntityTags(chunks: EntityTags[]): EntityTags {
       } else {
         peopleMap.set(key, { ...person });
       }
-    }
-
-    for (const sector of tags.sectors_themes ?? []) {
-      sectorsSet.add(sector.toLowerCase());
-    }
-
-    for (const company of tags.portfolio_companies ?? []) {
-      companiesSet.add(company.toLowerCase());
     }
   }
 
