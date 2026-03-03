@@ -131,7 +131,14 @@ export default function Home() {
     stopRef.current = false;
 
     try {
+      let isFirst = true;
       while (!stopRef.current) {
+        // Rate-limit between items (skip delay before first item)
+        if (!isFirst) {
+          await new Promise((r) => setTimeout(r, 3000));
+        }
+        isFirst = false;
+
         const result = await processNext();
         if (!result) break; // No more queued items
         await refresh();

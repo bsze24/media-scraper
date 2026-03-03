@@ -1,5 +1,6 @@
 "use server";
 
+import { cookies } from "next/headers";
 import {
   getAppearanceByUrl,
   insertAppearance,
@@ -11,6 +12,16 @@ import {
 import { detectTranscriptSource } from "@lib/scrapers/registry";
 import { processOne } from "@lib/queue/orchestrator";
 import type { ProcessingStatus } from "@/types/appearance";
+
+async function requireAdmin(): Promise<void> {
+  const adminToken = process.env.ADMIN_TOKEN;
+  if (!adminToken) return; // No token configured — dev mode, allow all
+  const cookieStore = await cookies();
+  const provided = cookieStore.get("admin_token")?.value;
+  if (provided !== adminToken) {
+    throw new Error("Unauthorized: invalid or missing admin token");
+  }
+}
 
 export async function submitUrls(urls: string[]): Promise<{
   submitted: { id: string; url: string; status: string }[];
@@ -53,6 +64,7 @@ export async function processNext(): Promise<{
   success: boolean;
   error?: string;
 } | null> {
+  await requireAdmin();
   const rows = await listAppearances({ status: "queued", limit: 1 });
   if (rows.length === 0) return null;
 
@@ -64,6 +76,7 @@ export async function processNext(): Promise<{
 export async function retryAppearance(
   id: string
 ): Promise<{ id: string; status: string }> {
+  await requireAdmin();
   const row = await getAppearanceById(id);
   if (!row) throw new Error("Not found");
   if (row.processing_status !== "failed") {

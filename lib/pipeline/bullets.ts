@@ -16,6 +16,7 @@ const CURATED_SOURCES: TranscriptSource[] = [
   "colossus",
   "capital_allocators",
   "acquired",
+  "odd_lots",
 ];
 
 function isCuratedSource(source: TranscriptSource): boolean {
@@ -115,9 +116,9 @@ export async function generatePrepBullets(
     }
 
     const prepBullets: PrepBulletsData = {
-      bullets: raw.bullets.map((b) => ({
+      bullets: (raw.bullets ?? []).map((b) => ({
         text: b.text,
-        supporting_quotes: b.supporting_quotes.map((sq) => {
+        supporting_quotes: (b.supporting_quotes ?? []).map((sq) => {
           if (curated) {
             const anchor = sq.section
               ? findSectionAnchor(sq.section, sections)
@@ -144,7 +145,7 @@ export async function generatePrepBullets(
         vote: null,
         vote_note: null,
       })),
-      rowspace_angles: raw.rowspace_angles.map((a) => ({
+      rowspace_angles: (raw.rowspace_angles ?? []).map((a) => ({
         text: a.text,
         vote: null,
         vote_note: null,

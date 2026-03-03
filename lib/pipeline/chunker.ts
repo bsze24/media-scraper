@@ -70,9 +70,12 @@ function splitBySections(
     const nextSectionStart = sectionPositions[i].index;
     const chunkSize = nextSectionStart - chunkStart;
 
-    if (chunkSize >= targetChunkChars && chunkStart < sectionPositions[i - 1].index) {
+    if (chunkSize >= targetChunkChars) {
       // This chunk is big enough — cut before the current section
-      chunks.push(rawTranscript.slice(chunkStart, nextSectionStart).trim());
+      const chunkText = rawTranscript.slice(chunkStart, nextSectionStart).trim();
+      if (chunkText) {
+        chunks.push(chunkText);
+      }
       chunkStart = nextSectionStart;
     }
   }

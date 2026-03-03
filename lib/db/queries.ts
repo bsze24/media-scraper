@@ -62,14 +62,13 @@ export async function listAppearances(options?: {
   if (options?.status) {
     query = query.eq("processing_status", options.status);
   }
-  if (options?.limit) {
-    query = query.limit(options.limit);
-  }
   if (options?.offset) {
     query = query.range(
       options.offset,
       options.offset + (options.limit ?? 50) - 1
     );
+  } else if (options?.limit) {
+    query = query.limit(options.limit);
   }
 
   const { data, error } = await query;
@@ -130,10 +129,31 @@ export async function insertManualAppearance(
 // Pipeline step updates
 // ---------------------------------------------------------------------------
 
+/**
+ * Atomically claim a row for processing by transitioning from expectedStatus
+ * to newStatus. Returns true if the claim succeeded (row was in expected state).
+ */
+export async function claimForProcessing(
+  id: string,
+  expectedStatus: ProcessingStatus,
+  newStatus: ProcessingStatus
+): Promise<boolean> {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from("appearances")
+    .update({ processing_status: newStatus, processing_error: null })
+    .eq("id", id)
+    .eq("processing_status", expectedStatus)
+    .select("id");
+
+  if (error) throw error;
+  return (data?.length ?? 0) > 0;
+}
+
 export async function updateProcessingStatus(
   id: string,
   status: ProcessingStatus,
-  error?: string
+  error?: string | null
 ): Promise<void> {
   const supabase = createServerClient();
   const { error: dbError } = await supabase
@@ -272,25 +292,37 @@ export async function searchByFundName(
 ): Promise<AppearanceRow[]> {
   const supabase = createServerClient();
 
-  // Tier 1: Entity tag containment — fund name in entity_tags.fund_names
-  const { data: tagHits, error: tagErr } = await supabase
-    .from("appearances")
-    .select("*")
-    .contains("entity_tags", { fund_names: [{ name: fundName }] })
-    .eq("processing_status", "complete")
-    .order("appearance_date", { ascending: false });
-
-  if (tagErr) throw tagErr;
-
+  // Tier 1a: Entity tag containment — fund name in entity_tags.fund_names
+  // Tier 1b: Entity tag containment — fund name in aliases
   // Tier 2: Full-text search on transcript
-  const { data: ftsHits, error: ftsErr } = await supabase
-    .from("appearances")
-    .select("*")
-    .textSearch("transcript_search_vector", fundName, { type: "plain" })
-    .eq("processing_status", "complete")
-    .order("appearance_date", { ascending: false });
+  // All three queries are independent — run in parallel
+  const [nameResult, aliasResult, ftsResult] = await Promise.all([
+    supabase
+      .from("appearances")
+      .select("*")
+      .contains("entity_tags", { fund_names: [{ name: fundName }] })
+      .eq("processing_status", "complete")
+      .order("appearance_date", { ascending: false }),
+    supabase
+      .from("appearances")
+      .select("*")
+      .contains("entity_tags", { fund_names: [{ aliases: [fundName] }] })
+      .eq("processing_status", "complete")
+      .order("appearance_date", { ascending: false }),
+    supabase
+      .from("appearances")
+      .select("*")
+      .textSearch("transcript_search_vector", fundName, { type: "plain" })
+      .eq("processing_status", "complete")
+      .order("appearance_date", { ascending: false }),
+  ]);
 
-  if (ftsErr) throw ftsErr;
+  if (nameResult.error) throw nameResult.error;
+  if (aliasResult.error) throw aliasResult.error;
+  if (ftsResult.error) throw ftsResult.error;
+
+  const tagHits = [...(nameResult.data ?? []), ...(aliasResult.data ?? [])];
+  const ftsHits = ftsResult.data;
 
   // Merge & deduplicate — entity tag matches first (higher confidence)
   const seen = new Set<string>();

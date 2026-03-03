@@ -2,6 +2,7 @@ import {
   getAppearanceById,
   listAppearances,
   updateProcessingStatus,
+  claimForProcessing,
   writeExtractResult,
   writeCleanResult,
   writeEntitiesResult,
@@ -37,27 +38,52 @@ export async function processAppearance(id: string): Promise<void> {
     );
   }
 
+  // Atomic claim — prevents concurrent workers from double-processing
+  const claimed = await claimForProcessing(id, row.processing_status, "extracting");
+  if (!claimed) {
+    throw new Error(`Appearance ${id} was already claimed by another worker`);
+  }
+
   try {
     // Step 1: Extract
-    await updateProcessingStatus(id, "extracting");
-    const scraper = getScraperForUrl(row.source_url);
-    const result = await scraper.extract(row.source_url);
 
-    const extractOutput: ExtractStepOutput = {
-      title: result.title,
-      appearance_date: result.appearanceDate,
-      source_name: result.sourceName,
-      speakers: result.speakers,
-      raw_transcript: result.rawTranscript,
-      raw_caption_data: result.captionData,
-      turns: parseTurns(result.rawTranscript),
-    };
-    await writeExtractResult(id, extractOutput);
+    let rawTranscript: string;
+    let sections: import("@/types/scraper").SectionHeading[] = [];
+    let transcriptSource = row.transcript_source;
+
+    if (row.raw_transcript) {
+      // Manual ingest — transcript already provided, skip scraper
+      rawTranscript = row.raw_transcript;
+      // Parse turns for manual transcripts too
+      const turns = parseTurns(rawTranscript);
+      await writeExtractResult(id, {
+        raw_transcript: rawTranscript,
+        turns,
+      });
+    } else {
+      const scraper = getScraperForUrl(row.source_url);
+      const result = await scraper.extract(row.source_url);
+
+      rawTranscript = result.rawTranscript;
+      sections = result.sections;
+      transcriptSource = result.transcriptSource;
+
+      const extractOutput: ExtractStepOutput = {
+        title: result.title,
+        appearance_date: result.appearanceDate,
+        source_name: result.sourceName,
+        speakers: result.speakers,
+        raw_transcript: result.rawTranscript,
+        raw_caption_data: result.captionData,
+        turns: parseTurns(result.rawTranscript),
+      };
+      await writeExtractResult(id, extractOutput);
+    }
 
     const CHUNK_THRESHOLD = 120_000;
-    const needsChunking = result.rawTranscript.length >= CHUNK_THRESHOLD;
+    const needsChunking = rawTranscript.length >= CHUNK_THRESHOLD;
     const chunks = needsChunking
-      ? splitIntoChunks(result.rawTranscript, result.sections)
+      ? splitIntoChunks(rawTranscript, sections)
       : null;
 
     // Step 2: Clean
@@ -71,17 +97,16 @@ export async function processAppearance(id: string): Promise<void> {
       }
       finalCleaned = mergeCleaned(cleanedChunks);
     } else {
-      const cleanOutput = await cleanTranscript(result.rawTranscript);
+      const cleanOutput = await cleanTranscript(rawTranscript);
       finalCleaned = cleanOutput.cleaned_transcript;
     }
-    await writeCleanResult(id, { cleaned_transcript: finalCleaned }, { force: true });
+    await writeCleanResult(id, { cleaned_transcript: finalCleaned });
 
     // Step 3: Entities
     await updateProcessingStatus(id, "analyzing");
     let finalEntities: EntitiesStepOutput;
     if (chunks) {
-      // Split cleaned text into same number of chunks for entity extraction
-      const cleanedChunks = splitIntoChunks(finalCleaned, result.sections);
+      const cleanedChunks = splitIntoChunks(finalCleaned, sections);
       const entityChunks = [];
       for (const chunk of cleanedChunks) {
         entityChunks.push(await extractEntities(chunk));
@@ -92,20 +117,20 @@ export async function processAppearance(id: string): Promise<void> {
     } else {
       finalEntities = await extractEntities(finalCleaned);
     }
-    await writeEntitiesResult(id, finalEntities, { force: true });
+    await writeEntitiesResult(id, finalEntities);
 
     // Step 4: Bullets (still "analyzing")
     let finalBullets: BulletsStepOutput;
     if (chunks) {
-      const cleanedChunks = splitIntoChunks(finalCleaned, result.sections);
+      const cleanedChunks = splitIntoChunks(finalCleaned, sections);
       const bulletChunks = [];
       for (const chunk of cleanedChunks) {
         bulletChunks.push(
           await generatePrepBullets(
             chunk,
             finalEntities.entity_tags,
-            result.sections,
-            result.transcriptSource
+            sections,
+            transcriptSource
           )
         );
       }
@@ -116,11 +141,11 @@ export async function processAppearance(id: string): Promise<void> {
       finalBullets = await generatePrepBullets(
         finalCleaned,
         finalEntities.entity_tags,
-        result.sections,
-        result.transcriptSource
+        sections,
+        transcriptSource
       );
     }
-    await writeBulletsResult(id, finalBullets, { force: true });
+    await writeBulletsResult(id, finalBullets);
 
     // Done
     await updateProcessingStatus(id, "complete");

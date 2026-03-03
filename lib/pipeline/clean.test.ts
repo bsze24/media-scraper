@@ -49,7 +49,8 @@ describe("cleanTranscript", () => {
             content: "Patrick:\nUm, this is a, you know, raw transcript.",
           },
         ],
-      })
+      }),
+      { timeout: 600_000 }
     );
   });
 

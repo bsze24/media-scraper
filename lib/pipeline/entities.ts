@@ -42,14 +42,22 @@ export async function extractEntities(
       `[entities] complete, ${stream.currentMessage?.usage.output_tokens ?? outputTokens} output tokens`
     );
 
-    let parsed: EntityTags;
+    let raw: Record<string, unknown>;
     try {
-      parsed = JSON.parse(text) as EntityTags;
+      raw = JSON.parse(text) as Record<string, unknown>;
     } catch (e) {
       throw new Error(
         `Failed to parse entity extraction JSON: ${e instanceof Error ? e.message : String(e)}\nRaw response: ${text.slice(0, 500)}`
       );
     }
+
+    // Validate and coerce to EntityTags shape — default missing fields to empty arrays
+    const parsed: EntityTags = {
+      fund_names: Array.isArray(raw.fund_names) ? raw.fund_names : [],
+      key_people: Array.isArray(raw.key_people) ? raw.key_people : [],
+      sectors_themes: Array.isArray(raw.sectors_themes) ? raw.sectors_themes : [],
+      portfolio_companies: Array.isArray(raw.portfolio_companies) ? raw.portfolio_companies : [],
+    };
 
     return { entity_tags: parsed };
   } finally {

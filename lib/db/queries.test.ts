@@ -392,12 +392,14 @@ describe("searchByFundName", () => {
       },
     });
 
-    const tagChain = mockChain({ data: [row], error: null });
+    const nameChain = mockChain({ data: [row], error: null });
+    const aliasChain = mockChain({ data: [], error: null });
     const ftsChain = mockChain({ data: [], error: null });
 
     const mockClient = {
       from: vi.fn()
-        .mockReturnValueOnce(tagChain)
+        .mockReturnValueOnce(nameChain)
+        .mockReturnValueOnce(aliasChain)
         .mockReturnValueOnce(ftsChain),
     };
     vi.mocked(createServerClient).mockReturnValue(mockClient as any);
@@ -406,21 +408,25 @@ describe("searchByFundName", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0].id).toBe("row-1");
-    expect(tagChain.contains).toHaveBeenCalledWith("entity_tags", {
+    expect(nameChain.contains).toHaveBeenCalledWith("entity_tags", {
       fund_names: [{ name: "Apollo" }],
     });
-    expect(tagChain.eq).toHaveBeenCalledWith("processing_status", "complete");
+    expect(aliasChain.contains).toHaveBeenCalledWith("entity_tags", {
+      fund_names: [{ aliases: ["Apollo"] }],
+    });
   });
 
   it("returns full-text search matches when no entity tag hits", async () => {
     const row = makeTestRow({ id: "row-fts" });
 
-    const tagChain = mockChain({ data: [], error: null });
+    const nameChain = mockChain({ data: [], error: null });
+    const aliasChain = mockChain({ data: [], error: null });
     const ftsChain = mockChain({ data: [row], error: null });
 
     const mockClient = {
       from: vi.fn()
-        .mockReturnValueOnce(tagChain)
+        .mockReturnValueOnce(nameChain)
+        .mockReturnValueOnce(aliasChain)
         .mockReturnValueOnce(ftsChain),
     };
     vi.mocked(createServerClient).mockReturnValue(mockClient as any);
@@ -439,13 +445,15 @@ describe("searchByFundName", () => {
   it("deduplicates results across tiers", async () => {
     const row = makeTestRow({ id: "shared-row" });
 
-    // Same row found by both entity tag and full-text search
-    const tagChain = mockChain({ data: [row], error: null });
+    // Same row found by name and FTS
+    const nameChain = mockChain({ data: [row], error: null });
+    const aliasChain = mockChain({ data: [], error: null });
     const ftsChain = mockChain({ data: [row], error: null });
 
     const mockClient = {
       from: vi.fn()
-        .mockReturnValueOnce(tagChain)
+        .mockReturnValueOnce(nameChain)
+        .mockReturnValueOnce(aliasChain)
         .mockReturnValueOnce(ftsChain),
     };
     vi.mocked(createServerClient).mockReturnValue(mockClient as any);
@@ -459,12 +467,14 @@ describe("searchByFundName", () => {
     const tagRow = makeTestRow({ id: "tag-hit", title: "Apollo Deep Dive" });
     const ftsRow = makeTestRow({ id: "fts-hit", title: "Mentioned Apollo once" });
 
-    const tagChain = mockChain({ data: [tagRow], error: null });
+    const nameChain = mockChain({ data: [tagRow], error: null });
+    const aliasChain = mockChain({ data: [], error: null });
     const ftsChain = mockChain({ data: [ftsRow], error: null });
 
     const mockClient = {
       from: vi.fn()
-        .mockReturnValueOnce(tagChain)
+        .mockReturnValueOnce(nameChain)
+        .mockReturnValueOnce(aliasChain)
         .mockReturnValueOnce(ftsChain),
     };
     vi.mocked(createServerClient).mockReturnValue(mockClient as any);
@@ -477,20 +487,23 @@ describe("searchByFundName", () => {
   });
 
   it("only returns complete appearances", async () => {
-    const tagChain = mockChain({ data: [], error: null });
+    const nameChain = mockChain({ data: [], error: null });
+    const aliasChain = mockChain({ data: [], error: null });
     const ftsChain = mockChain({ data: [], error: null });
 
     const mockClient = {
       from: vi.fn()
-        .mockReturnValueOnce(tagChain)
+        .mockReturnValueOnce(nameChain)
+        .mockReturnValueOnce(aliasChain)
         .mockReturnValueOnce(ftsChain),
     };
     vi.mocked(createServerClient).mockReturnValue(mockClient as any);
 
     await searchByFundName("Apollo");
 
-    // Both tiers filter on processing_status = complete
-    expect(tagChain.eq).toHaveBeenCalledWith("processing_status", "complete");
+    // All tiers filter on processing_status = complete
+    expect(nameChain.eq).toHaveBeenCalledWith("processing_status", "complete");
+    expect(aliasChain.eq).toHaveBeenCalledWith("processing_status", "complete");
     expect(ftsChain.eq).toHaveBeenCalledWith("processing_status", "complete");
   });
 });

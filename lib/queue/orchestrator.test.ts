@@ -9,6 +9,7 @@ import type { ScraperResult } from "@/types/scraper";
 const mockGetAppearanceById = vi.fn();
 const mockListAppearances = vi.fn();
 const mockUpdateProcessingStatus = vi.fn();
+const mockClaimForProcessing = vi.fn();
 const mockWriteExtractResult = vi.fn();
 const mockWriteCleanResult = vi.fn();
 const mockWriteEntitiesResult = vi.fn();
@@ -21,6 +22,7 @@ vi.mock("@lib/db/queries", () => ({
   listAppearances: (...args: unknown[]) => mockListAppearances(...args),
   updateProcessingStatus: (...args: unknown[]) =>
     mockUpdateProcessingStatus(...args),
+  claimForProcessing: (...args: unknown[]) => mockClaimForProcessing(...args),
   writeExtractResult: (...args: unknown[]) => mockWriteExtractResult(...args),
   writeCleanResult: (...args: unknown[]) => mockWriteCleanResult(...args),
   writeEntitiesResult: (...args: unknown[]) =>
@@ -133,6 +135,8 @@ beforeEach(() => {
   mockParseTurns.mockReturnValue([
     { speaker: "Patrick", text: "Hello world", turn_index: 0 },
   ]);
+  // Default: claim always succeeds
+  mockClaimForProcessing.mockResolvedValue(true);
 });
 
 describe("processAppearance", () => {
@@ -157,7 +161,6 @@ describe("processAppearance", () => {
       (c: unknown[]) => c[1]
     );
     expect(statusCalls).toEqual([
-      "extracting",
       "cleaning",
       "analyzing",
       "complete",
@@ -174,21 +177,18 @@ describe("processAppearance", () => {
       turns: [{ speaker: "Patrick", text: "Hello world", turn_index: 0 }],
     });
 
-    // Verify force: true on all write calls
+    // Verify write calls
     expect(mockWriteCleanResult).toHaveBeenCalledWith(
       "row-1",
       { cleaned_transcript: "cleaned text" },
-      { force: true }
     );
     expect(mockWriteEntitiesResult).toHaveBeenCalledWith(
       "row-1",
       { entity_tags: { fund_names: [{ name: "Apollo", aliases: [], type: "primary" }] } },
-      { force: true }
     );
     expect(mockWriteBulletsResult).toHaveBeenCalledWith(
       "row-1",
       { prep_bullets: { bullets: [], rowspace_angles: [] } },
-      { force: true }
     );
 
     // Verify fund cache invalidated
@@ -281,7 +281,6 @@ describe("processAppearance", () => {
       (c: unknown[]) => c[1]
     );
     expect(statusCalls).toEqual([
-      "extracting",
       "cleaning",
       "analyzing",
       "complete",
@@ -435,7 +434,6 @@ describe("processAppearance — chunked path", () => {
     expect(mockWriteCleanResult).toHaveBeenCalledWith(
       "row-1",
       { cleaned_transcript: "merged_clean" },
-      { force: true }
     );
     expect(mockWriteBulletsResult).toHaveBeenCalledWith(
       "row-1",
@@ -445,7 +443,6 @@ describe("processAppearance — chunked path", () => {
           rowspace_angles: [],
         },
       },
-      { force: true }
     );
 
     // Status transitions still correct
@@ -453,7 +450,6 @@ describe("processAppearance — chunked path", () => {
       (c: unknown[]) => c[1]
     );
     expect(statusCalls).toEqual([
-      "extracting",
       "cleaning",
       "analyzing",
       "complete",
