@@ -323,6 +323,7 @@ When corpus reaches ~50-100 transcripts, keyword + entity matching becomes insuf
 - Search + fund overview API routes
 - Fix stuck-row retry UI (P2 debt)
 - Playwright E2E tests (search flow, transcript view, submit flow)
+- GitHub Actions CI workflow (`.github/workflows/ci.yml`) — typecheck + vitest on every PR, build check on merge to main, branch protection configured to require both
 
 **Milestone:** Type "Apollo" → instant results. Click bullet → lands in transcript viewer at relevant section with search pre-loaded. `npm run typecheck && npx vitest && npm run build` passes.
 
