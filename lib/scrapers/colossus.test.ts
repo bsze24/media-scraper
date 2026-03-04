@@ -116,8 +116,12 @@ describe("parseColossusHtml", () => {
   // Transcript text
   // -------------------------------------------------------------------------
 
-  it("starts the transcript with the first speaker header", () => {
-    expect(result.rawTranscript).toMatch(/^Patrick:\n/);
+  it("includes section headings in the raw transcript", () => {
+    expect(result.rawTranscript).toContain("Introduction");
+  });
+
+  it("starts the transcript with the section heading before the first speaker", () => {
+    expect(result.rawTranscript).toMatch(/^Introduction\n\nPatrick:\n/);
   });
 
   it("includes all visible paragraphs in the transcript", () => {
@@ -131,11 +135,11 @@ describe("parseColossusHtml", () => {
   });
 
   it("concatenates continuation paragraphs under the same speaker", () => {
-    // All 3 paragraphs are from Patrick — should be a single block
+    // Section heading + one speaker block (all paragraphs belong to Patrick)
     const blocks = result.rawTranscript.split("\n\n");
-    // Only one speaker block since all paragraphs belong to Patrick
-    expect(blocks.length).toBe(1);
-    expect(blocks[0]).toMatch(/^Patrick:\n/);
+    expect(blocks.length).toBe(2); // "Introduction" + "Patrick:\n..."
+    expect(blocks[0]).toBe("Introduction");
+    expect(blocks[1]).toMatch(/^Patrick:\n/);
   });
 });
 

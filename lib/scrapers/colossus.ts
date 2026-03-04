@@ -85,7 +85,23 @@ export function parseColossusHtml(html: string, sourceUrl: string): ScraperResul
   const blocks: string[] = [];
   let currentLines: string[] = [];
 
-  $("div.transcript__content > p").each((_, el) => {
+  $("div.transcript__content > p, div.transcript__content > h2").each((_, el) => {
+    const tag = (el as { tagName?: string }).tagName?.toLowerCase();
+
+    if (tag === "h2") {
+      // Flush current speaker block before section heading
+      if (currentSpeaker && currentLines.length > 0) {
+        blocks.push(`${currentSpeaker}:\n${currentLines.join("\n")}`);
+        currentSpeaker = "";
+        currentLines = [];
+      }
+      const heading = $(el).text().trim();
+      if (heading) {
+        blocks.push(heading);
+      }
+      return;
+    }
+
     const p = $(el);
 
     if (p.attr("data-transcript-speaker-changed") !== undefined) {
