@@ -64,6 +64,16 @@ supabase/
   - Exact LLM output text (non-deterministic — test structure, not content)
 - Playwright for E2E tests once Phase 1 UI exists. Not before.
 
+## Observability
+
+All pipeline functions must have console.log bookends:
+- `[step] starting, transcript length: X chars` — before the API call
+- `[step] complete, X output/chars` — after
+
+Long-running steps (clean.ts) should also log chunk progress every 5 seconds via setInterval so you can confirm the connection is alive during processing. Silence for >30 seconds with no chunk logs = something is wrong.
+
+Never strip these logs to "clean up" — they are the primary debugging signal for pipeline issues.
+
 ## Before Committing
 - Run `npm run typecheck && npm test && npm run test:e2e && npm run build`
 - Scan all changed files for:
@@ -76,6 +86,7 @@ supabase/
 - Batch related fixes and their tests in one commit (reduces BugBot round-trips)
 - Verify no API keys, tokens, or secrets in committed code (use .env.local)
 - Verify Supabase queries use parameterized inputs (no string interpolation)
+- Verify pipeline functions have console.log bookends
 
 ## Code Style
 - TypeScript strict mode
