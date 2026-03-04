@@ -62,22 +62,24 @@ function splitBySections(
   // Sort by position
   sectionPositions.sort((a, b) => a.index - b.index);
 
-  // Group sections into chunks
+  // Group sections into chunks, cutting at the last boundary before exceeding target
   const chunks: string[] = [];
   let chunkStart = 0;
+  let lastSectionStart = sectionPositions[0].index;
 
   for (let i = 1; i < sectionPositions.length; i++) {
     const nextSectionStart = sectionPositions[i].index;
     const chunkSize = nextSectionStart - chunkStart;
 
-    if (chunkSize >= targetChunkChars) {
-      // This chunk is big enough — cut before the current section
-      const chunkText = rawTranscript.slice(chunkStart, nextSectionStart).trim();
+    if (chunkSize >= targetChunkChars && lastSectionStart > chunkStart) {
+      // Cut at the previous section boundary to stay under target
+      const chunkText = rawTranscript.slice(chunkStart, lastSectionStart).trim();
       if (chunkText) {
         chunks.push(chunkText);
       }
-      chunkStart = nextSectionStart;
+      chunkStart = lastSectionStart;
     }
+    lastSectionStart = nextSectionStart;
   }
 
   // Push remaining text

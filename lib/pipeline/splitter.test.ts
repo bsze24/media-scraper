@@ -37,6 +37,26 @@ describe("splitForProcessing", () => {
     }
   });
 
+  it("cuts at previous section boundary to avoid oversized chunks", () => {
+    // Sections at 0, 100k, 130k with 120k target
+    // Should cut at 100k (not 130k) so first chunk stays under target
+    const sectionA = "## Section A\n" + "a".repeat(99_987);  // ~100k total
+    const sectionB = "## Section B\n" + "b".repeat(29_987);  // next 30k
+    const sectionC = "## Section C\n" + "c".repeat(50_000);  // trailing
+    const raw = sectionA + "\n\n" + sectionB + "\n\n" + sectionC;
+
+    const sections = [
+      { heading: "## Section A", anchor: "a" },
+      { heading: "## Section B", anchor: "b" },
+      { heading: "## Section C", anchor: "c" },
+    ];
+
+    const result = splitForProcessing(raw, sections, 120_000);
+    expect(result.length).toBeGreaterThan(1);
+    // First chunk should be ~100k (section A), not ~130k (sections A+B)
+    expect(result[0].length).toBeLessThan(120_000);
+  });
+
   it("splits at speaker turn boundaries when no sections", () => {
     // Build a transcript with many speaker blocks
     const blocks: string[] = [];
