@@ -26,20 +26,21 @@ export async function extractEntities(
     { timeout: TIMEOUT_MS }
   );
 
-  let outputTokens = 0;
+  let outputChars = 0;
   const logTimer = setInterval(() => {
-    const tokens = stream.currentMessage?.usage.output_tokens ?? outputTokens;
-    console.log(`[entities] streaming… ${tokens} output tokens so far`);
+    const tokens = stream.currentMessage?.usage.output_tokens;
+    console.log(`[entities] streaming… ${tokens != null ? `${tokens} tokens` : `${outputChars} chars`} so far`);
   }, LOG_INTERVAL_MS);
 
-  stream.on("text", () => {
-    outputTokens++;
+  stream.on("text", (text) => {
+    outputChars += text.length;
   });
 
   try {
     const text = await stream.finalText();
+    const tokens = stream.currentMessage?.usage.output_tokens;
     console.log(
-      `[entities] complete, ${stream.currentMessage?.usage.output_tokens ?? outputTokens} output tokens`
+      `[entities] complete, ${tokens != null ? `${tokens} tokens` : `${outputChars} chars`}`
     );
 
     let raw: Record<string, unknown>;

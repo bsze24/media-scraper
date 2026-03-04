@@ -24,7 +24,7 @@ export interface AppearanceRow {
   entity_tags: EntityTags;
   prep_bullets: PrepBulletsData;
   turns: Turn[] | null;
-  turn_summaries: Record<string, string> | null;
+  turn_summaries: Array<{ speaker: string; summary: string }> | null;
   sections: SectionHeading[];
   processing_status: ProcessingStatus;
   processing_error: string | null;

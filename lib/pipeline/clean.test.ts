@@ -9,16 +9,10 @@ import { cleanTranscript } from "./clean";
 
 const mockStream = vi.fn();
 
-function makeMockStream(text: string) {
-  const chunks = [
-    { type: "content_block_delta", delta: { type: "text_delta", text } },
-  ];
+function makeMockMessageStream(text: string) {
   return {
-    [Symbol.asyncIterator]: async function* () {
-      for (const chunk of chunks) {
-        yield chunk;
-      }
-    },
+    on: vi.fn(),
+    finalText: vi.fn().mockResolvedValue(text),
   };
 }
 
@@ -32,7 +26,7 @@ beforeEach(() => {
 describe("cleanTranscript", () => {
   it("returns cleaned_transcript from Claude response", async () => {
     const cleaned = "Patrick:\nThis is a cleaned transcript.";
-    mockStream.mockReturnValue(makeMockStream(cleaned));
+    mockStream.mockReturnValue(makeMockMessageStream(cleaned));
 
     const result = await cleanTranscript(
       "Patrick:\nUm, this is a, you know, raw transcript."
@@ -54,18 +48,8 @@ describe("cleanTranscript", () => {
     );
   });
 
-  it("assembles text from multiple chunks", async () => {
-    const chunks = [
-      { type: "content_block_delta", delta: { type: "text_delta", text: "Hello " } },
-      { type: "content_block_delta", delta: { type: "text_delta", text: "world" } },
-    ];
-    mockStream.mockReturnValue({
-      [Symbol.asyncIterator]: async function* () {
-        for (const chunk of chunks) {
-          yield chunk;
-        }
-      },
-    });
+  it("returns text from finalText() helper", async () => {
+    mockStream.mockReturnValue(makeMockMessageStream("Hello world"));
 
     const result = await cleanTranscript("test");
     expect(result).toEqual({ cleaned_transcript: "Hello world" });

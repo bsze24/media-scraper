@@ -84,7 +84,7 @@ export async function processAppearance(id: string): Promise<void> {
 
     const CHUNK_THRESHOLD = 120_000;
     const needsChunking = rawTranscript.length >= CHUNK_THRESHOLD;
-    const chunks = needsChunking
+    const rawChunks = needsChunking
       ? splitForProcessing(rawTranscript, sections)
       : null;
 
@@ -95,9 +95,9 @@ export async function processAppearance(id: string): Promise<void> {
     // instead of re-splitting finalCleaned with raw section headings
     // (which may not survive LLM cleaning).
     let cleanedChunks: string[] | null = null;
-    if (chunks) {
+    if (rawChunks) {
       cleanedChunks = [];
-      for (const chunk of chunks) {
+      for (const chunk of rawChunks) {
         const out = await cleanTranscript(chunk);
         cleanedChunks.push(out.cleaned_transcript);
       }
@@ -126,14 +126,18 @@ export async function processAppearance(id: string): Promise<void> {
 
     // Step 4: Bullets (still "analyzing")
     let finalBullets: BulletsStepOutput;
-    if (cleanedChunks) {
+    if (cleanedChunks && rawChunks) {
       const bulletChunks = [];
-      for (const chunk of cleanedChunks) {
+      for (let ci = 0; ci < cleanedChunks.length; ci++) {
+        // Filter sections to those whose headings appear in this raw chunk
+        const chunkSections = sections.filter(
+          (s) => rawChunks[ci].includes(s.heading)
+        );
         bulletChunks.push(
           await generatePrepBullets(
-            chunk,
+            cleanedChunks[ci],
             finalEntities.entity_tags,
-            sections,
+            chunkSections,
             transcriptSource
           )
         );

@@ -16,8 +16,8 @@ const JITTER_MS = 2000;
 
 export function colossusDelay(): Promise<void> {
   const jitter = Math.random() * JITTER_MS * 2 - JITTER_MS; // ±2s
-  const ms = Math.max(0, COLOSSUS_DELAY_MS + jitter);
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  const ms = COLOSSUS_DELAY_MS + jitter; // range: 1s–5s centered on 3s
+  return new Promise((resolve) => setTimeout(resolve, Math.max(1000, ms)));
 }
 
 // ---------------------------------------------------------------------------

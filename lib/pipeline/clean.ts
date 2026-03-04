@@ -4,6 +4,7 @@ import type { CleanStepOutput } from "@lib/db/types";
 
 const MODEL = "claude-sonnet-4-20250514";
 const TIMEOUT_MS = 600_000;
+const LOG_INTERVAL_MS = 5_000;
 
 export async function cleanTranscript(
   rawTranscript: string
@@ -12,9 +13,7 @@ export async function cleanTranscript(
 
   console.log(`[clean] starting, transcript length: ${rawTranscript.length} chars`);
 
-  let fullText = "";
-
-  const stream = await client.messages.stream(
+  const stream = client.messages.stream(
     {
       model: MODEL,
       max_tokens: 64000,
@@ -24,16 +23,20 @@ export async function cleanTranscript(
     { timeout: TIMEOUT_MS }
   );
 
-  for await (const chunk of stream) {
-    if (
-      chunk.type === "content_block_delta" &&
-      chunk.delta.type === "text_delta"
-    ) {
-      fullText += chunk.delta.text;
-    }
+  let outputChars = 0;
+  const logTimer = setInterval(() => {
+    console.log(`[clean] streaming… ${outputChars} chars so far`);
+  }, LOG_INTERVAL_MS);
+
+  stream.on("text", (text) => {
+    outputChars += text.length;
+  });
+
+  try {
+    const fullText = await stream.finalText();
+    console.log(`[clean] complete, cleaned length: ${fullText.length} chars`);
+    return { cleaned_transcript: fullText };
+  } finally {
+    clearInterval(logTimer);
   }
-
-  console.log(`[clean] complete, cleaned length: ${fullText.length} chars`);
-
-  return { cleaned_transcript: fullText };
 }
