@@ -45,7 +45,8 @@ export async function extractEntities(
 
     let raw: Record<string, unknown>;
     try {
-      raw = JSON.parse(text) as Record<string, unknown>;
+      const json = text.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+      raw = JSON.parse(json) as Record<string, unknown>;
     } catch (e) {
       throw new Error(
         `Failed to parse entity extraction JSON: ${e instanceof Error ? e.message : String(e)}\nRaw response: ${text.slice(0, 500)}`

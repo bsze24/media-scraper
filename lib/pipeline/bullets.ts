@@ -108,7 +108,8 @@ export async function generatePrepBullets(
     };
 
     try {
-      raw = JSON.parse(text);
+      const json = text.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+      raw = JSON.parse(json);
     } catch (e) {
       throw new Error(
         `Failed to parse bullets JSON: ${e instanceof Error ? e.message : String(e)}\nRaw response: ${text.slice(0, 500)}`
