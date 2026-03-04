@@ -75,8 +75,3 @@ export interface EntitiesStepOutput {
 export interface BulletsStepOutput {
   prep_bullets: PrepBulletsData;
 }
-
-// Coerce DB row to application type (they're identical for now)
-export function toAppearance(row: AppearanceRow): Appearance {
-  return row;
-}

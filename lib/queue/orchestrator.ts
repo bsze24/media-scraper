@@ -158,8 +158,17 @@ export async function processAppearance(id: string): Promise<void> {
     // Done
     await updateProcessingStatus(id, "complete");
 
-    const fundNames = extractFundNames(finalEntities.entity_tags);
-    await invalidateFundOverviewCache(fundNames);
+    // Cache invalidation is best-effort — pipeline data is already persisted,
+    // so a failure here must not revert status to "failed".
+    try {
+      const fundNames = extractFundNames(finalEntities.entity_tags);
+      await invalidateFundOverviewCache(fundNames);
+    } catch (cacheErr) {
+      console.error(
+        `[orchestrator] cache invalidation failed for ${id}, status remains complete:`,
+        cacheErr instanceof Error ? cacheErr.message : cacheErr
+      );
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await updateProcessingStatus(id, "failed", message);
