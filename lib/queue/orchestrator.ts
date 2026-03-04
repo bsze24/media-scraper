@@ -192,10 +192,11 @@ export async function processBatch(
       failed++;
     }
 
-    // Rate-limit Colossus URLs to avoid anti-bot detection; skip for other sources
+    // Rate-limit before next Colossus URL to avoid anti-bot detection
     if (
       i < rows.length - 1 &&
-      rows[i].transcript_source === "colossus"
+      (rows[i].transcript_source === "colossus" ||
+        rows[i + 1].transcript_source === "colossus")
     ) {
       await colossusDelay();
     }

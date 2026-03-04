@@ -62,7 +62,7 @@ export async function listAppearances(options?: {
   if (options?.status) {
     query = query.eq("processing_status", options.status);
   }
-  if (options?.offset) {
+  if (options?.offset != null) {
     query = query.range(
       options.offset,
       options.offset + (options.limit ?? 50) - 1
