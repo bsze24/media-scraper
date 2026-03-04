@@ -57,10 +57,8 @@ export async function generatePrepBullets(
     ? GENERATE_BULLETS_PROMPT_CURATED
     : GENERATE_BULLETS_PROMPT_YOUTUBE;
 
-  const sectionList = sections.map((s) => s.heading).join("\n- ");
-
   const userContent = curated
-    ? `## Entity Tags\n${JSON.stringify(entityTags, null, 2)}\n\n## Section Headings\n- ${sectionList}\n\n## Transcript\n${cleanedTranscript}`
+    ? `## Entity Tags\n${JSON.stringify(entityTags, null, 2)}\n\n## Sections Lookup Table\n${JSON.stringify(sections)}\n\n## Transcript\n${cleanedTranscript}`
     : `## Entity Tags\n${JSON.stringify(entityTags, null, 2)}\n\n## Transcript\n${cleanedTranscript}`;
 
   console.log(
@@ -100,6 +98,7 @@ export async function generatePrepBullets(
           quote: string;
           speaker?: string;
           section?: string;
+          section_anchor?: string;
           timestamp_seconds?: number;
           timestamp_display?: string;
         }>;
@@ -120,9 +119,8 @@ export async function generatePrepBullets(
         text: b.text,
         supporting_quotes: (b.supporting_quotes ?? []).map((sq) => {
           if (curated) {
-            const anchor = sq.section
-              ? findSectionAnchor(sq.section, sections)
-              : null;
+            const anchor = sq.section_anchor
+              ?? (sq.section ? findSectionAnchor(sq.section, sections) : null);
             return {
               quote: sq.quote,
               speaker: sq.speaker ?? null,

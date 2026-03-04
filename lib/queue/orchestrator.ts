@@ -59,6 +59,7 @@ export async function processAppearance(id: string): Promise<void> {
       await writeExtractResult(id, {
         raw_transcript: rawTranscript,
         turns,
+        sections: [],
       });
     } else {
       const scraper = getScraperForUrl(row.source_url);
@@ -76,6 +77,7 @@ export async function processAppearance(id: string): Promise<void> {
         raw_transcript: result.rawTranscript,
         raw_caption_data: result.captionData,
         turns: parseTurns(result.rawTranscript),
+        sections: result.sections,
       };
       await writeExtractResult(id, extractOutput);
     }

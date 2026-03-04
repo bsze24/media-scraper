@@ -1,4 +1,5 @@
 import type { PrepBulletsData } from "./bullets";
+import type { SectionHeading } from "./scraper";
 
 export type TranscriptSource =
   | "colossus"
@@ -52,6 +53,7 @@ export interface Appearance {
   prep_bullets: PrepBulletsData;
   processing_status: ProcessingStatus;
   turns: Turn[] | null;
+  sections: SectionHeading[];
   processing_error: string | null;
   created_at: string;
   updated_at: string;

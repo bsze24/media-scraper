@@ -182,6 +182,7 @@ export async function writeExtractResult(
       raw_transcript: output.raw_transcript,
       raw_caption_data: output.raw_caption_data ?? null,
       turns: output.turns ?? null,
+      sections: output.sections ?? [],
     })
     .eq("id", id);
 

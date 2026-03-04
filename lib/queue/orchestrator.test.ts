@@ -95,6 +95,7 @@ function makeRow(overrides: Partial<AppearanceRow> = {}): AppearanceRow {
     prep_bullets: {},
     turns: null,
     turn_summaries: null,
+    sections: [],
     processing_status: "queued",
     processing_error: null,
     created_at: "2026-01-01T00:00:00Z",
@@ -175,6 +176,7 @@ describe("processAppearance", () => {
       raw_transcript: "Patrick:\nHello world",
       raw_caption_data: { episodeNumber: 100, sections: [{ heading: "Intro", anchor: "intro" }] },
       turns: [{ speaker: "Patrick", text: "Hello world", turn_index: 0 }],
+      sections: [{ heading: "Intro", anchor: "intro" }],
     });
 
     // Verify write calls

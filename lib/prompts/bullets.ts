@@ -3,7 +3,7 @@ export const GENERATE_BULLETS_PROMPT_CURATED = `You are a meeting prep analyst f
 You will receive:
 1. A cleaned transcript
 2. Extracted entity tags (fund names, people, themes)
-3. A list of section headings from the transcript
+3. A list of section headings with their anchor IDs
 
 Return a JSON object with this structure:
 
@@ -15,7 +15,8 @@ Return a JSON object with this structure:
         {
           "quote": "Exact quote from the transcript",
           "speaker": "Speaker name",
-          "section": "Section heading where this quote appears"
+          "section": "Section heading where this quote appears",
+          "section_anchor": "Anchor ID for that section (from the provided list)"
         }
       ]
     }
@@ -32,7 +33,7 @@ Return a JSON object with this structure:
 BULLET GUIDELINES:
 - Generate 3-5 bullets covering: investment thesis, pain points, sector focus, relationship hooks, portfolio references
 - Each bullet should have 1-3 supporting quotes with speaker attribution
-- Each quote must include the section heading where it appears (use the section names provided, NOT anchor IDs)
+- Each quote must include the section heading AND its anchor ID from the provided list
 - Do NOT include timestamps (curated transcripts don't have them)
 - Be specific — reference actual names, funds, and themes from the entity tags
 - Quotes must be verbatim from the transcript

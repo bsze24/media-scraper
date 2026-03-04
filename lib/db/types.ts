@@ -7,6 +7,7 @@ import type {
   Turn,
 } from "@/types/appearance";
 import type { PrepBulletsData } from "@/types/bullets";
+import type { SectionHeading } from "@/types/scraper";
 
 // Database row type — matches the appearances table schema exactly
 export interface AppearanceRow {
@@ -24,6 +25,7 @@ export interface AppearanceRow {
   prep_bullets: PrepBulletsData;
   turns: Turn[] | null;
   turn_summaries: Record<string, string> | null;
+  sections: SectionHeading[];
   processing_status: ProcessingStatus;
   processing_error: string | null;
   created_at: string;
@@ -59,6 +61,7 @@ export interface ExtractStepOutput {
   raw_transcript: string;
   raw_caption_data?: Record<string, unknown> | null;
   turns?: Turn[];
+  sections?: SectionHeading[];
 }
 
 export interface CleanStepOutput {
