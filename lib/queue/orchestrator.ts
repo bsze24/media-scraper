@@ -192,8 +192,11 @@ export async function processBatch(
       failed++;
     }
 
-    // Rate-limit between items, but not after the last one
-    if (i < rows.length - 1) {
+    // Rate-limit Colossus URLs to avoid anti-bot detection; skip for other sources
+    if (
+      i < rows.length - 1 &&
+      rows[i].transcript_source === "colossus"
+    ) {
       await colossusDelay();
     }
   }
