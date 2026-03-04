@@ -14,7 +14,7 @@
 | `turn_summaries` type | `unknown[] | null` | `Array<{speaker: string, summary: string}> | null` — speaker-keyed, consistent with turns shape. |
 | Bullets prompt | Sections list never injected into userContent | `JSON.stringify(sections)` lookup table injected; `section_anchor` added to output schema with fuzzy fallback. |
 | `section_anchor` on bullets | Always null | Populated correctly — LLM matches quotes to sections lookup table, falls back to fuzzy lookup. |
-| `chunker.ts` naming | Ambiguous — overlaps with RAG chunks concept | Comment added at top of file disambiguating pipeline splitting (context window) vs. `transcript_chunks` table (RAG/Phase 5). |
+| `chunker.ts` naming | Ambiguous — overlaps with RAG chunks concept | Renamed to `splitter.ts` / `splitForProcessing` to disambiguate from RAG `transcript_chunks` (Phase 5). |
 | CLAUDE.md observability | Not documented | Observability section added — console.log bookends required, never stripped, chunk progress logging on long steps. |
 | YouTube timestamps | Not addressed | Deferred — timestamps belong in `turns[].timestamp_seconds` populated from `raw_caption_data`; not in cleaned transcript text. |
 | YouTube sections | Not addressed | Deferred — `generateSections()` pipeline step produces synthetic sections for YouTube transcripts (Phase 1). |
@@ -120,18 +120,18 @@ Unique constraint on `(appearance_id, chunk_index)`.
 
 | Use case | File | Purpose | Chunk size | When |
 |----------|------|---------|-----------|------|
-| Pipeline splitting | `lib/pipeline/chunker.ts` | Stay within Anthropic API context window | ~120k chars | Only when `rawTranscript.length >= 120_000` |
+| Pipeline splitting | `lib/pipeline/splitter.ts` | Stay within Anthropic API context window | ~120k chars | Only when `rawTranscript.length >= 120_000` |
 | RAG chunking | `transcript_chunks` table | Precise semantic retrieval | ~2k chars (~500 tokens) | Phase 5, all transcripts |
 
-`chunker.ts` has a disambiguating comment at the top. These are unrelated features that happen to share the word "chunk."
+`splitter.ts` was renamed from `chunker.ts` to disambiguate. These are unrelated features that happen to share the word "chunk."
 
-### Pipeline splitting (chunker.ts) — Phase 0
+### Pipeline splitting (splitter.ts) — Phase 0
 Split preference order:
 1. Section boundaries from scraped `sections[]` — cleanest, Colossus only
 2. Speaker turn boundaries (double-newline blocks)
 3. Hard paragraph boundary near 120k chars — last resort
 
-Short transcripts (<120k chars) → `splitIntoChunks` returns `[rawTranscript]` — callers don't branch.
+Short transcripts (<120k chars) → `splitForProcessing` returns `[rawTranscript]` — callers don't branch.
 
 Merge logic:
 - `mergeCleaned`: join with `\n\n`
@@ -217,8 +217,8 @@ Three implementations were tried. Current (correct) approach:
 | Attempt | Approach | Problem |
 |---------|---------|---------|
 | 1 | Blocking `messages.create` | Hard 10-min SDK wall clock cap — Alpha School (157k chars) exceeded it silently |
-| 2 | `messages.stream` + `finalText()` | Unreliable for large outputs — `finalText()` still buffers everything internally |
-| 3 (current) | `for await` async iterator | Owns accumulation loop incrementally — robust at any output size |
+| 2 | `messages.stream` + `finalText()` | Works correctly — now the current approach for all three pipeline files |
+| 3 (reverted) | `for await` async iterator | Manual accumulation loop; replaced with `finalText()` for consistency |
 
 `max_tokens` bumped from 4096 → 8192 on `bullets.ts`. `clean.ts` uses `max_tokens: 64000`.
 
@@ -240,13 +240,13 @@ lib/
     clean.ts                       LLM cleaning (streaming via for-await, chunking-aware)
     entities.ts                    LLM entity extraction (Zod-validated JSON)
     bullets.ts                     LLM prep bullets (curated vs YouTube variants)
-    chunker.ts                     [NEW v3] Splits long transcripts for pipeline processing
+    splitter.ts                    [NEW v3] Splits long transcripts for pipeline processing (renamed from chunker.ts)
     sections.ts                    [Phase 1] generateSections() for YouTube transcripts
     turn-summaries.ts              [Phase 1] One-sentence per-turn summaries
     clean.test.ts
     entities.test.ts
     bullets.test.ts
-    chunker.test.ts                [NEW v3]
+    splitter.test.ts               [NEW v3] (renamed from chunker.test.ts)
     turn-summaries.test.ts         [Phase 1]
   prompts/
     cleaning.ts                    Two variants: curated (lighter) vs YouTube (heavier)
@@ -255,7 +255,7 @@ lib/
     turn-summaries.ts              [Phase 1]
     overview.ts                    Fund overview synthesis prompt
   db/
-    client.ts                      Supabase client (browser + server)
+    client.ts                      Supabase client (server only — browser client removed as dead code)
     queries.ts                     Typed query functions: insert, update, search, fund cache
     types.ts                       DB row types (AppearanceRow, ExtractStepOutput, etc.)
     queries.test.ts
@@ -298,28 +298,32 @@ supabase/
 
 ## Build Phases
 
-### Phase 0: Bootstrap + Pipeline ← COMPLETE (pending batch)
+### Phase 0: Bootstrap + Pipeline ← COMPLETE
 
-**Completed this session:**
+**Completed:**
 - `002_turns_and_summaries.sql` migration deployed — turns + turn_summaries columns
 - `parseTurns()` utility — parses `SpeakerName:\ntext` format → `Turn[]`
-- `lib/pipeline/chunker.ts` + tests — splitIntoChunks, mergeCleaned, mergeEntityTags, mergePrepBullets
+- `lib/pipeline/splitter.ts` + tests — splitForProcessing, mergeCleaned, mergeEntityTags, mergePrepBullets
 - Orchestrator wired with parseTurns at extract step + chunking branch (threshold: 120k chars)
 - `sections` JSONB column added to appearances — persisted from scraper, no longer ephemeral
 - `writeExtractResult` updated to persist turns + sections
 - Bullets prompt fixed — sections lookup table injected into userContent, `section_anchor` added to output schema
 - `max_tokens` bumped 4096 → 8192 on bullets.ts
 - Apollo re-ingested and validated: sections populated (12 headings), turns populated, section_anchor non-null on all bullet quotes
+- CLAUDE.md updated with observability section
+- All 29 BugBot issues from PR #1 resolved across 4 fix commits
+- JSON parsers strip markdown code fences (```json) from LLM responses
+- All pipeline files use consistent `stream()` + `finalText()` pattern with `setInterval` progress logging
+- Cache invalidation failure no longer reverts "complete" status to "failed"
+- Dead code removed (`toAppearance`, `createBrowserClient`)
 - 94/94 tests passing, typecheck clean, build green
 
-**Remaining before PR:**
-1. Add `sections: SectionHeading[]` to `Appearance` type in `src/types/appearance.ts` (gap noted — needed before Phase 1 UI)
-2. Update CLAUDE.md — add Observability section + one-liner to Before Committing checklist
-3. Submit remaining 19 Colossus URLs via bulk UI
-4. Monitor batch — normal episodes ~6 min each; Alpha School will chunk
-5. Spot-check 2-3 outputs for entity_tags and prep_bullets quality
-6. Write first few-shot example for rowspace_angles after reviewing batch output
-7. Open PR: `phase0/bootstrap-pipeline → main`
+**Remaining before merge:**
+1. Submit remaining 19 Colossus URLs via bulk UI
+2. Monitor batch — normal episodes ~6 min each; Alpha School will chunk
+3. Spot-check 2-3 outputs for entity_tags and prep_bullets quality
+4. Write first few-shot example for rowspace_angles after reviewing batch output
+5. Open PR: `phase0/bootstrap-pipeline → main`
 
 **Milestone:** Query Supabase for "Apollo" → rows with `raw_transcript`, `cleaned_transcript`, `turns`, `sections`, `entity_tags`, `prep_bullets` (section anchors populated) all present.
 
@@ -398,7 +402,7 @@ supabase/
 
 | # | Issue | Priority | Fix |
 |---|-------|----------|-----|
-| 1 | `Appearance` type missing `sections` field | **P0** | Add `sections: SectionHeading[]` before Phase 1 UI |
+| 1 | ~~`Appearance` type missing `sections` field~~ | ~~P0~~ | Done — `sections` added to `Appearance` type |
 | 2 | `rowspace_angles` missing `supporting_quotes` | P1 | Add to Zod schema + bullets prompt |
 | 3 | Bullets prompt needs few-shot examples | P1 | After batch review, write 2-3 manually |
 | 4 | `turn_summaries` not populated | P1 | Phase 1 pipeline step |
