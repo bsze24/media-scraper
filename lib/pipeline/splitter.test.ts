@@ -127,6 +127,24 @@ describe("mergeEntityTags", () => {
     expect(result.fund_names![0].parent).toBe("Apollo");
   });
 
+  it("upgrades fund type from subsidiary to primary", () => {
+    const chunk1: EntityTags = {
+      fund_names: [
+        { name: "Athene", aliases: [], type: "subsidiary", parent: "Apollo" },
+      ],
+    };
+    const chunk2: EntityTags = {
+      fund_names: [
+        { name: "Athene", aliases: [], type: "primary" },
+      ],
+    };
+
+    const result = mergeEntityTags([chunk1, chunk2]);
+    expect(result.fund_names![0].type).toBe("primary");
+    // parent preserved from first chunk
+    expect(result.fund_names![0].parent).toBe("Apollo");
+  });
+
   it("deduplicates key people case-insensitively", () => {
     const chunk1: EntityTags = {
       key_people: [

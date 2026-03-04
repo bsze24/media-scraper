@@ -169,14 +169,12 @@ export function mergeEntityTags(chunks: EntityTags[]): EntityTags {
             aliasSet.add(alias.toLowerCase());
           }
         }
-        // First non-null wins for parent and type
+        // First non-null wins for parent; "primary" always wins for type
         if (!existing.parent && fund.parent) {
           existing.parent = fund.parent;
         }
-        if (existing.type === "primary" && fund.type === "subsidiary") {
-          // Keep primary — no change
-        } else if (!existing.type && fund.type) {
-          existing.type = fund.type;
+        if (fund.type === "primary") {
+          existing.type = "primary";
         }
       } else {
         fundMap.set(key, { ...fund, aliases: [...fund.aliases] });
