@@ -31,7 +31,7 @@ Return a JSON object with this structure:
 ---
 
 BULLET GUIDELINES:
-- Generate 3-5 bullets covering: investment thesis, pain points, sector focus, relationship hooks, portfolio references
+- Generate 8-10 bullets covering: investment thesis, pain points, sector focus, relationship hooks, portfolio references
 - Each bullet should have 1-3 supporting quotes with speaker attribution
 - Each quote must include the section heading AND its anchor ID from the provided list
 - Do NOT include timestamps (curated transcripts don't have them)
@@ -239,7 +239,7 @@ Return a JSON object with this structure:
 }
 
 Guidelines:
-- Generate 3-5 bullets covering: investment thesis, pain points, sector focus, relationship hooks, portfolio references
+- Generate 8-10 bullets covering: investment thesis, pain points, sector focus, relationship hooks, portfolio references
 - Each bullet should have 1-3 supporting quotes with speaker attribution and timestamp
 - Generate 1-2 Rowspace angles
 - Quotes must be verbatim from the transcript
