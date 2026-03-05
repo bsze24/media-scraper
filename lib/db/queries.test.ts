@@ -61,6 +61,8 @@ function makeTestRow(overrides: Partial<AppearanceRow> = {}): AppearanceRow {
     turns: null,
     turn_summaries: null,
     sections: [],
+    prompt_context_snapshot: null,
+    bullets_generated_at: null,
     processing_status: "complete",
     processing_error: null,
     created_at: "2024-01-15T00:00:00Z",

@@ -96,6 +96,8 @@ function makeRow(overrides: Partial<AppearanceRow> = {}): AppearanceRow {
     turns: null,
     turn_summaries: null,
     sections: [],
+    prompt_context_snapshot: null,
+    bullets_generated_at: null,
     processing_status: "queued",
     processing_error: null,
     created_at: "2026-01-01T00:00:00Z",

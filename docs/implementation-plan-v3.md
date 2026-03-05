@@ -1,7 +1,7 @@
 # Meeting Prep Tool — Technical Implementation Plan (v3)
-**Last updated:** March 4, 2026
+**Last updated:** March 5, 2026
 **Branch:** phase1/transcript-ui (Phase 0: phase0/bootstrap-pipeline)
-**Status:** Phase 1 transcript viewer built — `/transcript/[id]` with three-column layout, search, speaker filter, bullet flagging, video panel. Phase 2 schema prep migrations created. 101/101 tests passing.
+**Status:** Phase 1B complete — orchestrator improvements (chunk parallelization, bullets-only reprocess, bulk regenerate), prompt context snapshot, search page. Phase 2 schema prep migrations created.
 
 ---
 
@@ -32,6 +32,7 @@
 | `004_sections.sql` | Deployed | — (renumbered during session; check actual file names in repo) |
 | `005_corrections.sql` | Created (Phase 1 prep) | `corrections` audit table for human edits to turns |
 | `006_turns_corrected_flag.sql` | Created (Phase 1 prep) | Documents Turn.corrected boolean intent (no DDL) |
+| `007_prompt_snapshot.sql` | Created (Phase 1B) | `prompt_context_snapshot TEXT` + `bullets_generated_at TIMESTAMPTZ` on appearances |
 | `003_embeddings.sql` | Not created — Phase 5 | `transcript_chunks` table + pgvector extension + HNSW index |
 
 ---
@@ -55,6 +56,8 @@ turn_summaries (JSONB: [{speaker, summary}])     — nullable, Phase 1 pipeline 
 sections (JSONB: [{heading, anchor}])            — scraped for Colossus; synthetic for YouTube (Phase 1)
 entity_tags (JSONB)
 prep_bullets (JSONB)
+prompt_context_snapshot (TEXT)                    — Rowspace business context at bullet generation time
+bullets_generated_at (TIMESTAMPTZ)                — when bullets were last generated
 processing_status (TEXT: queued/extracting/cleaning/analyzing/complete/failed)
 processing_error (TEXT)
 created_at, updated_at
@@ -363,10 +366,20 @@ Transcript viewer (/transcript/[id]) — PRIMARY PRODUCT SURFACE
 - `turn-summaries` pipeline step (step 4.5) — `[{speaker, summary}]` stored to `turn_summaries`
 - YouTube timestamp extraction — populate `turns[].timestamp_seconds` from `raw_caption_data`
 
+**Orchestrator improvements (Phase 1B) — COMPLETE:**
+- Chunk-level `Promise.all` parallelization for clean/entities/bullets steps
+- `reprocessBullets()` — bullets-only reprocess mode (skips extract/clean/entities, reuses existing data)
+- `POST /api/process/bullets` — single-appearance bullet regeneration
+- `POST /api/process/bullets/bulk` — fire-and-forget bulk regeneration with `p-limit(2)` concurrency cap
+- `prompt_context_snapshot` column — snapshots Rowspace business context at bullet generation time
+- `bullets_generated_at` column — records when bullets were last generated
+- `ROWSPACE_BUSINESS_CONTEXT` extracted as separate constant for snapshotting
+
 **Search UI (Phase 1):**
-- `SearchBar`, `SearchResults`, `AppearanceCard`
-- `BulletItem` + `CitationTooltip` — bullets as triage layer, each links to `/transcript/[id]#section-anchor`
-- `VoteButton`, `AgeFlag`, `FundOverviewCard`
+- `/search` page — server component calling `searchByFundName` directly, `SearchBar` client component
+- `AppearanceCard` — title, source, date, speakers, bullets list, generated-at date
+- `BulletItem` + `CitationTooltip` — bullets as triage layer, each links to `/transcript/[id]#section-anchor` (future)
+- `VoteButton`, `AgeFlag`, `FundOverviewCard` (future)
 
 **Prompt improvements:**
 - Add `supporting_quotes` to `rowspace_angles` schema + prompt
@@ -460,6 +473,9 @@ Trigger: double-click, or E shortcut when turn is focused.
 | 10 | Migration naming — switch to timestamp-prefixed filenames | P2 | All new migrations from Phase 2 onward |
 | 11 | Responsive layout — TOC collapses to drawer, video panel hides | P2 | At <1024px breakpoint |
 | 12 | Bullet tag field — add category tags to bullets prompt | P2 | After prompt quality review |
+| 13 | `prompt_context_version` (INT) column — surface stale bullet indicator on AppearanceCard when prompt version changes | P2 | Phase 2/3 |
+| 14 | Proper job queue for bulk operations — `POST /api/process/bullets/bulk` uses fire-and-forget (promise killed on Vercel after response sends). Replace with Inngest, BullMQ, or Supabase-backed queue before production deploy | P1 | Before production deploy |
+| 15 | Prompt context in Notion — separate page per prompt type, fetched at ingestion, context portion snapshotted. Prompt logic stays in code. Per-type version tracking via `prompt_context_version` | P2 | Phase 2/3 |
 
 ---
 

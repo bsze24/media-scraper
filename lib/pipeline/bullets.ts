@@ -2,6 +2,7 @@ import { createAnthropicClient } from "@lib/anthropic/client";
 import {
   GENERATE_BULLETS_PROMPT_CURATED,
   GENERATE_BULLETS_PROMPT_YOUTUBE,
+  ROWSPACE_BUSINESS_CONTEXT,
 } from "@lib/prompts/bullets";
 import type { BulletsStepOutput } from "@lib/db/types";
 import type { EntityTags, TranscriptSource } from "@/types/appearance";
@@ -152,7 +153,11 @@ export async function generatePrepBullets(
       })),
     };
 
-    return { prep_bullets: prepBullets };
+    return {
+      prep_bullets: prepBullets,
+      // Snapshot the business context used for curated sources; null for YouTube/other
+      prompt_context_snapshot: curated ? ROWSPACE_BUSINESS_CONTEXT : undefined,
+    };
   } finally {
     clearInterval(logTimer);
   }

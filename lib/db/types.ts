@@ -27,6 +27,8 @@ export interface AppearanceRow {
   turn_summaries: Array<{ speaker: string; summary: string }> | null;
   sections: SectionHeading[];
   processing_status: ProcessingStatus;
+  prompt_context_snapshot: string | null;
+  bullets_generated_at: string | null;
   processing_error: string | null;
   created_at: string;
   updated_at: string;
@@ -74,4 +76,5 @@ export interface EntitiesStepOutput {
 
 export interface BulletsStepOutput {
   prep_bullets: PrepBulletsData;
+  prompt_context_snapshot?: string;
 }

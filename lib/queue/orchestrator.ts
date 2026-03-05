@@ -96,11 +96,12 @@ export async function processAppearance(id: string): Promise<void> {
     // (which may not survive LLM cleaning).
     let cleanedChunks: string[] | null = null;
     if (rawChunks) {
-      cleanedChunks = [];
-      for (const chunk of rawChunks) {
-        const out = await cleanTranscript(chunk);
-        cleanedChunks.push(out.cleaned_transcript);
-      }
+      // Clean chunks in parallel
+      cleanedChunks = await Promise.all(
+        rawChunks.map((chunk) =>
+          cleanTranscript(chunk).then((o) => o.cleaned_transcript)
+        )
+      );
       finalCleaned = mergeCleaned(cleanedChunks);
     } else {
       const cleanOutput = await cleanTranscript(rawTranscript);
@@ -112,10 +113,10 @@ export async function processAppearance(id: string): Promise<void> {
     await updateProcessingStatus(id, "analyzing");
     let finalEntities: EntitiesStepOutput;
     if (cleanedChunks) {
-      const entityChunks = [];
-      for (const chunk of cleanedChunks) {
-        entityChunks.push(await extractEntities(chunk));
-      }
+      // Entity chunks in parallel
+      const entityChunks = await Promise.all(
+        cleanedChunks.map((chunk) => extractEntities(chunk))
+      );
       finalEntities = {
         entity_tags: mergeEntityTags(entityChunks.map((e) => e.entity_tags)),
       };
@@ -125,25 +126,26 @@ export async function processAppearance(id: string): Promise<void> {
     await writeEntitiesResult(id, finalEntities);
 
     // Step 4: Bullets (still "analyzing")
+    // Entities->Bullets is sequential: generatePrepBullets requires entityTags as input.
+    // Chunk-level parallelism within each step is safe.
     let finalBullets: BulletsStepOutput;
     if (cleanedChunks && rawChunks) {
-      const bulletChunks = [];
-      for (let ci = 0; ci < cleanedChunks.length; ci++) {
-        // Filter sections to those whose headings appear in this raw chunk
-        const chunkSections = sections.filter(
-          (s) => rawChunks[ci].includes(s.heading)
-        );
-        bulletChunks.push(
-          await generatePrepBullets(
-            cleanedChunks[ci],
+      const bulletChunks = await Promise.all(
+        cleanedChunks.map((chunk, ci) => {
+          const chunkSections = sections.filter(
+            (s) => rawChunks[ci].includes(s.heading)
+          );
+          return generatePrepBullets(
+            chunk,
             finalEntities.entity_tags,
             chunkSections,
             transcriptSource
-          )
-        );
-      }
+          );
+        })
+      );
       finalBullets = {
         prep_bullets: mergePrepBullets(bulletChunks.map((b) => b.prep_bullets)),
+        prompt_context_snapshot: bulletChunks[0]?.prompt_context_snapshot,
       };
     } else {
       finalBullets = await generatePrepBullets(
@@ -174,6 +176,55 @@ export async function processAppearance(id: string): Promise<void> {
     await updateProcessingStatus(id, "failed", message);
     throw err;
   }
+}
+
+export async function reprocessBullets(id: string): Promise<BulletsStepOutput> {
+  const row = await getAppearanceById(id);
+  if (!row) throw new Error(`Appearance not found: ${id}`);
+  if (row.processing_status !== "complete") {
+    throw new Error(
+      `Cannot reprocess: status is "${row.processing_status}", expected "complete"`
+    );
+  }
+  if (!row.cleaned_transcript) {
+    throw new Error(`No cleaned_transcript for appearance ${id}`);
+  }
+
+  const CHUNK_THRESHOLD = 120_000;
+  const needsChunking = row.cleaned_transcript.length >= CHUNK_THRESHOLD;
+
+  let result: BulletsStepOutput;
+  if (needsChunking) {
+    // Same split path as full ingest for long transcripts
+    const rawChunks = splitForProcessing(row.cleaned_transcript, row.sections);
+    const bulletChunks = await Promise.all(
+      rawChunks.map((chunk, ci) => {
+        const chunkSections = row.sections.filter((s) =>
+          chunk.includes(s.heading)
+        );
+        return generatePrepBullets(
+          chunk,
+          row.entity_tags,
+          chunkSections,
+          row.transcript_source
+        );
+      })
+    );
+    result = {
+      prep_bullets: mergePrepBullets(bulletChunks.map((b) => b.prep_bullets)),
+      prompt_context_snapshot: bulletChunks[0]?.prompt_context_snapshot,
+    };
+  } else {
+    result = await generatePrepBullets(
+      row.cleaned_transcript,
+      row.entity_tags,
+      row.sections,
+      row.transcript_source
+    );
+  }
+
+  await writeBulletsResult(id, result, { force: true });
+  return result;
 }
 
 export async function processBatch(
