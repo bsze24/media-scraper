@@ -14,16 +14,77 @@ import type { TranscriptViewerProps } from "./types";
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Parse a search query into terms.
+ *   - "exact phrase" → exact substring match
+ *   - -term → exclude turns containing term (word-boundary)
+ *   - term → word-boundary match (default)
+ *
+ * Multiple terms are ANDed together.
+ */
+interface SearchTerm {
+  text: string;
+  type: "word" | "exact" | "exclude";
+}
+
+function parseSearchQuery(raw: string): SearchTerm[] {
+  const terms: SearchTerm[] = [];
+  const regex = /(-?)"([^"]+)"|(-?)(\S+)/g;
+  let match;
+  while ((match = regex.exec(raw)) !== null) {
+    const neg = match[1] || match[3];
+    const text = match[2] || match[4];
+    if (!text || text.length < 2) continue;
+    if (neg) {
+      terms.push({ text, type: "exclude" });
+    } else if (match[2] !== undefined) {
+      terms.push({ text, type: "exact" });
+    } else {
+      terms.push({ text, type: "word" });
+    }
+  }
+  return terms;
+}
+
+function buildTermRegex(term: SearchTerm): RegExp {
+  const escaped = term.text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (term.type === "exact") {
+    return new RegExp(escaped, "gi");
+  }
+  // Word-boundary: \b works for most cases
+  return new RegExp(`\\b${escaped}`, "gi");
+}
+
+function matchesTurn(text: string, terms: SearchTerm[]): boolean {
+  for (const term of terms) {
+    const re = buildTermRegex(term);
+    const found = re.test(text);
+    if (term.type === "exclude" && found) return false;
+    if (term.type !== "exclude" && !found) return false;
+  }
+  return true;
+}
+
+/** Build a combined regex for all positive terms (for highlighting). */
+function buildHighlightRegex(terms: SearchTerm[]): RegExp | null {
+  const positive = terms.filter((t) => t.type !== "exclude");
+  if (positive.length === 0) return null;
+  const parts = positive.map((t) => {
+    const escaped = t.text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return t.type === "exact" ? escaped : `\\b${escaped}`;
+  });
+  return new RegExp(`(${parts.join("|")})`, "gi");
+}
+
 function highlightText(text: string, query: string): ReactNode {
   if (!query || query.length < 2) return text;
-  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+  const terms = parseSearchQuery(query);
+  const re = buildHighlightRegex(terms);
+  if (!re) return text;
+  const parts = text.split(re);
   return parts.map((p, i) =>
-    p.toLowerCase() === query.toLowerCase() ? (
-      <mark
-        key={i}
-        className="rounded-sm bg-yellow-200 px-0.5"
-      >
+    re.test(p) ? (
+      <mark key={i} className="rounded-sm bg-yellow-200 px-0.5">
         {p}
       </mark>
     ) : (
@@ -136,9 +197,13 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   }, []);
 
   // ---- Search matches (memoized per section) ----
+  const searchTerms = useMemo(
+    () => parseSearchQuery(debouncedQuery),
+    [debouncedQuery]
+  );
+
   const searchResults = useMemo(() => {
-    const q = debouncedQuery.toLowerCase();
-    if (!q || q.length < 2)
+    if (searchTerms.length === 0)
       return { anchors: new Set<string>(), turnKeys: new Set<string>(), countBySection: new Map<string, number>() };
 
     const anchors = new Set<string>();
@@ -149,7 +214,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       const sectionTurns = turnsBySection.get(section.anchor) ?? [];
       let count = 0;
       sectionTurns.forEach((turn, ti) => {
-        if (turn.text.toLowerCase().includes(q)) {
+        if (matchesTurn(turn.text, searchTerms)) {
           anchors.add(section.anchor);
           turnKeys.add(`${section.anchor}-${ti}`);
           count++;
@@ -159,9 +224,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     }
 
     return { anchors, turnKeys, countBySection };
-  }, [debouncedQuery, sections, turnsBySection]);
+  }, [searchTerms, sections, turnsBySection]);
 
-  const hasSearch = debouncedQuery.length >= 2;
+  const hasSearch = searchTerms.length > 0;
 
   // Update expanded sections when search changes
   useEffect(() => {
@@ -677,7 +742,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                               </div>
                               <p className="font-[family-name:var(--font-source-sans)] text-[12.5px] italic leading-relaxed text-[#bbb]">
                                 {highlightText(
-                                  hostExpanded || !hasMore
+                                  hostExpanded || isTurnHit || !hasMore
                                     ? turn.text
                                     : first,
                                   debouncedQuery
