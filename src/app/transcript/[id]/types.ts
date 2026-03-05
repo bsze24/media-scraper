@@ -1,0 +1,34 @@
+export interface TranscriptViewerProps {
+  appearance: {
+    id: string;
+    title: string;
+    date: string; // formatted: "Jan 12, 2024"
+    source_name: string; // e.g. "Invest Like the Best · Colossus"
+    youtube_id: string | null;
+    speakers: Array<{
+      name: string;
+      role: "guest" | "host";
+      title?: string; // e.g. "CEO"
+      affiliation?: string; // e.g. "Apollo Global Management"
+    }>;
+    sections: Array<{
+      heading: string;
+      anchor: string;
+    }>;
+    turns: Array<{
+      speaker: string;
+      role: "guest" | "host";
+      text: string;
+      turn_index: number;
+      section_anchor?: string;
+    }>;
+    prep_bullets: Array<{
+      text: string;
+      supporting_quotes: Array<{
+        quote: string;
+        speaker: string;
+        section_anchor: string | null;
+      }>;
+    }>;
+  };
+}
