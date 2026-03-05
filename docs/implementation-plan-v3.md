@@ -1,7 +1,7 @@
 # Meeting Prep Tool — Technical Implementation Plan (v3)
 **Last updated:** March 4, 2026
-**Branch:** phase0/bootstrap-pipeline
-**Status:** Phase 0 pipeline complete — Inside Apollo processed end-to-end with turns, sections, and section anchors all validated. 94/94 tests passing.
+**Branch:** phase1/transcript-ui (Phase 0: phase0/bootstrap-pipeline)
+**Status:** Phase 1 transcript viewer built — `/transcript/[id]` with three-column layout, search, speaker filter, bullet flagging, video panel. Phase 2 schema prep migrations created. 101/101 tests passing.
 
 ---
 
@@ -30,6 +30,8 @@
 | `002_turns_and_summaries.sql` | Deployed | `turns` JSONB + `turn_summaries` JSONB + GIN index on turns |
 | `003_sections.sql` (was 002 in v2 plan) | Deployed | `sections` JSONB DEFAULT '[]' on appearances |
 | `004_sections.sql` | Deployed | — (renumbered during session; check actual file names in repo) |
+| `005_corrections.sql` | Created (Phase 1 prep) | `corrections` audit table for human edits to turns |
+| `006_turns_corrected_flag.sql` | Created (Phase 1 prep) | Documents Turn.corrected boolean intent (no DDL) |
 | `003_embeddings.sql` | Not created — Phase 5 | `transcript_chunks` table + pgvector extension + HNSW index |
 
 ---
@@ -65,7 +67,9 @@ interface Turn {
   speaker: string;
   text: string;
   turn_index: number;
-  timestamp_seconds?: number;   // YouTube only (Phase 1) — extracted from raw_caption_data
+  section_anchor?: string;       // stamped at parse time from sections[]; undefined before first heading
+  corrected?: boolean;           // true if human-verified (Phase 2 corrections UI)
+  timestamp_seconds?: number;    // YouTube only (Phase 1) — extracted from raw_caption_data
 }
 ```
 
@@ -263,9 +267,13 @@ lib/
     orchestrator.ts                Coordinates pipeline steps per appearance
     orchestrator.test.ts
 src/app/
-  layout.tsx
+  layout.tsx                       Geist + Playfair Display + Source Sans 3 fonts
   page.tsx                         Phase 0 bulk paste UI
   globals.css
+  transcript/[id]/
+    page.tsx                       Server component — fetches appearance, routes by status
+    TranscriptViewer.tsx           Client component — all interaction logic
+    types.ts                       TranscriptViewerProps interface
   api/
     appearances/route.ts
     appearances/[id]/route.ts
@@ -291,6 +299,8 @@ supabase/
     001_initial_schema.sql
     002_turns_and_summaries.sql    turns + turn_summaries JSONB
     003_sections.sql (or 004)      sections JSONB
+    005_corrections.sql            Phase 2 prep — corrections audit table
+    006_turns_corrected_flag.sql   Phase 2 prep — documents Turn.corrected intent
     003_embeddings.sql             [Phase 5] transcript_chunks + pgvector
 ```
 
@@ -329,23 +339,31 @@ supabase/
 
 ---
 
-### Phase 1: Transcript Viewer + Lookup UI
+### Phase 1: Transcript Viewer + Lookup UI ← IN PROGRESS
 
-**Primary deliverable: `/transcript/[id]` — the core product surface.**
+**Branch:** `phase1/transcript-ui`
 
-**Pipeline additions:**
+Transcript viewer (/transcript/[id]) — PRIMARY PRODUCT SURFACE
+- Three-column layout: TOC (sticky left) | transcript body | video panel (sticky right)
+- Header: title, date, source, clickable guest names (filter by speaker), host de-emphasized
+- Guest metadata: name + title (if available) + affiliation displayed inline
+- Key Takeaways section above transcript: bullet text + supporting quote (click to jump) + × to flag
+  - Flagging collapses bullet to slim row; floating feedback panel bottom-right for optional comment
+  - 8–10 bullets generated at ingestion (bullets.ts prompt updated)
+- TOC: search input (debounced 150ms), + / − expand/collapse all, gold dots (cited in bullets), blue dots (search hits)
+- Sections: expand/collapse individually or all; match counts on search hits
+- Speaker turns: guest turns fully expanded; host turns truncated to first sentence (▼ more)
+- Video panel: slim collapsed strip (▶ Watch Episode), expands to 280px with YouTube embed or placeholder
+- Feedback: UI-only for now (local state); POST /api/feedback wired in Phase 2
+- Status routing: null → 404, processing → status page with refresh prompt, failed → error page with back link
+
+**Pipeline additions (Phase 1):**
+- `section_anchor` stamped on Turn at parse time (parseTurns accepts sections[])
 - `generateSections()` for YouTube transcripts — synthetic sections stored to `sections` column
 - `turn-summaries` pipeline step (step 4.5) — `[{speaker, summary}]` stored to `turn_summaries`
 - YouTube timestamp extraction — populate `turns[].timestamp_seconds` from `raw_caption_data`
 
-**Transcript viewer (`/transcript/[id]`):**
-- Progressive disclosure: section headings → per-turn summaries → full speaker-labeled text
-- Host turns visually de-emphasized
-- In-transcript keyword search → tsvector scoped to this appearance → highlight matching turns
-- URL-driven search state: `/transcript/[id]?q=Athene+merger`
-- Raw vs. cleaned transcript toggle
-
-**Search UI:**
+**Search UI (Phase 1):**
 - `SearchBar`, `SearchResults`, `AppearanceCard`
 - `BulletItem` + `CitationTooltip` — bullets as triage layer, each links to `/transcript/[id]#section-anchor`
 - `VoteButton`, `AgeFlag`, `FundOverviewCard`
@@ -358,7 +376,35 @@ supabase/
 
 ---
 
-### Phase 2: Notion Output
+### Phase 2: Corrections + Keyboard Shortcuts
+
+Trigger: corpus at ~50 transcripts, speaker attribution errors making queries unreliable.
+
+Schema (already migrated in Phase 1 prep):
+- corrections table (appearance_id, turn_index, field, old_value, new_value, action, corrected_by)
+- Turn.corrected boolean flag
+
+Transcript viewer additions:
+- Inline turn editing: double-click a guest turn to enter edit mode (textarea in place, ⌘S/Enter to save, Esc to cancel)
+- Speaker reassignment: click speaker label on any turn → dropdown of known speakers from this appearance + "Add speaker"; one click writes corrections table
+- Undo: revert turn to original value from corrections log; writes action: 'undone' to corrections table
+- POST /api/feedback route for bullet flagging (replaces local state from Phase 1)
+- POST /api/corrections route for turn edits and speaker reassignment
+
+Keyboard shortcuts:
+- / — focus search input
+- Esc — clear search / exit edit mode / dismiss floating panel
+- + / − — expand / collapse all sections
+- E — enter edit mode on focused turn
+- ⌘S — save turn edit
+- J / K — navigate between turns (vim-style)
+
+Note: Don't make single-click on turn text trigger edit mode — too easy to misfire while reading.
+Trigger: double-click, or E shortcut when turn is focused.
+
+---
+
+### Phase 3: Notion Output (was Phase 2)
 
 - `@notionhq/client`
 - Fund overview + per-appearance sections + supporting quotes as Notion comments
@@ -367,7 +413,7 @@ supabase/
 
 ---
 
-### Phase 3: Single URL + Admin
+### Phase 4: Single URL + Admin (was Phase 3)
 
 - Single URL submit with real-time ProcessingStatus (Supabase realtime)
 - Admin dashboard: AppearanceTable, StatsOverview, FailedItemsList, DomainMappingEditor
@@ -376,7 +422,7 @@ supabase/
 
 ---
 
-### Phase 4: Polish + Dogfood
+### Phase 4.5: Polish + Dogfood (was Phase 4)
 
 - Prompt iteration from real meeting usage
 - YouTube scraper (may slip to Phase 5)
@@ -408,6 +454,12 @@ supabase/
 | 4 | `turn_summaries` not populated | P1 | Phase 1 pipeline step |
 | 5 | Stuck-row retry UI | P2 | "Reset to queued" for any non-complete status |
 | 6 | Multi-speaker scraper test coverage | P3 | Low priority — DOM selectors change anyway |
+| 7 | Bullet feedback (flagging) writes to local state only | P2 | Wire POST /api/feedback in Phase 2 |
+| 8 | Turn.corrected flag not yet populated | P2 | Corrections UI in Phase 2 |
+| 9 | Speaker name drift ("Marc" vs "Marc Rowan") | P2 | Add speaker_aliases map per appearance at ingest |
+| 10 | Migration naming — switch to timestamp-prefixed filenames | P2 | All new migrations from Phase 2 onward |
+| 11 | Responsive layout — TOC collapses to drawer, video panel hides | P2 | At <1024px breakpoint |
+| 12 | Bullet tag field — add category tags to bullets prompt | P2 | After prompt quality review |
 
 ---
 
