@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseTurns } from "./parse-turns";
+import type { SectionHeading } from "@/types/scraper";
 
 describe("parseTurns", () => {
   it("returns empty array for empty input", () => {
@@ -111,5 +112,80 @@ describe("parseTurns", () => {
     expect(turns).toHaveLength(2);
     expect(turns[0].speaker).toBe("Patrick");
     expect(turns[1].speaker).toBe("Guest");
+  });
+
+  it("stamps section_anchor on turns when sections provided", () => {
+    const sections: SectionHeading[] = [
+      { heading: "## Investment Philosophy", anchor: "investment-philosophy" },
+      { heading: "## Portfolio Construction", anchor: "portfolio-construction" },
+    ];
+    const raw = [
+      "Patrick:\nWelcome to the show.",
+      "",
+      "## Investment Philosophy",
+      "",
+      "Marc:\nWe focus on value.",
+      "",
+      "Patrick:\nInteresting.",
+      "",
+      "## Portfolio Construction",
+      "",
+      "Marc:\nWe diversify broadly.",
+    ].join("\n");
+
+    const turns = parseTurns(raw, sections);
+    expect(turns).toHaveLength(4);
+    // Before first heading — no anchor
+    expect(turns[0].section_anchor).toBeUndefined();
+    // After first heading
+    expect(turns[1].section_anchor).toBe("investment-philosophy");
+    expect(turns[2].section_anchor).toBe("investment-philosophy");
+    // After second heading
+    expect(turns[3].section_anchor).toBe("portfolio-construction");
+  });
+
+  it("does not emit heading blocks as turns", () => {
+    const sections: SectionHeading[] = [
+      { heading: "## Topic One", anchor: "topic-one" },
+    ];
+    const raw = [
+      "Patrick:\nHello.",
+      "",
+      "## Topic One",
+      "",
+      "Guest:\nHi.",
+    ].join("\n");
+
+    const turns = parseTurns(raw, sections);
+    expect(turns).toHaveLength(2);
+    expect(turns.every((t) => t.speaker !== "")).toBe(true);
+    // No turn should contain the heading text
+    expect(turns.every((t) => !t.text.includes("## Topic One"))).toBe(true);
+  });
+
+  it("normalizes heading match (whitespace, case, trailing punctuation)", () => {
+    const sections: SectionHeading[] = [
+      { heading: "## Investment  Philosophy:", anchor: "invest-phil" },
+    ];
+    // Raw transcript has slightly different formatting
+    const raw = [
+      "Patrick:\nHello.",
+      "",
+      "##  Investment Philosophy",
+      "",
+      "Guest:\nGreat topic.",
+    ].join("\n");
+
+    const turns = parseTurns(raw, sections);
+    expect(turns).toHaveLength(2);
+    expect(turns[1].section_anchor).toBe("invest-phil");
+  });
+
+  it("works without sections arg (backward compatible)", () => {
+    const raw = "Patrick:\nHello.\n\nGuest:\nHi.";
+    const turns = parseTurns(raw);
+    expect(turns).toHaveLength(2);
+    expect(turns[0].section_anchor).toBeUndefined();
+    expect(turns[1].section_anchor).toBeUndefined();
   });
 });

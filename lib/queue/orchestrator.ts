@@ -76,7 +76,7 @@ export async function processAppearance(id: string): Promise<void> {
         speakers: result.speakers,
         raw_transcript: result.rawTranscript,
         raw_caption_data: result.captionData,
-        turns: parseTurns(result.rawTranscript),
+        turns: parseTurns(result.rawTranscript, result.sections),
         sections: result.sections,
       };
       await writeExtractResult(id, extractOutput);
