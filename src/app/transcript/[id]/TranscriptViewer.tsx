@@ -81,9 +81,10 @@ function highlightText(text: string, query: string): ReactNode {
   const terms = parseSearchQuery(query);
   const re = buildHighlightRegex(terms);
   if (!re) return text;
+  // split with capturing group: odd indices are matches, even are gaps
   const parts = text.split(re);
   return parts.map((p, i) =>
-    re.test(p) ? (
+    i % 2 === 1 ? (
       <mark key={i} className="rounded-sm bg-yellow-200 px-0.5">
         {p}
       </mark>
@@ -135,17 +136,19 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     return set;
   }, [prep_bullets]);
 
-  // Group turns by section_anchor
+  // Group turns by section_anchor; turns before the first heading go into "__intro"
+  const INTRO_ANCHOR = "__intro";
   const turnsBySection = useMemo(() => {
     const map = new Map<string, typeof turns>();
+    map.set(INTRO_ANCHOR, []);
     for (const a of allAnchors) {
       map.set(a, []);
     }
-    // Turns before any section go into a virtual bucket; we skip them for now
     for (const t of turns) {
-      if (t.section_anchor && map.has(t.section_anchor)) {
-        map.get(t.section_anchor)!.push(t);
-      }
+      const key = t.section_anchor && map.has(t.section_anchor)
+        ? t.section_anchor
+        : INTRO_ANCHOR;
+      map.get(key)!.push(t);
     }
     return map;
   }, [turns, allAnchors]);
@@ -210,17 +213,19 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     const turnKeys = new Set<string>();
     const countBySection = new Map<string, number>();
 
-    for (const section of sections) {
-      const sectionTurns = turnsBySection.get(section.anchor) ?? [];
+    // Include intro turns in search
+    const allKeys = [INTRO_ANCHOR, ...sections.map((s) => s.anchor)];
+    for (const anchor of allKeys) {
+      const sectionTurns = turnsBySection.get(anchor) ?? [];
       let count = 0;
       sectionTurns.forEach((turn, ti) => {
         if (matchesTurn(turn.text, searchTerms)) {
-          anchors.add(section.anchor);
-          turnKeys.add(`${section.anchor}-${ti}`);
+          anchors.add(anchor);
+          turnKeys.add(`${anchor}-${ti}`);
           count++;
         }
       });
-      if (count > 0) countBySection.set(section.anchor, count);
+      if (count > 0) countBySection.set(anchor, count);
     }
 
     return { anchors, turnKeys, countBySection };
@@ -654,6 +659,43 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
           {/* TRANSCRIPT BODY */}
           <div>
+            {/* Turns before the first section heading */}
+            {(turnsBySection.get(INTRO_ANCHOR)?.length ?? 0) > 0 && (
+              <div className="mb-[5px] overflow-hidden rounded border border-[#e5e0d6]">
+                <div className="bg-white px-4 py-1 pb-2.5">
+                  {turnsBySection.get(INTRO_ANCHOR)!.map((turn, ti) => {
+                    const isHost = turn.role === "host";
+                    const dimmed =
+                      activeSpeaker && activeSpeaker !== turn.speaker;
+                    return (
+                      <div
+                        key={ti}
+                        className="border-b border-[#f0ece5] py-2 last:border-b-0"
+                        style={dimmed ? { opacity: 0.3 } : undefined}
+                      >
+                        <div
+                          className={`mb-0.5 font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] ${
+                            isHost ? "text-[#ccc]" : "text-[#c9a84c]"
+                          }`}
+                        >
+                          {turn.speaker}
+                        </div>
+                        <p
+                          className={`font-[family-name:var(--font-source-sans)] leading-relaxed ${
+                            isHost
+                              ? "text-[12.5px] italic text-[#bbb]"
+                              : "text-[13.5px] leading-[1.65] text-[#1a1a1a]"
+                          }`}
+                        >
+                          {highlightText(turn.text, debouncedQuery)}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {sections.map((section) => {
               const sectionTurns = turnsBySection.get(section.anchor) ?? [];
               const isOpen = expandedSections[section.anchor];
