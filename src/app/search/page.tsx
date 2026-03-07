@@ -1,20 +1,8 @@
 import { searchByFundName } from "@lib/db/queries";
+import { formatDate } from "@lib/utils/format-date";
 import type { AppearanceRow } from "@lib/db/types";
 import type { PrepBullet } from "@/types/bullets";
 import { SearchBar } from "./SearchBar";
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "";
-  try {
-    return new Date(dateStr).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return dateStr;
-  }
-}
 
 function AppearanceCard({ row }: { row: AppearanceRow }) {
   const speakers = (row.speakers ?? [])

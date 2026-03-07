@@ -1,19 +1,9 @@
 import { notFound } from "next/navigation";
 import { getAppearanceById } from "@lib/db/queries";
+import { formatDate } from "@lib/utils/format-date";
 import type { AppearanceRow } from "@lib/db/types";
 import type { TranscriptViewerProps } from "./types";
 import { TranscriptViewer } from "./TranscriptViewer";
-
-function formatDate(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 function extractYoutubeId(url: string): string | null {
   try {

@@ -190,20 +190,29 @@ export async function reprocessBullets(id: string): Promise<BulletsStepOutput> {
     throw new Error(`No cleaned_transcript for appearance ${id}`);
   }
 
+  // Split on raw_transcript (section headings are intact there), not
+  // cleaned_transcript where the LLM may have stripped/modified them.
+  // Raw chunks are used only for section filtering; cleaned_transcript
+  // is what gets sent to the bullets LLM.
   const CHUNK_THRESHOLD = 120_000;
-  const needsChunking = row.cleaned_transcript.length >= CHUNK_THRESHOLD;
+  const rawSource = row.raw_transcript ?? row.cleaned_transcript;
+  const needsChunking = rawSource.length >= CHUNK_THRESHOLD;
 
   let result: BulletsStepOutput;
   if (needsChunking) {
-    // Same split path as full ingest for long transcripts
-    const rawChunks = splitForProcessing(row.cleaned_transcript, row.sections);
+    const rawChunks = splitForProcessing(rawSource, row.sections);
+    // Re-split the cleaned transcript at the same proportional boundaries
+    const cleanedChunks = splitForProcessing(row.cleaned_transcript, row.sections);
+    // Use min length so we never index out of bounds if chunk counts differ
+    const chunkCount = Math.min(rawChunks.length, cleanedChunks.length);
     const bulletChunks = await Promise.all(
-      rawChunks.map((chunk, ci) => {
+      Array.from({ length: chunkCount }, (_, ci) => {
+        // Section filtering uses raw chunks where headings are intact
         const chunkSections = row.sections.filter((s) =>
-          chunk.includes(s.heading)
+          rawChunks[ci].includes(s.heading)
         );
         return generatePrepBullets(
-          chunk,
+          cleanedChunks[ci],
           row.entity_tags,
           chunkSections,
           row.transcript_source
