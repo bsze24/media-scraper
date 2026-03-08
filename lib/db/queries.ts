@@ -260,7 +260,11 @@ export async function writeBulletsResult(
 
   const { error } = await supabase
     .from("appearances")
-    .update({ prep_bullets: output.prep_bullets })
+    .update({
+      prep_bullets: output.prep_bullets,
+      prompt_context_snapshot: output.prompt_context_snapshot ?? null,
+      bullets_generated_at: new Date().toISOString(),
+    })
     .eq("id", id);
 
   if (error) throw error;

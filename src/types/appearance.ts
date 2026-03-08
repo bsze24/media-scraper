@@ -36,6 +36,8 @@ export interface Turn {
   speaker: string;
   text: string;
   turn_index: number;
+  section_anchor?: string;
+  corrected?: boolean;
 }
 
 export interface Appearance {
