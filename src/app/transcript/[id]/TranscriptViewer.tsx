@@ -667,10 +667,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                     const isHost = turn.role === "host";
                     const dimmed =
                       activeSpeaker && activeSpeaker !== turn.speaker;
+                    const isTurnHit =
+                      hasSearch && searchResults.turnKeys.has(`${INTRO_ANCHOR}-${ti}`);
                     return (
                       <div
                         key={ti}
-                        className="border-b border-[#f0ece5] py-2 last:border-b-0"
+                        className={`border-b border-[#f0ece5] py-2 last:border-b-0 ${
+                          isTurnHit ? "-mx-4 bg-[#eff6ff] px-4" : ""
+                        }`}
                         style={dimmed ? { opacity: 0.3 } : undefined}
                       >
                         <div
