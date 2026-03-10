@@ -1,7 +1,10 @@
-import { listAppearances, searchByFundName } from "@lib/db/queries";
+import { listAppearancesSummary, searchByFundName } from "@lib/db/queries";
 import { formatDate } from "@lib/utils/format-date";
-import type { AppearanceRow } from "@lib/db/types";
+import type { AppearanceListRow } from "@lib/db/types";
 import { SearchBar } from "./SearchBar";
+import { Pagination } from "./Pagination";
+
+const PAGE_SIZE = 20;
 
 const STATUS_COLORS: Record<string, string> = {
   complete: "bg-green-100 text-green-800",
@@ -12,7 +15,7 @@ const STATUS_COLORS: Record<string, string> = {
   analyzing: "bg-blue-100 text-blue-800",
 };
 
-function AppearanceRow({ row }: { row: AppearanceRow }) {
+function AppearanceTableRow({ row }: { row: AppearanceListRow }) {
   const speakers = (row.speakers ?? [])
     .map((s) => s.name)
     .filter(Boolean)
@@ -30,7 +33,7 @@ function AppearanceRow({ row }: { row: AppearanceRow }) {
         </a>
       </td>
       <td className="py-2 pr-3 text-xs text-zinc-500">{row.source_name ?? "—"}</td>
-      <td className="py-2 pr-3 text-xs text-zinc-500">{formatDate(row.appearance_date)}</td>
+      <td className="py-2 pr-3 text-xs text-zinc-500">{formatDate(row.appearance_date) || "—"}</td>
       <td className="py-2 pr-3 text-xs text-zinc-500">{speakers || "—"}</td>
       <td className="py-2 pr-3">
         <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_COLORS[row.processing_status] ?? "bg-zinc-100 text-zinc-600"}`}>
@@ -45,21 +48,34 @@ function AppearanceRow({ row }: { row: AppearanceRow }) {
 export default async function SearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; page?: string }>;
 }) {
-  const { q } = await searchParams;
+  const { q, page: pageParam } = await searchParams;
   const query = q?.trim() ?? "";
+  const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
 
-  const rows: AppearanceRow[] = query
-    ? await searchByFundName(query)
-    : await listAppearances();
+  let rows: AppearanceListRow[];
+  let total: number;
+
+  if (query) {
+    // Search filters to complete-only (non-complete have no entity_tags to search)
+    const results = await searchByFundName(query);
+    rows = results;
+    total = results.length;
+  } else {
+    const result = await listAppearancesSummary({ page, pageSize: PAGE_SIZE });
+    rows = result.rows;
+    total = result.total;
+  }
+
+  const totalPages = Math.ceil(total / PAGE_SIZE);
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
       <h1 className="mb-1 text-2xl font-bold text-zinc-900 dark:text-zinc-100">
         All Appearances
       </h1>
-      <p className="mb-6 text-sm text-zinc-500">{rows.length} total</p>
+      <p className="mb-6 text-sm text-zinc-500">{total} total</p>
 
       <SearchBar initialQuery={query} />
 
@@ -77,7 +93,7 @@ export default async function SearchPage({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <AppearanceRow key={row.id} row={row} />
+              <AppearanceTableRow key={row.id} row={row} />
             ))}
           </tbody>
         </table>
@@ -88,6 +104,10 @@ export default async function SearchPage({
           </p>
         )}
       </div>
+
+      {!query && totalPages > 1 && (
+        <Pagination currentPage={page} totalPages={totalPages} />
+      )}
     </main>
   );
 }
