@@ -6,15 +6,6 @@ import { Pagination } from "./Pagination";
 
 const PAGE_SIZE = 20;
 
-const STATUS_COLORS: Record<string, string> = {
-  complete: "bg-green-100 text-green-800",
-  failed: "bg-red-100 text-red-800",
-  queued: "bg-zinc-100 text-zinc-600",
-  extracting: "bg-yellow-100 text-yellow-800",
-  cleaning: "bg-yellow-100 text-yellow-800",
-  analyzing: "bg-blue-100 text-blue-800",
-};
-
 function AppearanceTableRow({ row }: { row: AppearanceListRow }) {
   const speakers = (row.speakers ?? [])
     .map((s) => s.name)
@@ -35,11 +26,6 @@ function AppearanceTableRow({ row }: { row: AppearanceListRow }) {
       <td className="py-2 pr-3 text-xs text-zinc-500">{row.source_name ?? "—"}</td>
       <td className="py-2 pr-3 text-xs text-zinc-500">{formatDate(row.appearance_date) || "—"}</td>
       <td className="py-2 pr-3 text-xs text-zinc-500">{speakers || "—"}</td>
-      <td className="py-2 pr-3">
-        <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_COLORS[row.processing_status] ?? "bg-zinc-100 text-zinc-600"}`}>
-          {row.processing_status}
-        </span>
-      </td>
       <td className="py-2 text-xs text-zinc-500 text-right">{bulletCount}</td>
     </tr>
   );
@@ -88,7 +74,6 @@ export default async function SearchPage({
               <th className="pb-2 pr-3">Source</th>
               <th className="pb-2 pr-3">Date</th>
               <th className="pb-2 pr-3">Speakers</th>
-              <th className="pb-2 pr-3">Status</th>
               <th className="pb-2 text-right">Bullets</th>
             </tr>
           </thead>
