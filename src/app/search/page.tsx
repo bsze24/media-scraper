@@ -58,12 +58,13 @@ export default async function SearchPage({
   let total: number;
 
   if (query) {
-    // Search filters to complete-only (non-complete have no entity_tags to search)
+    // searchByFundName filters to complete-only (non-complete have no entity_tags/tsvector)
     const results = await searchByFundName(query);
     rows = results;
     total = results.length;
   } else {
-    const result = await listAppearancesSummary({ page, pageSize: PAGE_SIZE });
+    // Match searchByFundName's complete-only filter so rows don't appear/vanish on search
+    const result = await listAppearancesSummary({ page, pageSize: PAGE_SIZE, status: "complete" });
     rows = result.rows;
     total = result.total;
   }

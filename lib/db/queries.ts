@@ -300,17 +300,23 @@ export async function invalidateFundOverviewCache(
 export async function listAppearancesSummary(options?: {
   page?: number;
   pageSize?: number;
+  status?: ProcessingStatus;
 }): Promise<{ rows: AppearanceListRow[]; total: number }> {
   const supabase = createServerClient();
   const page = options?.page ?? 1;
   const pageSize = options?.pageSize ?? 20;
   const offset = (page - 1) * pageSize;
 
-  const { data, error, count } = await supabase
+  let query = supabase
     .from("appearances")
     .select(LIST_COLUMNS, { count: "exact" })
-    .order("created_at", { ascending: false })
-    .range(offset, offset + pageSize - 1);
+    .order("created_at", { ascending: false });
+
+  if (options?.status) {
+    query = query.eq("processing_status", options.status);
+  }
+
+  const { data, error, count } = await query.range(offset, offset + pageSize - 1);
 
   if (error) throw error;
   return { rows: (data ?? []) as AppearanceListRow[], total: count ?? 0 };
