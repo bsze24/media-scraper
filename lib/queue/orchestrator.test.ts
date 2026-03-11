@@ -126,6 +126,7 @@ import {
   processAppearance,
   processBatch,
   processOne,
+  reprocessBullets,
 } from "./orchestrator";
 
 // ---------------------------------------------------------------------------
@@ -364,6 +365,98 @@ describe("processOne", () => {
 
     const result = await processOne("row-1");
     expect(result).toEqual({ success: false, error: "boom" });
+  });
+});
+
+describe("reprocessBullets", () => {
+  const completeRow = makeRow({
+    processing_status: "complete",
+    title: "Test Episode",
+    cleaned_transcript: "cleaned text",
+    entity_tags: { fund_names: [{ name: "Apollo", aliases: [], type: "primary" }] },
+    sections: [{ heading: "Intro", anchor: "intro" }],
+    transcript_source: "colossus",
+  });
+
+  it("calls generatePrepBullets with correct args from DB row", async () => {
+    mockGetAppearanceById.mockResolvedValue(completeRow);
+    mockGeneratePrepBullets.mockResolvedValue({
+      prep_bullets: { bullets: [{ text: "b1" }], rowspace_angles: [] },
+      prompt_context_snapshot: "snapshot",
+    });
+    mockExtractFundNames.mockReturnValue(["Apollo"]);
+
+    await reprocessBullets("row-1");
+
+    expect(mockGeneratePrepBullets).toHaveBeenCalledWith(
+      "cleaned text",
+      { fund_names: [{ name: "Apollo", aliases: [], type: "primary" }] },
+      [{ heading: "Intro", anchor: "intro" }],
+      "colossus"
+    );
+    expect(mockWriteBulletsResult).toHaveBeenCalledWith(
+      "row-1",
+      {
+        prep_bullets: { bullets: [{ text: "b1" }], rowspace_angles: [] },
+        prompt_context_snapshot: "snapshot",
+      },
+      { force: true }
+    );
+    expect(mockInvalidateFundOverviewCache).toHaveBeenCalledWith(["Apollo"]);
+  });
+
+  it("does not call scraping, cleaning, or entity extraction", async () => {
+    mockGetAppearanceById.mockResolvedValue(completeRow);
+    mockGeneratePrepBullets.mockResolvedValue({
+      prep_bullets: { bullets: [] },
+    });
+    mockExtractFundNames.mockReturnValue([]);
+
+    await reprocessBullets("row-1");
+
+    expect(mockExtract).not.toHaveBeenCalled();
+    expect(mockCleanTranscript).not.toHaveBeenCalled();
+    expect(mockExtractEntities).not.toHaveBeenCalled();
+  });
+
+  it("throws if cleaned_transcript is null", async () => {
+    mockGetAppearanceById.mockResolvedValue(
+      makeRow({
+        processing_status: "complete",
+        cleaned_transcript: null,
+        entity_tags: { fund_names: [] },
+      })
+    );
+
+    await expect(reprocessBullets("row-1")).rejects.toThrow(
+      "No cleaned_transcript"
+    );
+  });
+
+  it("throws if entity_tags is empty", async () => {
+    mockGetAppearanceById.mockResolvedValue(
+      makeRow({
+        processing_status: "complete",
+        cleaned_transcript: "text",
+        entity_tags: {},
+      })
+    );
+
+    await expect(reprocessBullets("row-1")).rejects.toThrow(
+      "No entity_tags"
+    );
+  });
+
+  it("does not change processing_status", async () => {
+    mockGetAppearanceById.mockResolvedValue(completeRow);
+    mockGeneratePrepBullets.mockResolvedValue({
+      prep_bullets: { bullets: [] },
+    });
+    mockExtractFundNames.mockReturnValue([]);
+
+    await reprocessBullets("row-1");
+
+    expect(mockUpdateProcessingStatus).not.toHaveBeenCalled();
   });
 });
 

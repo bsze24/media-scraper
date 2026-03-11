@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkAdminToken, unauthorizedResponse } from "@lib/api/auth";
 import { reprocessBullets } from "@lib/queue/orchestrator";
 
+export const maxDuration = 120;
+
 export async function POST(req: NextRequest) {
   if (!checkAdminToken(req)) {
     return unauthorizedResponse();
@@ -27,7 +29,7 @@ export async function POST(req: NextRequest) {
 
   try {
     await reprocessBullets(appearanceId);
-    return NextResponse.json({ id: appearanceId, status: "reprocessed" });
+    return NextResponse.json({ success: true, appearanceId });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const status = message.includes("not found") ? 404 : 409;
