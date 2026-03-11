@@ -12,6 +12,9 @@ import type {
 import type { ProcessingStatus, EntityTags } from "@/types/appearance";
 
 // Summary columns for list views — avoids fetching full transcripts, entity_tags, etc.
+// NOTE: prep_bullets is included because the UI needs bullet count. It's heavier than
+// ideal but Supabase doesn't support computed columns in .select(). Acceptable until
+// bullet count exceeds ~20 per row or corpus exceeds ~200 rows.
 const LIST_COLUMNS =
   "id, title, source_name, appearance_date, speakers, processing_status, prep_bullets" as const;
 

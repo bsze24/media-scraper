@@ -60,9 +60,11 @@ export default async function SearchPage({
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
       <h1 className="mb-1 text-2xl font-bold text-zinc-900 dark:text-zinc-100">
-        All Appearances
+        {query ? "Search Results" : "All Appearances"}
       </h1>
-      <p className="mb-6 text-sm text-zinc-500">{total} total</p>
+      <p className="mb-6 text-sm text-zinc-500">
+        {query ? `${total} result${total === 1 ? "" : "s"} for "${query}"` : `${total} total`}
+      </p>
 
       <SearchBar initialQuery={query} />
 
