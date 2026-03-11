@@ -4,30 +4,12 @@ import { checkAdminToken, unauthorizedResponse } from "@lib/api/auth";
 import { listAppearances } from "@lib/db/queries";
 import { reprocessBullets } from "@lib/queue/orchestrator";
 
-async function runBulkReprocess(
-  ids: string[]
-): Promise<{ completed: number; failed: number }> {
-  const limit = pLimit(2);
-  let completed = 0;
-  let failed = 0;
+export const maxDuration = 300;
 
-  await Promise.all(
-    ids.map((id) =>
-      limit(async () => {
-        try {
-          await reprocessBullets(id);
-          completed++;
-          console.log(`[bulk-bullets] Completed ${id} (${completed + failed}/${ids.length})`);
-        } catch (err) {
-          failed++;
-          const msg = err instanceof Error ? err.message : String(err);
-          console.error(`[bulk-bullets] Failed ${id}: ${msg}`);
-        }
-      })
-    )
-  );
-
-  return { completed, failed };
+interface BulkError {
+  id: string;
+  title: string | null;
+  error: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -36,23 +18,38 @@ export async function POST(req: NextRequest) {
   }
 
   const appearances = await listAppearances({ status: "complete" });
-  const ids = appearances.map((a) => a.id);
 
-  if (ids.length === 0) {
-    return NextResponse.json({ status: "no_work", total: 0 });
+  if (appearances.length === 0) {
+    return NextResponse.json({ total: 0, succeeded: 0, failed: 0, errors: [] });
   }
 
-  // WARNING: fire-and-forget — this promise will be killed on Vercel after
-  // response sends. Local dev only until job queue is wired (tech debt #14).
-  // Replace with Inngest, BullMQ, or Supabase-backed queue before deploying.
-  const promise = runBulkReprocess(ids);
-  promise
-    .then((r) =>
-      console.log(
-        `[bulk-bullets] Done: ${r.completed} completed, ${r.failed} failed`
-      )
-    )
-    .catch((e) => console.error(`[bulk-bullets] Fatal:`, e));
+  const total = appearances.length;
+  const limit = pLimit(5);
+  let succeeded = 0;
+  let failed = 0;
+  const errors: BulkError[] = [];
 
-  return NextResponse.json({ status: "started", total: ids.length });
+  console.log(`[bulk] starting: ${total} appearances to reprocess`);
+
+  await Promise.all(
+    appearances.map((appearance, i) =>
+      limit(async () => {
+        const title = appearance.title ?? appearance.id;
+        console.log(`[bulk] processing appearance ${i + 1} of ${total}: ${title}`);
+        try {
+          await reprocessBullets(appearance.id);
+          succeeded++;
+        } catch (err) {
+          failed++;
+          const msg = err instanceof Error ? err.message : String(err);
+          errors.push({ id: appearance.id, title: appearance.title, error: msg });
+          console.error(`[bulk] failed: ${appearance.id} — ${msg}`);
+        }
+      })
+    )
+  );
+
+  console.log(`[bulk] complete: ${succeeded} succeeded, ${failed} failed`);
+
+  return NextResponse.json({ total, succeeded, failed, errors });
 }

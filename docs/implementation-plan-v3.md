@@ -370,7 +370,7 @@ Transcript viewer (/transcript/[id]) — PRIMARY PRODUCT SURFACE
 - Chunk-level `Promise.all` parallelization for clean/entities/bullets steps
 - `reprocessBullets()` — bullets-only reprocess mode (skips extract/clean/entities, reuses existing data)
 - `POST /api/process/bullets` — single-appearance bullet regeneration
-- `POST /api/process/bullets/bulk` — fire-and-forget bulk regeneration with `p-limit(2)` concurrency cap
+- `POST /api/process/bullets/bulk` — synchronous bulk regeneration with `p-limit(5)` concurrency cap, holds connection until complete
 - `prompt_context_snapshot` column — snapshots Rowspace business context at bullet generation time
 - `bullets_generated_at` column — records when bullets were last generated
 - `ROWSPACE_BUSINESS_CONTEXT` extracted as separate constant for snapshotting
@@ -474,7 +474,7 @@ Trigger: double-click, or E shortcut when turn is focused.
 | 11 | Responsive layout — TOC collapses to drawer, video panel hides | P2 | At <1024px breakpoint |
 | 12 | Bullet tag field — add category tags to bullets prompt | P2 | After prompt quality review |
 | 13 | `prompt_context_version` (INT) column — surface stale bullet indicator on AppearanceCard when prompt version changes | P2 | Phase 2/3 |
-| 14 | Proper job queue for bulk operations — `POST /api/process/bullets/bulk` uses fire-and-forget (promise killed on Vercel after response sends). Replace with Inngest, BullMQ, or Supabase-backed queue before production deploy | P1 | Before production deploy |
+| 14 | Proper job queue for bulk operations — `POST /api/process/bullets/bulk` holds HTTP connection (maxDuration=300s). Acceptable until corpus >100 appearances or multiple users; replace with Inngest, BullMQ, or Supabase-backed queue | P3 | Before corpus >100 |
 | 15 | Prompt context in Notion — separate page per prompt type, fetched at ingestion, context portion snapshotted. Prompt logic stays in code. Per-type version tracking via `prompt_context_version` | P2 | Phase 2/3 |
 
 ---

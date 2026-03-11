@@ -189,51 +189,77 @@ export async function reprocessBullets(id: string): Promise<BulletsStepOutput> {
   if (!row.cleaned_transcript) {
     throw new Error(`No cleaned_transcript for appearance ${id}`);
   }
-
-  // Split on raw_transcript (section headings are intact there), not
-  // cleaned_transcript where the LLM may have stripped/modified them.
-  // Raw chunks are used only for section filtering; cleaned_transcript
-  // is what gets sent to the bullets LLM.
-  const CHUNK_THRESHOLD = 120_000;
-  const rawSource = row.raw_transcript ?? row.cleaned_transcript;
-  const needsChunking = rawSource.length >= CHUNK_THRESHOLD;
-
-  let result: BulletsStepOutput;
-  if (needsChunking) {
-    const rawChunks = splitForProcessing(rawSource, row.sections);
-    // Re-split the cleaned transcript at the same proportional boundaries
-    const cleanedChunks = splitForProcessing(row.cleaned_transcript, row.sections);
-    // Use min length so we never index out of bounds if chunk counts differ
-    const chunkCount = Math.min(rawChunks.length, cleanedChunks.length);
-    const bulletChunks = await Promise.all(
-      Array.from({ length: chunkCount }, (_, ci) => {
-        // Section filtering uses raw chunks where headings are intact
-        const chunkSections = row.sections.filter((s) =>
-          rawChunks[ci].includes(s.heading)
-        );
-        return generatePrepBullets(
-          cleanedChunks[ci],
-          row.entity_tags,
-          chunkSections,
-          row.transcript_source
-        );
-      })
-    );
-    result = {
-      prep_bullets: mergePrepBullets(bulletChunks.map((b) => b.prep_bullets)),
-      prompt_context_snapshot: bulletChunks[0]?.prompt_context_snapshot,
-    };
-  } else {
-    result = await generatePrepBullets(
-      row.cleaned_transcript,
-      row.entity_tags,
-      row.sections,
-      row.transcript_source
-    );
+  if (!row.entity_tags || Object.keys(row.entity_tags).length === 0) {
+    throw new Error(`No entity_tags for appearance ${id}`);
   }
 
-  await writeBulletsResult(id, result, { force: true });
-  return result;
+  const title = row.title ?? id;
+  console.log(`[reprocessBullets] starting: ${title}`);
+
+  try {
+    // Split on raw_transcript (section headings are intact there), not
+    // cleaned_transcript where the LLM may have stripped/modified them.
+    // Raw chunks are used only for section filtering; cleaned_transcript
+    // is what gets sent to the bullets LLM.
+    const CHUNK_THRESHOLD = 120_000;
+    const rawSource = row.raw_transcript ?? row.cleaned_transcript;
+    const needsChunking = rawSource.length >= CHUNK_THRESHOLD;
+
+    let result: BulletsStepOutput;
+    if (needsChunking) {
+      const rawChunks = splitForProcessing(rawSource, row.sections);
+      // Re-split the cleaned transcript at the same proportional boundaries
+      const cleanedChunks = splitForProcessing(row.cleaned_transcript, row.sections);
+      // Use min length so we never index out of bounds if chunk counts differ
+      const chunkCount = Math.min(rawChunks.length, cleanedChunks.length);
+      const bulletChunks = await Promise.all(
+        Array.from({ length: chunkCount }, (_, ci) => {
+          // Section filtering uses raw chunks where headings are intact
+          const chunkSections = row.sections.filter((s) =>
+            rawChunks[ci].includes(s.heading)
+          );
+          return generatePrepBullets(
+            cleanedChunks[ci],
+            row.entity_tags,
+            chunkSections,
+            row.transcript_source
+          );
+        })
+      );
+      result = {
+        prep_bullets: mergePrepBullets(bulletChunks.map((b) => b.prep_bullets)),
+        prompt_context_snapshot: bulletChunks[0]?.prompt_context_snapshot,
+      };
+    } else {
+      result = await generatePrepBullets(
+        row.cleaned_transcript,
+        row.entity_tags,
+        row.sections,
+        row.transcript_source
+      );
+    }
+
+    await writeBulletsResult(id, result, { force: true });
+
+    // Cache invalidation is best-effort — bullets are already persisted
+    try {
+      const fundNames = extractFundNames(row.entity_tags);
+      await invalidateFundOverviewCache(fundNames);
+    } catch (cacheErr) {
+      console.error(
+        `[reprocessBullets] cache invalidation failed for ${id}:`,
+        cacheErr instanceof Error ? cacheErr.message : cacheErr
+      );
+    }
+
+    console.log(`[reprocessBullets] complete: ${title}`);
+    return result;
+  } catch (err) {
+    console.error(
+      `[reprocessBullets] failed: ${id} — ${err instanceof Error ? err.message : String(err)}`
+    );
+    throw err;
+  }
 }
 
 export async function processBatch(
