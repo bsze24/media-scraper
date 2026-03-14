@@ -96,6 +96,7 @@ function transformAppearance(row: AppearanceRow): TranscriptViewerProps["appeara
     turns,
     prep_bullets: prepBullets,
     bullets_generated_at: row.bullets_generated_at,
+    transcript_char_count: row.cleaned_transcript?.length ?? 0,
   };
 }
 

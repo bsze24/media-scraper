@@ -1,22 +1,48 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { regenerateBullets } from "@/app/actions";
+
+// Sonnet 4: $3/MTok input, $15/MTok output
+const INPUT_COST_PER_TOKEN = 3 / 1_000_000;
+const OUTPUT_COST_PER_TOKEN = 15 / 1_000_000;
+const PROMPT_OVERHEAD_CHARS = 18_000; // system prompt + entity_tags + sections JSON
+const ESTIMATED_OUTPUT_TOKENS = 3_000; // typical bullets response
+const CHARS_PER_TOKEN = 4;
+
+function estimateCost(transcriptCharCount: number): {
+  inputTokens: number;
+  outputTokens: number;
+  totalCost: number;
+} {
+  const inputTokens = Math.ceil(
+    (transcriptCharCount + PROMPT_OVERHEAD_CHARS) / CHARS_PER_TOKEN
+  );
+  const outputTokens = ESTIMATED_OUTPUT_TOKENS;
+  const totalCost =
+    inputTokens * INPUT_COST_PER_TOKEN +
+    outputTokens * OUTPUT_COST_PER_TOKEN;
+  return { inputTokens, outputTokens, totalCost };
+}
 
 export function RegenerateBulletsButton({
   appearanceId,
   bulletsGeneratedAt,
+  transcriptCharCount,
 }: {
   appearanceId: string;
   bulletsGeneratedAt: string | null;
+  transcriptCharCount: number;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
-  function handleClick() {
+  const handleConfirm = useCallback(() => {
+    setShowConfirm(false);
     setError(null);
     startTransition(async () => {
       const result = await regenerateBullets(appearanceId);
@@ -28,13 +54,16 @@ export function RegenerateBulletsButton({
         setError(result.error ?? "Unknown error");
       }
     });
-  }
+  }, [appearanceId, router]);
+
+  const { inputTokens, outputTokens, totalCost } =
+    estimateCost(transcriptCharCount);
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="relative flex items-center gap-3">
       <button
-        onClick={handleClick}
-        disabled={isPending}
+        onClick={() => setShowConfirm(true)}
+        disabled={isPending || showConfirm}
         className="inline-flex items-center gap-1.5 rounded border border-[#e0dbd2] px-2.5 py-1 font-[family-name:var(--font-source-sans)] text-[11px] text-[#999] transition-colors hover:border-[#bbb] hover:text-[#555] disabled:cursor-not-allowed disabled:opacity-50"
       >
         {isPending ? (
@@ -65,6 +94,33 @@ export function RegenerateBulletsButton({
         <span className="font-[family-name:var(--font-source-sans)] text-[11px] text-red-500">
           {error}
         </span>
+      )}
+
+      {showConfirm && (
+        <div className="absolute top-full right-0 z-50 mt-1.5 w-72 rounded border border-[#e0dbd2] bg-white p-3 shadow-lg font-[family-name:var(--font-source-sans)]">
+          <p className="mb-2 text-[12px] font-medium text-[#333]">
+            Regenerate bullets?
+          </p>
+          <div className="mb-3 space-y-0.5 text-[10.5px] text-[#888]">
+            <p>~{(inputTokens / 1000).toFixed(1)}k input tokens + ~{(outputTokens / 1000).toFixed(1)}k output tokens</p>
+            <p>Estimated cost: ${totalCost.toFixed(3)}</p>
+            <p>Takes ~60 seconds</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleConfirm}
+              className="rounded border border-[#c9a84c] bg-[#c9a84c] px-3 py-1 text-[11px] font-medium text-white transition-colors hover:bg-[#b8922a]"
+            >
+              Confirm
+            </button>
+            <button
+              onClick={() => setShowConfirm(false)}
+              className="rounded border border-[#e0dbd2] px-3 py-1 text-[11px] text-[#999] transition-colors hover:border-[#bbb] hover:text-[#555]"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

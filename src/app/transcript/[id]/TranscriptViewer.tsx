@@ -123,6 +123,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     turns,
     prep_bullets,
     bullets_generated_at,
+    transcript_char_count,
   } = appearance;
 
   const allAnchors = useMemo(() => sections.map((s) => s.anchor), [sections]);
@@ -384,6 +385,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               <RegenerateBulletsButton
                 appearanceId={appearance.id}
                 bulletsGeneratedAt={bullets_generated_at}
+                transcriptCharCount={transcript_char_count}
               />
             </div>
             <div className="overflow-hidden rounded border border-[#e8e3da] bg-white">
