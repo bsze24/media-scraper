@@ -313,7 +313,7 @@ export async function listAppearancesSummary(options?: {
   let query = supabase
     .from("appearances")
     .select(LIST_COLUMNS, { count: "exact" })
-    .order("created_at", { ascending: false });
+    .order("appearance_date", { ascending: false });
 
   if (options?.status) {
     query = query.eq("processing_status", options.status);
