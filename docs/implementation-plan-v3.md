@@ -477,7 +477,7 @@ Trigger: double-click, or E shortcut when turn is focused.
 | 12 | Bullet tag field — add category tags to bullets prompt | P2 | After prompt quality review |
 | 13 | `prompt_context_version` (INT) column — surface stale bullet indicator on AppearanceCard when prompt version changes | P2 | Phase 2/3 |
 | 14 | Proper job queue for bulk operations — `POST /api/process/bullets/bulk` holds HTTP connection (maxDuration=300s). Acceptable until corpus >100 appearances or multiple users; replace with Inngest, BullMQ, or Supabase-backed queue | P3 | Before corpus >100 |
-| 15 | Prompt context in Notion — separate page per prompt type, fetched at ingestion, context portion snapshotted. Prompt logic stays in code. Per-type version tracking via `prompt_context_version` | P2 | Phase 2/3 |
+| 15 | Prompt context in Notion — separate page per prompt type, fetched at ingestion, context portion snapshotted. Prompt logic stays in code. Per-type version tracking via `prompt_context_version`. "Regenerate Bullets" button should offer a prompt template picker (dropdown of available Notion prompt pages) so prompt iteration is one-click: pick template → regenerate → compare output | P2 | Phase 2/3 |
 | 16 | `prep_bullets` JSONB fetched in lightweight list projection just for bullet count — `LIST_COLUMNS` includes full `prep_bullets` but UI only reads `prep_bullets?.bullets?.length`. Fix: drop `prep_bullets` from `LIST_COLUMNS` and either add a Supabase RPC/raw SQL returning `jsonb_array_length(prep_bullets->'bullets') as bullet_count`, use a computed column, or drop the bullet count from the list view if it's not essential. Acceptable until ~200 rows or ~20 bullets/row. | P3 | When list view performance degrades |
 
 ---
