@@ -78,3 +78,15 @@ export interface BulletsStepOutput {
   prep_bullets: PrepBulletsData;
   prompt_context_snapshot?: string;
 }
+
+/** Lightweight projection for list views — omits full transcripts and large JSONB */
+export type AppearanceListRow = Pick<
+  AppearanceRow,
+  | "id"
+  | "title"
+  | "source_name"
+  | "appearance_date"
+  | "speakers"
+  | "processing_status"
+  | "prep_bullets"
+>;

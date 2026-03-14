@@ -88,6 +88,9 @@ Never strip these logs to "clean up" — they are the primary debugging signal f
 - Verify Supabase queries use parameterized inputs (no string interpolation)
 - Verify pipeline functions have console.log bookends
 
+## Communication style
+When correcting a mistake or changing approach, briefly explain *why* (e.g., "one branch per PR because...") so I learn the underlying principle, not just the fix.
+
 ## Code Style
 - TypeScript strict mode
 - Functional components with hooks
@@ -110,3 +113,5 @@ Required in .env.local:
   ANTHROPIC_API_KEY             — Claude API key
   GOOGLE_AUTH_TOKEN             — For Colossus scraper (TBD — may be cookie or OAuth token)
   ADMIN_TOKEN                   — Auth header for /api/process/* routes (prevents open LLM proxy)
+
+  

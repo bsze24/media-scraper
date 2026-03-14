@@ -1,6 +1,7 @@
 import { createServerClient } from "./client";
 import type {
   AppearanceRow,
+  AppearanceListRow,
   CreateAppearanceInput,
   ManualIngestInput,
   ExtractStepOutput,
@@ -9,6 +10,13 @@ import type {
   BulletsStepOutput,
 } from "./types";
 import type { ProcessingStatus, EntityTags } from "@/types/appearance";
+
+// Summary columns for list views — avoids fetching full transcripts, entity_tags, etc.
+// NOTE: prep_bullets is included because the UI needs bullet count. It's heavier than
+// ideal but Supabase doesn't support computed columns in .select(). Acceptable until
+// bullet count exceeds ~20 per row or corpus exceeds ~200 rows.
+const LIST_COLUMNS =
+  "id, title, source_name, appearance_date, speakers, processing_status, prep_bullets" as const;
 
 // ---------------------------------------------------------------------------
 // Read
@@ -289,34 +297,64 @@ export async function invalidateFundOverviewCache(
 }
 
 // ---------------------------------------------------------------------------
+// List (lightweight projection for UI)
+// ---------------------------------------------------------------------------
+
+export async function listAppearancesSummary(options?: {
+  page?: number;
+  pageSize?: number;
+  status?: ProcessingStatus;
+}): Promise<{ rows: AppearanceListRow[]; total: number }> {
+  const supabase = createServerClient();
+  const page = options?.page ?? 1;
+  const pageSize = options?.pageSize ?? 20;
+  const offset = (page - 1) * pageSize;
+
+  let query = supabase
+    .from("appearances")
+    .select(LIST_COLUMNS, { count: "exact" })
+    .order("appearance_date", { ascending: false });
+
+  if (options?.status) {
+    query = query.eq("processing_status", options.status);
+  }
+
+  const { data, error, count } = await query.range(offset, offset + pageSize - 1);
+
+  if (error) throw error;
+  return { rows: (data ?? []) as AppearanceListRow[], total: count ?? 0 };
+}
+
+// ---------------------------------------------------------------------------
 // Search
 // ---------------------------------------------------------------------------
 
 export async function searchByFundName(
   fundName: string
-): Promise<AppearanceRow[]> {
+): Promise<AppearanceListRow[]> {
   const supabase = createServerClient();
 
   // Tier 1a: Entity tag containment — fund name in entity_tags.fund_names
   // Tier 1b: Entity tag containment — fund name in aliases
   // Tier 2: Full-text search on transcript
-  // All three queries are independent — run in parallel
+  // All three queries are independent — run in parallel.
+  // Search only covers complete appearances (non-complete have no entity_tags).
   const [nameResult, aliasResult, ftsResult] = await Promise.all([
     supabase
       .from("appearances")
-      .select("*")
+      .select(LIST_COLUMNS)
       .contains("entity_tags", { fund_names: [{ name: fundName }] })
       .eq("processing_status", "complete")
       .order("appearance_date", { ascending: false }),
     supabase
       .from("appearances")
-      .select("*")
+      .select(LIST_COLUMNS)
       .contains("entity_tags", { fund_names: [{ aliases: [fundName] }] })
       .eq("processing_status", "complete")
       .order("appearance_date", { ascending: false }),
     supabase
       .from("appearances")
-      .select("*")
+      .select(LIST_COLUMNS)
       .textSearch("transcript_search_vector", fundName, { type: "plain" })
       .eq("processing_status", "complete")
       .order("appearance_date", { ascending: false }),
@@ -331,11 +369,11 @@ export async function searchByFundName(
 
   // Merge & deduplicate — entity tag matches first (higher confidence)
   const seen = new Set<string>();
-  const results: AppearanceRow[] = [];
+  const results: AppearanceListRow[] = [];
   for (const row of [...(tagHits ?? []), ...(ftsHits ?? [])]) {
     if (!seen.has(row.id)) {
       seen.add(row.id);
-      results.push(row as AppearanceRow);
+      results.push(row as AppearanceListRow);
     }
   }
 
