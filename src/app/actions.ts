@@ -10,7 +10,7 @@ import {
   updateProcessingStatus,
 } from "@lib/db/queries";
 import { detectTranscriptSource } from "@lib/scrapers/registry";
-import { processOne } from "@lib/queue/orchestrator";
+import { processOne, reprocessBullets } from "@lib/queue/orchestrator";
 import type { ProcessingStatus } from "@/types/appearance";
 
 async function requireAdmin(): Promise<void> {
@@ -93,6 +93,18 @@ export async function getQueueStatus(): Promise<
   Record<ProcessingStatus | "total", number>
 > {
   return countByStatus();
+}
+
+export async function regenerateBullets(
+  appearanceId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await reprocessBullets(appearanceId);
+    return { success: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, error: message };
+  }
 }
 
 export async function getAllAppearances(): Promise<

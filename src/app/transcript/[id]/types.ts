@@ -30,5 +30,6 @@ export interface TranscriptViewerProps {
         section_anchor: string | null;
       }>;
     }>;
+    bullets_generated_at: string | null;
   };
 }

@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { TranscriptViewerProps } from "./types";
+import { RegenerateBulletsButton } from "./RegenerateBulletsButton";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -121,6 +122,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     sections,
     turns,
     prep_bullets,
+    bullets_generated_at,
   } = appearance;
 
   const allAnchors = useMemo(() => sections.map((s) => s.anchor), [sections]);
@@ -375,8 +377,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         {/* KEY TAKEAWAYS */}
         {prep_bullets.length > 0 && (
           <div className="mb-8">
-            <div className="mb-2.5 font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#aaa]">
-              Key Takeaways
+            <div className="mb-2.5 flex items-center justify-between">
+              <span className="font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#aaa]">
+                Key Takeaways
+              </span>
+              <RegenerateBulletsButton
+                appearanceId={appearance.id}
+                bulletsGeneratedAt={bullets_generated_at}
+              />
             </div>
             <div className="overflow-hidden rounded border border-[#e8e3da] bg-white">
               {prep_bullets.map((b, i) => {

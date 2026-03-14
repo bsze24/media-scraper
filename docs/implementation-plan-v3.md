@@ -374,6 +374,7 @@ Transcript viewer (/transcript/[id]) — PRIMARY PRODUCT SURFACE
 - `prompt_context_snapshot` column — snapshots Rowspace business context at bullet generation time
 - `bullets_generated_at` column — records when bullets were last generated
 - `ROWSPACE_BUSINESS_CONTEXT` extracted as separate constant for snapshotting
+- "Regenerate Bullets" button on `/transcript/[id]` — calls `reprocessBullets` via Server Action, refreshes page data on completion
 
 **Search UI (Phase 1):**
 - `/search` page — server component calling `searchByFundName` directly, `SearchBar` client component
@@ -430,6 +431,7 @@ Trigger: double-click, or E shortcut when turn is focused.
 
 - Single URL submit with real-time ProcessingStatus (Supabase realtime)
 - Admin dashboard: AppearanceTable, StatsOverview, FailedItemsList, DomainMappingEditor
+- Bulk regenerate admin UI — trigger `POST /api/process/bullets/bulk` from admin dashboard with progress display (API endpoint already exists, needs frontend)
 - Fix stuck-row retry UI — "Reset to queued" for any non-complete status
 - Per-turn annotation UI for prompt feedback loop
 
