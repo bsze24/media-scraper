@@ -25,6 +25,9 @@ Deployed on Vercel.
 - docs/prd.md — full product requirements
 - docs/implementation-plan-v2.md — current build plan by phase
 
+## Protected files
+- Never use the Write tool on `docs/implementation-plan-v3.md` — always use Edit with targeted replacements.
+
 ## Architecture rules
 - All LLM processing happens at INGESTION time, never at query time.
   Lookup is pure database retrieval — instant, deterministic, no waiting for Claude.
