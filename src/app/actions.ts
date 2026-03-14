@@ -99,6 +99,7 @@ export async function regenerateBullets(
   appearanceId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    await requireAdmin();
     await reprocessBullets(appearanceId);
     return { success: true };
   } catch (err) {

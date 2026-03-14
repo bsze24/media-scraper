@@ -37,24 +37,29 @@ export function RegenerateBulletsButton({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [isRegenerating, setIsRegenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const handleConfirm = useCallback(() => {
+  const isLoading = isRegenerating || isPending;
+
+  const handleConfirm = useCallback(async () => {
     setShowConfirm(false);
     setError(null);
-    startTransition(async () => {
-      const result = await regenerateBullets(appearanceId);
-      if (result.success) {
-        setShowSuccess(true);
+    setIsRegenerating(true);
+    const result = await regenerateBullets(appearanceId);
+    setIsRegenerating(false);
+    if (result.success) {
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 2000);
+      startTransition(() => {
         router.refresh();
-        setTimeout(() => setShowSuccess(false), 2000);
-      } else {
-        setError(result.error ?? "Unknown error");
-      }
-    });
-  }, [appearanceId, router]);
+      });
+    } else {
+      setError(result.error ?? "Unknown error");
+    }
+  }, [appearanceId, router, startTransition]);
 
   const { inputTokens, outputTokens, totalCost } =
     estimateCost(transcriptCharCount);
@@ -63,10 +68,10 @@ export function RegenerateBulletsButton({
     <div className="relative flex items-center gap-3">
       <button
         onClick={() => setShowConfirm(true)}
-        disabled={isPending || showConfirm}
+        disabled={isLoading || showConfirm}
         className="inline-flex items-center gap-1.5 rounded border border-[#e0dbd2] px-2.5 py-1 font-[family-name:var(--font-source-sans)] text-[11px] text-[#999] transition-colors hover:border-[#bbb] hover:text-[#555] disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {isPending ? (
+        {isLoading && !showSuccess ? (
           <>
             <span className="inline-block h-3 w-3 animate-spin rounded-full border border-[#ccc] border-t-[#888]" />
             Regenerating…
@@ -84,7 +89,7 @@ export function RegenerateBulletsButton({
         )}
       </button>
 
-      {bulletsGeneratedAt && !isPending && !showSuccess && (
+      {bulletsGeneratedAt && !isLoading && !showSuccess && (
         <span className="font-[family-name:var(--font-source-sans)] text-[10px] text-[#bbb]">
           Generated {formatRelativeTime(bulletsGeneratedAt)}
         </span>
