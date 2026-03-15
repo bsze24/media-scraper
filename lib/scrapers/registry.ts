@@ -1,8 +1,9 @@
 import type { Scraper } from "@/types/scraper";
 import type { TranscriptSource } from "@/types/appearance";
 import { colossusScraper } from "./colossus";
+import { youtubeScraper } from "./youtube";
 
-const scrapers: Scraper[] = [colossusScraper];
+const scrapers: Scraper[] = [colossusScraper, youtubeScraper];
 
 export function getScraperForUrl(url: string): Scraper {
   const match = scrapers.find((s) => s.canHandle(url));
@@ -22,6 +23,15 @@ export function detectTranscriptSource(url: string): TranscriptSource {
 
   if (hostname === "www.colossus.com" || hostname === "colossus.com") {
     return "colossus";
+  }
+
+  if (
+    hostname === "www.youtube.com" ||
+    hostname === "youtube.com" ||
+    hostname === "youtu.be" ||
+    hostname === "m.youtube.com"
+  ) {
+    return "youtube_captions";
   }
 
   throw new Error(`Unknown transcript source for URL: ${url}`);
