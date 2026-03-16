@@ -811,7 +811,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                                 {hostExpanded || isTurnHit
                                   ? highlightText(turn.text, debouncedQuery)
                                   : summary
-                                    ? <span title="AI-generated summary">{summary}</span>
+                                    ? <span className="not-italic text-[#a8a0c0]" title="AI-generated summary">✦ {summary}</span>
                                     : hasMore
                                       ? highlightText(first, debouncedQuery)
                                       : highlightText(turn.text, debouncedQuery)
