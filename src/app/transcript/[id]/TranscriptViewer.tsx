@@ -121,6 +121,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     speakers,
     sections,
     turns,
+    has_inferred_attribution,
     prep_bullets,
     bullets_generated_at,
     transcript_char_count,
@@ -374,6 +375,13 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             </span>
           </div>
         </div>
+
+        {/* INFERRED ATTRIBUTION DISCLAIMER */}
+        {has_inferred_attribution && (
+          <p className="mb-5 font-[family-name:var(--font-source-sans)] text-[11px] text-[#aaa]">
+            Speaker labels inferred from auto-captions — may contain errors
+          </p>
+        )}
 
         {/* KEY TAKEAWAYS */}
         {prep_bullets.length > 0 && (

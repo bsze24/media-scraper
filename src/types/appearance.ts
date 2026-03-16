@@ -36,12 +36,15 @@ export interface Speaker {
   affiliation?: string;
 }
 
+export type TurnAttribution = "source" | "inferred";
+
 export interface Turn {
   speaker: string;
   text: string;
   turn_index: number;
   section_anchor?: string;
   corrected?: boolean;
+  attribution?: TurnAttribution;
 }
 
 export interface Appearance {
