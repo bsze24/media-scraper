@@ -7,6 +7,7 @@ import {
   writeCleanResult,
   writeTurns,
   writeTurnSummaries,
+  updateProcessingError,
   writeEntitiesResult,
   writeBulletsResult,
   invalidateFundOverviewCache,
@@ -346,11 +347,7 @@ export async function reprocessTurnSummaries(
   await writeTurnSummaries(id, result.summaries);
 
   // Update processing_error: set warning on mismatch, clear on success
-  const supabase = (await import("@lib/db/client")).createServerClient();
-  await supabase
-    .from("appearances")
-    .update({ processing_error: result.warning ?? null })
-    .eq("id", id);
+  await updateProcessingError(id, result.warning ?? null);
 
   console.log(`[reprocessTurnSummaries] complete: ${title} — ${result.summaries.length} summaries`);
   return result.summaries;
