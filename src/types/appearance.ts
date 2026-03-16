@@ -62,6 +62,7 @@ export interface Appearance {
   prep_bullets: PrepBulletsData;
   processing_status: ProcessingStatus;
   turns: Turn[] | null;
+  turn_summaries: Array<{ speaker: string; summary: string; turn_index: number }> | null;
   sections: SectionHeading[];
   processing_error: string | null;
   created_at: string;
