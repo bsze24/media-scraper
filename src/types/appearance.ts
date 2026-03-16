@@ -19,6 +19,10 @@ export type ProcessingStatus =
   | "complete"
   | "failed";
 
+export function isYouTubeSource(source: TranscriptSource): boolean {
+  return source === "youtube_captions" || source === "youtube_whisper";
+}
+
 export type SpeakerRole =
   | "host"
   | "guest"
