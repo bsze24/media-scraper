@@ -25,11 +25,19 @@ function parseSummariesResponse(text: string): TurnSummary[] {
     throw new Error("Turn summaries response is not an array");
   }
 
-  return raw.map((r: { turn_index?: number; speaker?: string; summary?: string }) => ({
-    speaker: r.speaker ?? "",
-    summary: r.summary ?? "",
-    turn_index: r.turn_index ?? 0,
-  }));
+  return raw
+    .filter((r: { turn_index?: number }) => {
+      if (r.turn_index == null) {
+        console.warn(`[turn-summaries] dropping entry with missing turn_index`);
+        return false;
+      }
+      return true;
+    })
+    .map((r: { turn_index: number; speaker?: string; summary?: string }) => ({
+      speaker: r.speaker ?? "",
+      summary: r.summary ?? "",
+      turn_index: r.turn_index,
+    }));
 }
 
 function findMissingTurns(

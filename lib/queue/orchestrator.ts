@@ -345,13 +345,12 @@ export async function reprocessTurnSummaries(
   const result = await generateTurnSummaries(row.turns);
   await writeTurnSummaries(id, result.summaries);
 
-  if (result.warning) {
-    const supabase = (await import("@lib/db/client")).createServerClient();
-    await supabase
-      .from("appearances")
-      .update({ processing_error: result.warning })
-      .eq("id", id);
-  }
+  // Update processing_error: set warning on mismatch, clear on success
+  const supabase = (await import("@lib/db/client")).createServerClient();
+  await supabase
+    .from("appearances")
+    .update({ processing_error: result.warning ?? null })
+    .eq("id", id);
 
   console.log(`[reprocessTurnSummaries] complete: ${title} — ${result.summaries.length} summaries`);
   return result.summaries;
