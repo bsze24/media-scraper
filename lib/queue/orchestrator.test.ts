@@ -150,10 +150,10 @@ beforeEach(() => {
   ]);
   // Default: claim always succeeds
   mockClaimForProcessing.mockResolvedValue(true);
-  // Default: turn summaries returns matching array
-  mockGenerateTurnSummaries.mockResolvedValue([
-    { speaker: "Patrick", summary: "Says hello", turn_index: 0 },
-  ]);
+  // Default: turn summaries returns matching result
+  mockGenerateTurnSummaries.mockResolvedValue({
+    summaries: [{ speaker: "Patrick", summary: "Says hello", turn_index: 0 }],
+  });
 });
 
 describe("processAppearance", () => {

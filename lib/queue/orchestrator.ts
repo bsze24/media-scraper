@@ -168,17 +168,28 @@ export async function processAppearance(id: string): Promise<void> {
 
     const turnSummariesPromise = generateTurnSummaries(currentTurns);
 
-    const [finalEntities, turnSummaries] = await Promise.all([
+    const [finalEntities, turnSummariesResult] = await Promise.all([
       entitiesPromise,
       turnSummariesPromise,
     ]);
 
     await writeEntitiesResult(id, finalEntities);
-    await writeTurnSummaries(id, turnSummaries);
+    await writeTurnSummaries(id, turnSummariesResult.summaries);
+
+    // If turn summaries were incomplete, write a structured warning to processing_error
+    // but don't fail the pipeline — partial summaries are better than none
+    if (turnSummariesResult.warning) {
+      const supabase = (await import("@lib/db/client")).createServerClient();
+      await supabase
+        .from("appearances")
+        .update({ processing_error: turnSummariesResult.warning })
+        .eq("id", id);
+    }
+
     const entityCount = (finalEntities.entity_tags.fund_names?.length ?? 0) +
       (finalEntities.entity_tags.key_people?.length ?? 0);
     console.log(`[pipeline] ✓ Entities complete — ${entityCount} entities (${stepTime()})`);
-    console.log(`[pipeline] ✓ Turn summaries complete — ${turnSummaries.length} summaries (${stepTime()})`);
+    console.log(`[pipeline] ✓ Turn summaries complete — ${turnSummariesResult.summaries.length} summaries (${stepTime()})`);
 
     // Step 4: Bullets (still "analyzing")
     console.log(`[pipeline] ▶ Step 4/5: BULLETS — ${title}`);
@@ -333,11 +344,19 @@ export async function reprocessTurnSummaries(
   const title = row.title ?? id;
   console.log(`[reprocessTurnSummaries] starting: ${title}`);
 
-  const summaries = await generateTurnSummaries(row.turns);
-  await writeTurnSummaries(id, summaries);
+  const result = await generateTurnSummaries(row.turns);
+  await writeTurnSummaries(id, result.summaries);
 
-  console.log(`[reprocessTurnSummaries] complete: ${title} — ${summaries.length} summaries`);
-  return summaries;
+  if (result.warning) {
+    const supabase = (await import("@lib/db/client")).createServerClient();
+    await supabase
+      .from("appearances")
+      .update({ processing_error: result.warning })
+      .eq("id", id);
+  }
+
+  console.log(`[reprocessTurnSummaries] complete: ${title} — ${result.summaries.length} summaries`);
+  return result.summaries;
 }
 
 export async function processBatch(

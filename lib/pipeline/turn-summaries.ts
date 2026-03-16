@@ -12,11 +12,59 @@ export interface TurnSummary {
   turn_index: number;
 }
 
-export async function generateTurnSummaries(
+export interface TurnSummariesResult {
+  summaries: TurnSummary[];
+  warning?: string;
+}
+
+function parseSummariesResponse(text: string): TurnSummary[] {
+  const json = text.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+  const raw = JSON.parse(json);
+
+  if (!Array.isArray(raw)) {
+    throw new Error("Turn summaries response is not an array");
+  }
+
+  return raw.map((r: { turn_index?: number; speaker?: string; summary?: string }) => ({
+    speaker: r.speaker ?? "",
+    summary: r.summary ?? "",
+    turn_index: r.turn_index ?? 0,
+  }));
+}
+
+function findMissingTurns(
+  turns: Turn[],
+  summaries: TurnSummary[]
+): { turn_index: number; speaker: string; textPreview: string }[] {
+  const returnedIndexes = new Set(summaries.map((s) => s.turn_index));
+  return turns
+    .filter((t) => !returnedIndexes.has(t.turn_index))
+    .map((t) => ({
+      turn_index: t.turn_index,
+      speaker: t.speaker,
+      textPreview: t.text.slice(0, 50),
+    }));
+}
+
+function logMismatch(
+  attempt: number,
+  expected: number,
+  received: number,
+  missing: { turn_index: number; speaker: string; textPreview: string }[]
+): void {
+  console.warn(
+    `[turn-summaries] attempt ${attempt} mismatch: expected ${expected}, got ${received}, missing ${missing.length} turns:`
+  );
+  for (const m of missing) {
+    console.warn(
+      `  turn_index=${m.turn_index} speaker="${m.speaker}" text="${m.textPreview}…"`
+    );
+  }
+}
+
+async function callLLM(
   turns: Turn[]
 ): Promise<TurnSummary[]> {
-  if (turns.length === 0) return [];
-
   const client = createAnthropicClient();
 
   const input = turns.map((t) => ({
@@ -24,8 +72,6 @@ export async function generateTurnSummaries(
     speaker: t.speaker,
     text: t.text,
   }));
-
-  console.log(`[turn-summaries] starting, ${turns.length} turns`);
 
   const stream = client.messages.stream(
     {
@@ -48,35 +94,43 @@ export async function generateTurnSummaries(
 
   try {
     const text = await stream.finalText();
-    console.log(`[turn-summaries] complete, ${text.length} chars`);
-
-    let raw: Array<{ turn_index: number; speaker: string; summary: string }>;
-    try {
-      const json = text.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
-      raw = JSON.parse(json);
-    } catch (e) {
-      throw new Error(
-        `Failed to parse turn summaries JSON: ${e instanceof Error ? e.message : String(e)}\nRaw response: ${text.slice(0, 500)}`
-      );
-    }
-
-    if (!Array.isArray(raw)) {
-      throw new Error(`Turn summaries response is not an array`);
-    }
-
-    // Validate length matches
-    if (raw.length !== turns.length) {
-      console.warn(
-        `[turn-summaries] length mismatch: got ${raw.length} summaries for ${turns.length} turns`
-      );
-    }
-
-    return raw.map((r) => ({
-      speaker: r.speaker ?? "",
-      summary: r.summary ?? "",
-      turn_index: r.turn_index ?? 0,
-    }));
+    console.log(`[turn-summaries] LLM response: ${text.length} chars`);
+    return parseSummariesResponse(text);
   } finally {
     clearInterval(logTimer);
   }
+}
+
+export async function generateTurnSummaries(
+  turns: Turn[]
+): Promise<TurnSummariesResult> {
+  if (turns.length === 0) return { summaries: [] };
+
+  console.log(`[turn-summaries] starting, ${turns.length} turns`);
+
+  // Attempt 1
+  let summaries = await callLLM(turns);
+  let missing = findMissingTurns(turns, summaries);
+
+  if (missing.length > 0) {
+    logMismatch(1, turns.length, summaries.length, missing);
+
+    // Retry once
+    console.log(`[turn-summaries] retrying…`);
+    summaries = await callLLM(turns);
+    missing = findMissingTurns(turns, summaries);
+
+    if (missing.length > 0) {
+      logMismatch(2, turns.length, summaries.length, missing);
+
+      const missingIndexes = missing.map((m) => m.turn_index);
+      const warning = `turn_summaries_incomplete: expected ${turns.length}, got ${summaries.length}, missing turn_indexes: [${missingIndexes.join(", ")}]`;
+      console.warn(`[turn-summaries] proceeding with partial results: ${warning}`);
+
+      return { summaries, warning };
+    }
+  }
+
+  console.log(`[turn-summaries] complete, ${summaries.length} summaries`);
+  return { summaries };
 }
