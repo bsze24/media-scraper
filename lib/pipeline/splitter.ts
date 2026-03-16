@@ -175,8 +175,8 @@ export function mergeEntityTags(chunks: EntityTags[]): EntityTags {
         if (!existing.parent && fund.parent) {
           existing.parent = fund.parent;
         }
-        if (fund.type === "primary") {
-          existing.type = "primary";
+        if (fund.type === "standalone") {
+          existing.type = "standalone";
         }
         // "primary" relevance always wins over "mentioned" or undefined
         if (fund.relevance === "primary") {

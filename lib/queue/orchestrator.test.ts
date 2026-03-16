@@ -151,7 +151,7 @@ describe("processAppearance", () => {
       cleaned_transcript: "cleaned text",
     });
     mockExtractEntities.mockResolvedValue({
-      entity_tags: { fund_names: [{ name: "Apollo", aliases: [], type: "primary" }] },
+      entity_tags: { fund_names: [{ name: "Apollo", aliases: [], type: "standalone" }] },
     });
     mockGeneratePrepBullets.mockResolvedValue({
       prep_bullets: { bullets: [], rowspace_angles: [] },
@@ -189,7 +189,7 @@ describe("processAppearance", () => {
     );
     expect(mockWriteEntitiesResult).toHaveBeenCalledWith(
       "row-1",
-      { entity_tags: { fund_names: [{ name: "Apollo", aliases: [], type: "primary" }] } },
+      { entity_tags: { fund_names: [{ name: "Apollo", aliases: [], type: "standalone" }] } },
     );
     expect(mockWriteBulletsResult).toHaveBeenCalledWith(
       "row-1",
@@ -373,7 +373,7 @@ describe("reprocessBullets", () => {
     processing_status: "complete",
     title: "Test Episode",
     cleaned_transcript: "cleaned text",
-    entity_tags: { fund_names: [{ name: "Apollo", aliases: [], type: "primary" }] },
+    entity_tags: { fund_names: [{ name: "Apollo", aliases: [], type: "standalone" }] },
     sections: [{ heading: "Intro", anchor: "intro" }],
     transcript_source: "colossus",
   });
@@ -390,7 +390,7 @@ describe("reprocessBullets", () => {
 
     expect(mockGeneratePrepBullets).toHaveBeenCalledWith(
       "cleaned text",
-      { fund_names: [{ name: "Apollo", aliases: [], type: "primary" }] },
+      { fund_names: [{ name: "Apollo", aliases: [], type: "standalone" }] },
       [{ heading: "Intro", anchor: "intro" }],
       "colossus"
     );
@@ -483,15 +483,15 @@ describe("processAppearance — chunked path", () => {
     // Entity step: re-split the cleaned text, then extract from each chunk
     mockExtractEntities
       .mockResolvedValueOnce({
-        entity_tags: { fund_names: [{ name: "Apollo", aliases: [], type: "primary" }] },
+        entity_tags: { fund_names: [{ name: "Apollo", aliases: [], type: "standalone" }] },
       })
       .mockResolvedValueOnce({
-        entity_tags: { fund_names: [{ name: "Bridgewater", aliases: [], type: "primary" }] },
+        entity_tags: { fund_names: [{ name: "Bridgewater", aliases: [], type: "standalone" }] },
       });
     mockMergeEntityTags.mockReturnValue({
       fund_names: [
-        { name: "Apollo", aliases: [], type: "primary" },
-        { name: "Bridgewater", aliases: [], type: "primary" },
+        { name: "Apollo", aliases: [], type: "standalone" },
+        { name: "Bridgewater", aliases: [], type: "standalone" },
       ],
     });
 

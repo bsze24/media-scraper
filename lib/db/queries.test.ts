@@ -172,7 +172,7 @@ describe("writeEntitiesResult", () => {
     vi.mocked(createServerClient).mockReturnValue(mockClient as any);
 
     const tags: EntityTags = {
-      fund_names: [{ name: "Apollo", aliases: [], type: "primary" }],
+      fund_names: [{ name: "Apollo", aliases: [], type: "standalone" }],
     };
 
     const result = await writeEntitiesResult("abc", { entity_tags: tags });
@@ -186,7 +186,7 @@ describe("writeEntitiesResult", () => {
     const checkChain = mockChain({
       data: {
         entity_tags: {
-          fund_names: [{ name: "Blackstone", aliases: [], type: "primary" }],
+          fund_names: [{ name: "Blackstone", aliases: [], type: "standalone" }],
         },
       },
       error: null,
@@ -199,7 +199,7 @@ describe("writeEntitiesResult", () => {
 
     const result = await writeEntitiesResult("abc", {
       entity_tags: {
-        fund_names: [{ name: "Apollo", aliases: [], type: "primary" }],
+        fund_names: [{ name: "Apollo", aliases: [], type: "standalone" }],
       },
     });
 
@@ -216,7 +216,7 @@ describe("writeEntitiesResult", () => {
     vi.mocked(createServerClient).mockReturnValue(mockClient as any);
 
     const tags: EntityTags = {
-      fund_names: [{ name: "KKR", aliases: [], type: "primary" }],
+      fund_names: [{ name: "KKR", aliases: [], type: "standalone" }],
     };
 
     const result = await writeEntitiesResult(
@@ -333,9 +333,9 @@ describe("extractFundNames", () => {
   it("extracts all fund names from entity_tags", () => {
     const tags: EntityTags = {
       fund_names: [
-        { name: "Apollo Global Management", aliases: ["Apollo"], type: "primary" },
-        { name: "Blackstone", aliases: [], type: "primary" },
-        { name: "KKR", aliases: ["Kohlberg Kravis Roberts"], type: "primary" },
+        { name: "Apollo Global Management", aliases: ["Apollo"], type: "standalone" },
+        { name: "Blackstone", aliases: [], type: "standalone" },
+        { name: "KKR", aliases: ["Kohlberg Kravis Roberts"], type: "standalone" },
       ],
     };
 
@@ -366,9 +366,9 @@ describe("extractFundNames", () => {
     // Simulate what the orchestrator does: extract names then invalidate
     const tags: EntityTags = {
       fund_names: [
-        { name: "Apollo", aliases: [], type: "primary" },
-        { name: "Blackstone", aliases: [], type: "primary" },
-        { name: "KKR", aliases: [], type: "primary" },
+        { name: "Apollo", aliases: [], type: "standalone" },
+        { name: "Blackstone", aliases: [], type: "standalone" },
+        { name: "KKR", aliases: [], type: "standalone" },
       ],
     };
     const names = extractFundNames(tags);
@@ -391,7 +391,7 @@ describe("searchByFundName", () => {
     const row = makeTestRow({
       id: "row-1",
       entity_tags: {
-        fund_names: [{ name: "Apollo", aliases: [], type: "primary" }],
+        fund_names: [{ name: "Apollo", aliases: [], type: "standalone" }],
       },
     });
 

@@ -115,11 +115,11 @@ describe("mergeEntityTags", () => {
 
   it("deduplicates fund names case-insensitively", () => {
     const chunk1: EntityTags = {
-      fund_names: [{ name: "Apollo", aliases: ["APO"], type: "primary" }],
+      fund_names: [{ name: "Apollo", aliases: ["APO"], type: "standalone" }],
     };
     const chunk2: EntityTags = {
       fund_names: [
-        { name: "apollo", aliases: ["Apollo Management"], type: "primary" },
+        { name: "apollo", aliases: ["Apollo Management"], type: "standalone" },
       ],
     };
 
@@ -147,7 +147,7 @@ describe("mergeEntityTags", () => {
     expect(result.fund_names![0].parent).toBe("Apollo");
   });
 
-  it("upgrades fund type from subsidiary to primary", () => {
+  it("upgrades fund type from subsidiary to standalone", () => {
     const chunk1: EntityTags = {
       fund_names: [
         { name: "Athene", aliases: [], type: "subsidiary", parent: "Apollo" },
@@ -155,12 +155,12 @@ describe("mergeEntityTags", () => {
     };
     const chunk2: EntityTags = {
       fund_names: [
-        { name: "Athene", aliases: [], type: "primary" },
+        { name: "Athene", aliases: [], type: "standalone" },
       ],
     };
 
     const result = mergeEntityTags([chunk1, chunk2]);
-    expect(result.fund_names![0].type).toBe("primary");
+    expect(result.fund_names![0].type).toBe("standalone");
     // parent preserved from first chunk
     expect(result.fund_names![0].parent).toBe("Apollo");
   });

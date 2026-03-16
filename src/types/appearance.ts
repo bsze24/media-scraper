@@ -78,7 +78,7 @@ export interface EntityTags {
 export interface FundName {
   name: string;
   aliases: string[];
-  type: "primary" | "subsidiary";
+  type: "standalone" | "subsidiary";
   parent?: string;
   relevance?: "primary" | "mentioned";
 }
