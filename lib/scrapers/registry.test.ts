@@ -10,6 +10,14 @@ describe("getScraperForUrl", () => {
     expect(scraper.canHandle("https://www.colossus.com/episode/x/")).toBe(true);
   });
 
+  it("returns a scraper for YouTube URLs", () => {
+    const scraper = getScraperForUrl(
+      "https://www.youtube.com/watch?v=abc123"
+    );
+    expect(scraper).toBeDefined();
+    expect(scraper.canHandle("https://youtu.be/abc123")).toBe(true);
+  });
+
   it("throws for unknown URLs", () => {
     expect(() => getScraperForUrl("https://example.com/page")).toThrow(
       /no scraper available/i
@@ -27,8 +35,23 @@ describe("detectTranscriptSource", () => {
     ).toBe("colossus");
   });
 
+  it("returns youtube_captions for YouTube URLs", () => {
+    expect(
+      detectTranscriptSource("https://www.youtube.com/watch?v=abc123")
+    ).toBe("youtube_captions");
+    expect(
+      detectTranscriptSource("https://youtube.com/watch?v=abc123")
+    ).toBe("youtube_captions");
+    expect(
+      detectTranscriptSource("https://youtu.be/abc123")
+    ).toBe("youtube_captions");
+    expect(
+      detectTranscriptSource("https://m.youtube.com/watch?v=abc123")
+    ).toBe("youtube_captions");
+  });
+
   it("throws for unknown hosts", () => {
-    expect(() => detectTranscriptSource("https://youtube.com/watch?v=x")).toThrow(
+    expect(() => detectTranscriptSource("https://example.com/page")).toThrow(
       /unknown transcript source/i
     );
   });

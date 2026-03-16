@@ -44,8 +44,13 @@ export async function processAppearance(id: string): Promise<void> {
     throw new Error(`Appearance ${id} was already claimed by another worker`);
   }
 
+  const title = row.title ?? row.source_url;
+  const pipelineStart = Date.now();
+  const stepTime = () => `${((Date.now() - pipelineStart) / 1000).toFixed(1)}s elapsed`;
+
   try {
     // Step 1: Extract
+    console.log(`\n[pipeline] ▶ Step 1/4: EXTRACT — ${title}`);
 
     let rawTranscript: string;
     let sections: import("@/types/scraper").SectionHeading[] = [];
@@ -82,6 +87,8 @@ export async function processAppearance(id: string): Promise<void> {
       await writeExtractResult(id, extractOutput);
     }
 
+    console.log(`[pipeline] ✓ Extract complete — ${rawTranscript.length} chars (${stepTime()})`);
+
     const CHUNK_THRESHOLD = 120_000;
     const needsChunking = rawTranscript.length >= CHUNK_THRESHOLD;
     const rawChunks = needsChunking
@@ -89,6 +96,7 @@ export async function processAppearance(id: string): Promise<void> {
       : null;
 
     // Step 2: Clean
+    console.log(`[pipeline] ▶ Step 2/4: CLEAN${needsChunking ? ` (${rawChunks!.length} chunks)` : ""} — ${title}`);
     await updateProcessingStatus(id, "cleaning");
     let finalCleaned: string;
     // Store per-chunk cleaned results so steps 3-4 can reuse them directly
@@ -108,8 +116,10 @@ export async function processAppearance(id: string): Promise<void> {
       finalCleaned = cleanOutput.cleaned_transcript;
     }
     await writeCleanResult(id, { cleaned_transcript: finalCleaned });
+    console.log(`[pipeline] ✓ Clean complete — ${finalCleaned.length} chars (${stepTime()})`);
 
     // Step 3: Entities
+    console.log(`[pipeline] ▶ Step 3/4: ENTITIES — ${title}`);
     await updateProcessingStatus(id, "analyzing");
     let finalEntities: EntitiesStepOutput;
     if (cleanedChunks) {
@@ -124,8 +134,12 @@ export async function processAppearance(id: string): Promise<void> {
       finalEntities = await extractEntities(finalCleaned);
     }
     await writeEntitiesResult(id, finalEntities);
+    const entityCount = (finalEntities.entity_tags.fund_names?.length ?? 0) +
+      (finalEntities.entity_tags.key_people?.length ?? 0);
+    console.log(`[pipeline] ✓ Entities complete — ${entityCount} entities (${stepTime()})`);
 
     // Step 4: Bullets (still "analyzing")
+    console.log(`[pipeline] ▶ Step 4/4: BULLETS — ${title}`);
     // Entities->Bullets is sequential: generatePrepBullets requires entityTags as input.
     // Chunk-level parallelism within each step is safe.
     let finalBullets: BulletsStepOutput;
@@ -156,9 +170,12 @@ export async function processAppearance(id: string): Promise<void> {
       );
     }
     await writeBulletsResult(id, finalBullets);
+    const bulletCount = finalBullets.prep_bullets.bullets?.length ?? 0;
+    console.log(`[pipeline] ✓ Bullets complete — ${bulletCount} bullets (${stepTime()})`);
 
     // Done
     await updateProcessingStatus(id, "complete");
+    console.log(`[pipeline] ✅ COMPLETE — ${title} (total: ${stepTime()})`);
 
     // Cache invalidation is best-effort — pipeline data is already persisted,
     // so a failure here must not revert status to "failed".
@@ -270,12 +287,16 @@ export async function processBatch(
   let processed = 0;
   let failed = 0;
 
+  console.log(`[batch] Starting batch of ${rows.length} appearances`);
   for (let i = 0; i < rows.length; i++) {
+    const rowTitle = rows[i].title ?? rows[i].source_url;
+    console.log(`\n[batch] ═══ ${i + 1}/${rows.length}: ${rowTitle} ═══`);
     try {
       await processAppearance(rows[i].id);
       processed++;
-    } catch {
+    } catch (err) {
       failed++;
+      console.error(`[batch] ✗ Failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     // Rate-limit before next Colossus URL to avoid anti-bot detection
@@ -288,6 +309,7 @@ export async function processBatch(
     }
   }
 
+  console.log(`\n[batch] Done — ${processed} processed, ${failed} failed out of ${rows.length}`);
   return { processed, failed };
 }
 
