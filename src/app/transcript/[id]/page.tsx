@@ -96,6 +96,9 @@ function transformAppearance(row: AppearanceRow): TranscriptViewerProps["appeara
     })),
     turns,
     has_inferred_attribution: turns.some((t) => t.attribution === "inferred"),
+    turn_summaries: row.turn_summaries
+      ? Object.fromEntries(row.turn_summaries.map((s) => [s.turn_index, s.summary]))
+      : null,
     prep_bullets: prepBullets,
     bullets_generated_at: row.bullets_generated_at,
     transcript_char_count: row.cleaned_transcript?.length ?? 0,

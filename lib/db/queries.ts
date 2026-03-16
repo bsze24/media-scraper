@@ -235,6 +235,18 @@ export async function writeTurns(
   if (error) throw error;
 }
 
+export async function writeTurnSummaries(
+  id: string,
+  turnSummaries: Array<{ speaker: string; summary: string; turn_index: number }>
+): Promise<void> {
+  const supabase = createServerClient();
+  const { error } = await supabase
+    .from("appearances")
+    .update({ turn_summaries: turnSummaries })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 export async function writeEntitiesResult(
   id: string,
   output: EntitiesStepOutput,
