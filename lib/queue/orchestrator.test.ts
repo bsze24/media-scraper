@@ -89,7 +89,7 @@ function makeRow(overrides: Partial<AppearanceRow> = {}): AppearanceRow {
     appearance_date: null,
     speakers: [],
     raw_transcript: null,
-    raw_caption_data: null,
+    scraper_metadata: null,
     cleaned_transcript: null,
     entity_tags: {},
     prep_bullets: {},
@@ -177,7 +177,7 @@ describe("processAppearance", () => {
       source_name: "Invest Like the Best",
       speakers: [{ name: "Patrick", role: "host" }],
       raw_transcript: "Patrick:\nHello world",
-      raw_caption_data: { episodeNumber: 100, sections: [{ heading: "Intro", anchor: "intro" }] },
+      scraper_metadata: { episodeNumber: 100, sections: [{ heading: "Intro", anchor: "intro" }] },
       turns: [{ speaker: "Patrick", text: "Hello world", turn_index: 0 }],
       sections: [{ heading: "Intro", anchor: "intro" }],
     });
