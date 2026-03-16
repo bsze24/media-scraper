@@ -5,15 +5,12 @@ import {
   formatSpeakersBlock,
 } from "@lib/prompts/clean";
 import type { CleanStepOutput } from "@lib/db/types";
+import { isYouTubeSource } from "@/types/appearance";
 import type { Speaker, TranscriptSource } from "@/types/appearance";
 
 const MODEL = "claude-sonnet-4-20250514";
 const TIMEOUT_MS = 600_000;
 const LOG_INTERVAL_MS = 5_000;
-
-function isYouTubeSource(source: TranscriptSource): boolean {
-  return source === "youtube_captions" || source === "youtube_whisper";
-}
 
 function selectPrompt(
   transcriptSource?: TranscriptSource,

@@ -11,6 +11,7 @@ import {
   invalidateFundOverviewCache,
   extractFundNames,
 } from "@lib/db/queries";
+import { isYouTubeSource } from "@/types/appearance";
 import { getScraperForUrl } from "@lib/scrapers/registry";
 import { colossusDelay } from "@lib/scrapers/colossus";
 import { parseTurns } from "@lib/scrapers/parse-turns";
@@ -124,7 +125,7 @@ export async function processAppearance(id: string): Promise<void> {
 
     // For YouTube sources, re-parse turns from the cleaned transcript
     // (which now has speaker labels) instead of the raw transcript (which doesn't)
-    if (transcriptSource.startsWith("youtube")) {
+    if (isYouTubeSource(transcriptSource)) {
       const cleanedTurns = parseTurns(finalCleaned, sections);
       await writeTurns(id, cleanedTurns);
       console.log(`[pipeline]   ↳ Re-parsed ${cleanedTurns.length} turns from cleaned transcript`);
