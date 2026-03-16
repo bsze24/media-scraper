@@ -102,7 +102,7 @@ interface SectionHeading {
   fund_names: Array<{
     name: string;           // canonical fund name
     aliases: string[];      // informal references found in transcript
-    type: "primary" | "subsidiary";
+    type: "standalone" | "subsidiary";
     parent?: string;        // flat, one-level only (current limitation — see tech debt #18a)
     relevance?: "primary" | "mentioned";  // is the interview ABOUT this fund? (optional — absent on legacy data)
   }>;

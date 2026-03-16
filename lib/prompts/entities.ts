@@ -7,7 +7,7 @@ Return a JSON object with these fields:
     {
       "name": "Full official fund/firm name",
       "aliases": ["informal references", "abbreviations"],
-      "type": "primary" or "subsidiary",
+      "type": "standalone" or "subsidiary",
       "parent": "parent firm name (only if type is subsidiary, omit otherwise)",
       "relevance": "primary" or "mentioned"
     }
@@ -31,7 +31,8 @@ Guidelines:
 - If a field has no entries, use an empty array
 - Be thorough — extract every entity mentioned, even in passing
 - For each fund_name, set "relevance":
-  - "primary" — the interview is about this fund, features its people, or substantively discusses its strategy
-  - "mentioned" — the fund is referenced in passing, in a comparison, in an advertisement, or as brief context
+  - "primary" — a current representative of this fund is a speaker in this interview, OR the fund is a central subject of the interview. Most single-guest interviews will have only one primary fund. Multi-speaker panels may have several.
+  - "mentioned" — referenced in passing, as comparison, as background, or as an advertisement.
+  - RULE: Always mark previous employers of speakers as "mentioned", even if discussed at length. Career history is background, not fund coverage.
 
 Return only valid JSON, no markdown fences, no preamble.`;

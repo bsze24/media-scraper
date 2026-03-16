@@ -29,7 +29,7 @@ const VALID_ENTITIES = {
     {
       name: "Apollo Global Management",
       aliases: ["Apollo", "Marc Rowan's shop"],
-      type: "primary" as const,
+      type: "standalone" as const,
     },
   ],
   key_people: [

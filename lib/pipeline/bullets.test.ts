@@ -29,7 +29,7 @@ beforeEach(() => {
 
 const ENTITY_TAGS: EntityTags = {
   fund_names: [
-    { name: "Apollo Global Management", aliases: ["Apollo"], type: "primary" },
+    { name: "Apollo Global Management", aliases: ["Apollo"], type: "standalone" },
   ],
   key_people: [
     { name: "Marc Rowan", title: "CEO", fund_affiliation: "Apollo" },
