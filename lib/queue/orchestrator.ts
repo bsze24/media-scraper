@@ -16,6 +16,7 @@ import { getScraperForUrl } from "@lib/scrapers/registry";
 import { colossusDelay } from "@lib/scrapers/colossus";
 import { parseTurns } from "@lib/scrapers/parse-turns";
 import { cleanTranscript } from "@lib/pipeline/clean";
+import { validateSpeakerAttribution } from "@lib/pipeline/validate-speakers";
 import { extractEntities } from "@lib/pipeline/entities";
 import { generatePrepBullets } from "@lib/pipeline/bullets";
 import {
@@ -62,8 +63,8 @@ export async function processAppearance(id: string): Promise<void> {
     if (row.raw_transcript) {
       // Manual ingest — transcript already provided, skip scraper
       rawTranscript = row.raw_transcript;
-      // Parse turns for manual transcripts too
-      const turns = parseTurns(rawTranscript);
+      // Parse turns for manual transcripts too — manual ingest has source-provided labels
+      const turns = parseTurns(rawTranscript, undefined, "source");
       await writeExtractResult(id, {
         raw_transcript: rawTranscript,
         turns,
@@ -85,7 +86,7 @@ export async function processAppearance(id: string): Promise<void> {
         speakers: result.speakers,
         raw_transcript: result.rawTranscript,
         raw_caption_data: result.captionData,
-        turns: parseTurns(result.rawTranscript, result.sections),
+        turns: parseTurns(result.rawTranscript, result.sections, "source"),
         sections: result.sections,
       };
       await writeExtractResult(id, extractOutput);
@@ -120,13 +121,23 @@ export async function processAppearance(id: string): Promise<void> {
       const cleanOutput = await cleanTranscript(rawTranscript, cleanOpts);
       finalCleaned = cleanOutput.cleaned_transcript;
     }
+    // For YouTube sources, validate speaker names and re-parse turns
+    if (isYouTubeSource(transcriptSource)) {
+      const { corrected, replacements } = validateSpeakerAttribution(finalCleaned, speakers);
+      if (replacements.length > 0) {
+        finalCleaned = corrected;
+        console.log(`[pipeline]   ↳ Fixed ${replacements.length} hallucinated speaker name(s)`);
+      }
+    }
+
     await writeCleanResult(id, { cleaned_transcript: finalCleaned });
     console.log(`[pipeline] ✓ Clean complete — ${finalCleaned.length} chars (${stepTime()})`);
 
     // For YouTube sources, re-parse turns from the cleaned transcript
-    // (which now has speaker labels) instead of the raw transcript (which doesn't)
+    // (which now has speaker labels) instead of the raw transcript (which doesn't).
+    // These turns are marked "inferred" since speaker labels came from LLM attribution.
     if (isYouTubeSource(transcriptSource)) {
-      const cleanedTurns = parseTurns(finalCleaned, sections);
+      const cleanedTurns = parseTurns(finalCleaned, sections, "inferred");
       await writeTurns(id, cleanedTurns);
       console.log(`[pipeline]   ↳ Re-parsed ${cleanedTurns.length} turns from cleaned transcript`);
     }

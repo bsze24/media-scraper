@@ -62,6 +62,7 @@ function transformAppearance(row: AppearanceRow): TranscriptViewerProps["appeara
       text: t.text,
       turn_index: t.turn_index,
       section_anchor: t.section_anchor,
+      attribution: t.attribution,
     };
   });
 
@@ -94,6 +95,7 @@ function transformAppearance(row: AppearanceRow): TranscriptViewerProps["appeara
       anchor: s.anchor,
     })),
     turns,
+    has_inferred_attribution: turns.some((t) => t.attribution === "inferred"),
     prep_bullets: prepBullets,
     bullets_generated_at: row.bullets_generated_at,
     transcript_char_count: row.cleaned_transcript?.length ?? 0,

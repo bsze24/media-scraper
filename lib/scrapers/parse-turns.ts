@@ -1,4 +1,4 @@
-import type { Turn } from "@/types/appearance";
+import type { Turn, TurnAttribution } from "@/types/appearance";
 import type { SectionHeading } from "@/types/scraper";
 
 /**
@@ -34,7 +34,8 @@ function normalizeHeading(s: string): string {
  */
 export function parseTurns(
   rawTranscript: string,
-  sections?: SectionHeading[]
+  sections?: SectionHeading[],
+  attribution?: TurnAttribution
 ): Turn[] {
   if (!rawTranscript.trim()) return [];
 
@@ -70,23 +71,27 @@ export function parseTurns(
     if (speakerMatch) {
       const speaker = speakerMatch[1].trim();
       const text = speakerMatch[2].trim();
-      turns.push({
+      const turn: Turn = {
         speaker,
         text,
         turn_index: turnIndex++,
         section_anchor: currentAnchor,
-      });
+      };
+      if (attribution) turn.attribution = attribution;
+      turns.push(turn);
     } else if (turns.length > 0) {
       // No speaker label — append to previous turn
       turns[turns.length - 1].text += "\n\n" + trimmed;
     } else {
       // First block has no speaker — create turn with empty speaker
-      turns.push({
+      const turn: Turn = {
         speaker: "",
         text: trimmed,
         turn_index: turnIndex++,
         section_anchor: currentAnchor,
-      });
+      };
+      if (attribution) turn.attribution = attribution;
+      turns.push(turn);
     }
   }
 
