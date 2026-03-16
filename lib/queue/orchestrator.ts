@@ -5,6 +5,7 @@ import {
   claimForProcessing,
   writeExtractResult,
   writeCleanResult,
+  writeTurns,
   writeEntitiesResult,
   writeBulletsResult,
   invalidateFundOverviewCache,
@@ -55,6 +56,7 @@ export async function processAppearance(id: string): Promise<void> {
     let rawTranscript: string;
     let sections: import("@/types/scraper").SectionHeading[] = [];
     let transcriptSource = row.transcript_source;
+    let speakers = row.speakers ?? [];
 
     if (row.raw_transcript) {
       // Manual ingest — transcript already provided, skip scraper
@@ -73,6 +75,7 @@ export async function processAppearance(id: string): Promise<void> {
       rawTranscript = result.rawTranscript;
       sections = result.sections;
       transcriptSource = result.transcriptSource;
+      speakers = result.speakers;
 
       const extractOutput: ExtractStepOutput = {
         title: result.title,
@@ -103,20 +106,29 @@ export async function processAppearance(id: string): Promise<void> {
     // instead of re-splitting finalCleaned with raw section headings
     // (which may not survive LLM cleaning).
     let cleanedChunks: string[] | null = null;
+    const cleanOpts = { transcriptSource, speakers };
     if (rawChunks) {
       // Clean chunks in parallel
       cleanedChunks = await Promise.all(
         rawChunks.map((chunk) =>
-          cleanTranscript(chunk).then((o) => o.cleaned_transcript)
+          cleanTranscript(chunk, cleanOpts).then((o) => o.cleaned_transcript)
         )
       );
       finalCleaned = mergeCleaned(cleanedChunks);
     } else {
-      const cleanOutput = await cleanTranscript(rawTranscript);
+      const cleanOutput = await cleanTranscript(rawTranscript, cleanOpts);
       finalCleaned = cleanOutput.cleaned_transcript;
     }
     await writeCleanResult(id, { cleaned_transcript: finalCleaned });
     console.log(`[pipeline] ✓ Clean complete — ${finalCleaned.length} chars (${stepTime()})`);
+
+    // For YouTube sources, re-parse turns from the cleaned transcript
+    // (which now has speaker labels) instead of the raw transcript (which doesn't)
+    if (transcriptSource.startsWith("youtube")) {
+      const cleanedTurns = parseTurns(finalCleaned, sections);
+      await writeTurns(id, cleanedTurns);
+      console.log(`[pipeline]   ↳ Re-parsed ${cleanedTurns.length} turns from cleaned transcript`);
+    }
 
     // Step 3: Entities
     console.log(`[pipeline] ▶ Step 3/4: ENTITIES — ${title}`);

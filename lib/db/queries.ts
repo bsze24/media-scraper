@@ -223,6 +223,18 @@ export async function writeCleanResult(
   return true;
 }
 
+export async function writeTurns(
+  id: string,
+  turns: import("@/types/appearance").Turn[]
+): Promise<void> {
+  const supabase = createServerClient();
+  const { error } = await supabase
+    .from("appearances")
+    .update({ turns })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 export async function writeEntitiesResult(
   id: string,
   output: EntitiesStepOutput,
