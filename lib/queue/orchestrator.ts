@@ -55,7 +55,7 @@ export async function processAppearance(id: string): Promise<void> {
 
   try {
     // Step 1: Extract
-    console.log(`\n[pipeline] ▶ Step 1/5: EXTRACT — ${title}`);
+    console.log(`\n[pipeline] ▶ Step 1/4: EXTRACT — ${title}`);
 
     let rawTranscript: string;
     let sections: import("@/types/scraper").SectionHeading[] = [];
@@ -105,7 +105,7 @@ export async function processAppearance(id: string): Promise<void> {
       : null;
 
     // Step 2: Clean
-    console.log(`[pipeline] ▶ Step 2/5: CLEAN${needsChunking ? ` (${rawChunks!.length} chunks)` : ""} — ${title}`);
+    console.log(`[pipeline] ▶ Step 2/4: CLEAN${needsChunking ? ` (${rawChunks!.length} chunks)` : ""} — ${title}`);
     await updateProcessingStatus(id, "cleaning");
     let finalCleaned: string;
     // Store per-chunk cleaned results so steps 3-4 can reuse them directly
@@ -147,7 +147,7 @@ export async function processAppearance(id: string): Promise<void> {
     }
 
     // Step 3: Entities + Turn Summaries (parallel — both read from cleaned transcript/turns)
-    console.log(`[pipeline] ▶ Step 3/5: ENTITIES + TURN SUMMARIES — ${title}`);
+    console.log(`[pipeline] ▶ Step 3/4: ENTITIES + TURN SUMMARIES — ${title}`);
     await updateProcessingStatus(id, "analyzing");
 
     // Run entities and turn summaries in parallel
@@ -176,15 +176,8 @@ export async function processAppearance(id: string): Promise<void> {
     await writeEntitiesResult(id, finalEntities);
     await writeTurnSummaries(id, turnSummariesResult.summaries);
 
-    // If turn summaries were incomplete, write a structured warning to processing_error
-    // but don't fail the pipeline — partial summaries are better than none
-    if (turnSummariesResult.warning) {
-      const supabase = (await import("@lib/db/client")).createServerClient();
-      await supabase
-        .from("appearances")
-        .update({ processing_error: turnSummariesResult.warning })
-        .eq("id", id);
-    }
+    // Track warning — will be persisted with the completion status update
+    const turnSummariesWarning = turnSummariesResult.warning ?? null;
 
     const entityCount = (finalEntities.entity_tags.fund_names?.length ?? 0) +
       (finalEntities.entity_tags.key_people?.length ?? 0);
@@ -192,7 +185,7 @@ export async function processAppearance(id: string): Promise<void> {
     console.log(`[pipeline] ✓ Turn summaries complete — ${turnSummariesResult.summaries.length} summaries (${stepTime()})`);
 
     // Step 4: Bullets (still "analyzing")
-    console.log(`[pipeline] ▶ Step 4/5: BULLETS — ${title}`);
+    console.log(`[pipeline] ▶ Step 4/4: BULLETS — ${title}`);
     // Entities->Bullets is sequential: generatePrepBullets requires entityTags as input.
     // Chunk-level parallelism within each step is safe.
     let finalBullets: BulletsStepOutput;
@@ -226,8 +219,8 @@ export async function processAppearance(id: string): Promise<void> {
     const bulletCount = finalBullets.prep_bullets.bullets?.length ?? 0;
     console.log(`[pipeline] ✓ Bullets complete — ${bulletCount} bullets (${stepTime()})`);
 
-    // Done
-    await updateProcessingStatus(id, "complete");
+    // Done — preserve turn summaries warning if present
+    await updateProcessingStatus(id, "complete", turnSummariesWarning);
     console.log(`[pipeline] ✅ COMPLETE — ${title} (total: ${stepTime()})`);
 
     // Cache invalidation is best-effort — pipeline data is already persisted,
@@ -337,6 +330,11 @@ export async function reprocessTurnSummaries(
 ): Promise<Array<{ speaker: string; summary: string; turn_index: number }>> {
   const row = await getAppearanceById(id);
   if (!row) throw new Error(`Appearance not found: ${id}`);
+  if (row.processing_status !== "complete") {
+    throw new Error(
+      `Cannot reprocess: status is "${row.processing_status}", expected "complete"`
+    );
+  }
   if (!row.turns || row.turns.length === 0) {
     throw new Error(`No turns for appearance ${id}`);
   }

@@ -788,7 +788,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                           hasSearch && searchResults.turnKeys.has(key);
                         const { first, hasMore } = firstSentence(turn.text);
                         const summary = turn_summaries?.[turn.turn_index];
-                        const collapsedText = summary ?? first;
                         const dimmed =
                           activeSpeaker &&
                           activeSpeaker !== turn.speaker;
