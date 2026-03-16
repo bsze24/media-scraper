@@ -178,6 +178,12 @@ export function mergeEntityTags(chunks: EntityTags[]): EntityTags {
         if (fund.type === "primary") {
           existing.type = "primary";
         }
+        // "primary" relevance always wins over "mentioned" or undefined
+        if (fund.relevance === "primary") {
+          existing.relevance = "primary";
+        } else if (fund.relevance === "mentioned" && !existing.relevance) {
+          existing.relevance = "mentioned";
+        }
       } else {
         fundMap.set(key, { ...fund, aliases: [...fund.aliases] });
       }

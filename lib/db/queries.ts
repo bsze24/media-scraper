@@ -405,13 +405,12 @@ export async function searchByFundName(
   }
 
   // TODO: filter to relevance === "primary" when fund overview synthesis is built
-  // Sort: primary relevance first, then by date (descending)
+  // Sort: primary relevance first, then mentioned, then unknown; within tier by date descending
+  const relevanceRank: Record<string, number> = { primary: 0, mentioned: 1, unknown: 2 };
   results.sort((a, b) => {
-    const aRelevance = getFundRelevance(a.entity_tags, fundName);
-    const bRelevance = getFundRelevance(b.entity_tags, fundName);
-    if (aRelevance !== bRelevance) {
-      return aRelevance === "primary" ? -1 : 1;
-    }
+    const aRank = relevanceRank[getFundRelevance(a.entity_tags, fundName)] ?? 2;
+    const bRank = relevanceRank[getFundRelevance(b.entity_tags, fundName)] ?? 2;
+    if (aRank !== bRank) return aRank - bRank;
     // Within same relevance tier, sort by date descending
     const aDate = a.appearance_date ?? "";
     const bDate = b.appearance_date ?? "";
