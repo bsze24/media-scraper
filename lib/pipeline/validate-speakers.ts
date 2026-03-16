@@ -40,8 +40,13 @@ export function validateSpeakerAttribution(
       console.log(
         `[validate-speakers] replacing hallucinated "${found}" with "${bestMatch}"`
       );
-      // Replace all occurrences of this speaker label in the transcript
-      corrected = corrected.replaceAll(`${found}:\n`, `${bestMatch}:\n`);
+      // Replace only line-anchored occurrences to avoid corrupting names
+      // that contain the match as a substring (e.g. "Seides" inside "Ted Seides")
+      const escapedFound = found.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      corrected = corrected.replace(
+        new RegExp(`^${escapedFound}:\\n`, "gm"),
+        `${bestMatch}:\n`
+      );
       replacements.push({ from: found, to: bestMatch });
     } else {
       console.warn(

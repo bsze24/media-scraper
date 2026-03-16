@@ -45,6 +45,14 @@ describe("validateSpeakerAttribution", () => {
     expect(replacements).toHaveLength(0);
   });
 
+  it("does not corrupt names that contain the match as a substring", () => {
+    // "Seides" appears inside "Ted Seides" — replacement must not produce "Ted Ted Seides"
+    const transcript = "Ted Seides:\nQuestion.\n\nSeides:\nAnother question.";
+    const { corrected } = validateSpeakerAttribution(transcript, speakers);
+    expect(corrected).not.toContain("Ted Ted Seides");
+    expect(corrected).toBe("Ted Seides:\nQuestion.\n\nTed Seides:\nAnother question.");
+  });
+
   it("warns for completely unrecognizable names", () => {
     const transcript = "John Smith:\nSomething.";
     const { corrected, replacements } = validateSpeakerAttribution(transcript, speakers);
