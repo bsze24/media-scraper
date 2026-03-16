@@ -16,7 +16,7 @@ import type { ProcessingStatus, EntityTags } from "@/types/appearance";
 // ideal but Supabase doesn't support computed columns in .select(). Acceptable until
 // bullet count exceeds ~20 per row or corpus exceeds ~200 rows.
 const LIST_COLUMNS =
-  "id, title, source_name, appearance_date, speakers, processing_status, prep_bullets" as const;
+  "id, title, source_name, appearance_date, speakers, processing_status, prep_bullets, entity_tags" as const;
 
 // ---------------------------------------------------------------------------
 // Read
@@ -188,7 +188,7 @@ export async function writeExtractResult(
       source_name: output.source_name,
       speakers: output.speakers,
       raw_transcript: output.raw_transcript,
-      raw_caption_data: output.raw_caption_data ?? null,
+      scraper_metadata: output.scraper_metadata ?? null,
       turns: output.turns ?? null,
       sections: output.sections ?? [],
     })
@@ -341,6 +341,21 @@ export async function listAppearancesSummary(options?: {
 // Search
 // ---------------------------------------------------------------------------
 
+function getFundRelevance(
+  entityTags: EntityTags,
+  fundName: string
+): "primary" | "mentioned" | "unknown" {
+  const lowerName = fundName.toLowerCase();
+  for (const fund of entityTags.fund_names ?? []) {
+    const nameMatch = fund.name.toLowerCase() === lowerName;
+    const aliasMatch = fund.aliases?.some((a) => a.toLowerCase() === lowerName);
+    if (nameMatch || aliasMatch) {
+      return fund.relevance ?? "unknown";
+    }
+  }
+  return "unknown";
+}
+
 export async function searchByFundName(
   fundName: string
 ): Promise<AppearanceListRow[]> {
@@ -388,6 +403,19 @@ export async function searchByFundName(
       results.push(row as AppearanceListRow);
     }
   }
+
+  // TODO: filter to relevance === "primary" when fund overview synthesis is built
+  // Sort: primary relevance first, then mentioned, then unknown; within tier by date descending
+  const relevanceRank: Record<string, number> = { primary: 0, mentioned: 1, unknown: 2 };
+  results.sort((a, b) => {
+    const aRank = relevanceRank[getFundRelevance(a.entity_tags, fundName)] ?? 2;
+    const bRank = relevanceRank[getFundRelevance(b.entity_tags, fundName)] ?? 2;
+    if (aRank !== bRank) return aRank - bRank;
+    // Within same relevance tier, sort by date descending
+    const aDate = a.appearance_date ?? "";
+    const bDate = b.appearance_date ?? "";
+    return bDate.localeCompare(aDate);
+  });
 
   return results;
 }

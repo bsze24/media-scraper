@@ -125,7 +125,7 @@ Fund overview is the one piece generated on-demand because it synthesizes across
 | appearance_date | DATE | Proper date field — used for sorting, filtering, recency weighting, age flags |
 | speakers | JSONB | Array of speakers with roles: `[{"name": "Marc Rowan", "role": "guest", "affiliation": "Apollo"}, {"name": "Patrick O'Shaughnessy", "role": "host"}]`. Roles: "host", "guest", "panelist", "moderator", "interviewer". |
 | raw_transcript | TEXT | Unmodified transcript as extracted. Never overwritten. Source of truth. |
-| raw_caption_data | JSONB | YouTube caption segments with timestamps (preserved for reprocessing) |
+| scraper_metadata | JSONB | Structured data from scraper (YouTube: caption segments with timestamps; Colossus: sections + episode number) |
 | cleaned_transcript | TEXT | LLM-cleaned version with [MM:SS] timestamps and speaker attribution |
 | entity_tags | JSONB | Fund names, aliases, parent relationships, people, sectors |
 | prep_bullets | JSONB | Pre-generated bullets with supporting quotes and timestamps (see structure below) |

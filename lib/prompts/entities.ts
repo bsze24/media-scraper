@@ -8,7 +8,8 @@ Return a JSON object with these fields:
       "name": "Full official fund/firm name",
       "aliases": ["informal references", "abbreviations"],
       "type": "primary" or "subsidiary",
-      "parent": "parent firm name (only if type is subsidiary, omit otherwise)"
+      "parent": "parent firm name (only if type is subsidiary, omit otherwise)",
+      "relevance": "primary" or "mentioned"
     }
   ],
   "key_people": [
@@ -29,5 +30,8 @@ Guidelines:
 - portfolio_companies includes any specific companies mentioned as investments or examples
 - If a field has no entries, use an empty array
 - Be thorough — extract every entity mentioned, even in passing
+- For each fund_name, set "relevance":
+  - "primary" — the interview is about this fund, features its people, or substantively discusses its strategy
+  - "mentioned" — the fund is referenced in passing, in a comparison, in an advertisement, or as brief context
 
 Return only valid JSON, no markdown fences, no preamble.`;

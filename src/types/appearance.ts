@@ -56,7 +56,7 @@ export interface Appearance {
   appearance_date: string | null; // ISO date string (DATE column)
   speakers: Speaker[];
   raw_transcript: string | null;
-  raw_caption_data: Record<string, unknown> | null;
+  scraper_metadata: Record<string, unknown> | null;
   cleaned_transcript: string | null;
   entity_tags: EntityTags;
   prep_bullets: PrepBulletsData;
@@ -80,6 +80,7 @@ export interface FundName {
   aliases: string[];
   type: "primary" | "subsidiary";
   parent?: string;
+  relevance?: "primary" | "mentioned";
 }
 
 export interface KeyPerson {

@@ -19,7 +19,7 @@ export interface AppearanceRow {
   appearance_date: string | null;
   speakers: Speaker[];
   raw_transcript: string | null;
-  raw_caption_data: Record<string, unknown> | null;
+  scraper_metadata: Record<string, unknown> | null;
   cleaned_transcript: string | null;
   entity_tags: EntityTags;
   prep_bullets: PrepBulletsData;
@@ -61,7 +61,7 @@ export interface ExtractStepOutput {
   source_name?: string;
   speakers?: Speaker[];
   raw_transcript: string;
-  raw_caption_data?: Record<string, unknown> | null;
+  scraper_metadata?: Record<string, unknown> | null;
   turns?: Turn[];
   sections?: SectionHeading[];
 }
@@ -89,4 +89,5 @@ export type AppearanceListRow = Pick<
   | "speakers"
   | "processing_status"
   | "prep_bullets"
+  | "entity_tags"
 >;

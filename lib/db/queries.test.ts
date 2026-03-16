@@ -54,7 +54,7 @@ function makeTestRow(overrides: Partial<AppearanceRow> = {}): AppearanceRow {
     appearance_date: "2024-01-15",
     speakers: [{ name: "Patrick O'Shaughnessy", role: "host" }],
     raw_transcript: "Raw text...",
-    raw_caption_data: null,
+    scraper_metadata: null,
     cleaned_transcript: "Cleaned text...",
     entity_tags: {},
     prep_bullets: {},

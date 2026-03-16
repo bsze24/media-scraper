@@ -1,35 +1,9 @@
 # Meeting Prep Tool — Technical Implementation Plan
 **Last updated:** March 15, 2026
 **Branch:** phase1/transcript-ui (Phase 0: phase0/bootstrap-pipeline)
-**Status:** Phase 1B complete — orchestrator improvements (chunk parallelization, bullets-only reprocess, bulk regenerate), prompt context snapshot, search page. Phase 2 schema prep migrations created.
+**Status:** Phase 1D in progress — YouTube pipeline (extraction + speaker attribution) complete, trust layer (attribution flag, validation, UI disclaimer) complete. Schema cleanup (raw_caption_data → scraper_metadata) and entity relevance tagging in review.
 
 ---
-
-## What Changed From v3
-
-| Item | v3 | v4 |
-|------|----|----|
-| Entity hierarchy | Flat `parent` field on fund_names | Tech debt #18: `mentioned_as` / `canonical_name` / `relationship` + `affiliated_entities` with context strings. Prompt-level change, not schema migration. |
-| `sectors_themes` | Unstructured `string[]`, no documentation of tradeoff | Known limitation documented: free-text by design, coarse `sector_category` enum deferred to Phase 3+. |
-| Model configuration | Hardcoded `claude-sonnet-4-20250514` | Tech debt #17 (P3): extract to config when non-developer users need to change it. |
-| Parking lot | Speculative ideas scattered across PRD and session records | New "Parking Lot" section consolidates future ideas separate from tech debt. |
-
----
-
-## What Changed From v2
-
-| Item | v2 | v3 |
-|------|----|----|
-| `transcript_chunks` / pgvector | In Phase 0 migration | Deferred to `003_embeddings.sql` — Phase 5 only. Dead weight at 20 transcripts. |
-| `sections` JSONB | Not planned — ephemeral in-memory only | Persisted to appearances table. Required for transcript page navigation and citation links. |
-| `turn_summaries` type | `unknown[] | null` | `Array<{speaker: string, summary: string}> | null` — speaker-keyed, consistent with turns shape. |
-| Bullets prompt | Sections list never injected into userContent | `JSON.stringify(sections)` lookup table injected; `section_anchor` added to output schema with fuzzy fallback. |
-| `section_anchor` on bullets | Always null | Populated correctly — LLM matches quotes to sections lookup table, falls back to fuzzy lookup. |
-| `chunker.ts` naming | Ambiguous — overlaps with RAG chunks concept | Renamed to `splitter.ts` / `splitForProcessing` to disambiguate from RAG `transcript_chunks` (Phase 5). |
-| CLAUDE.md observability | Not documented | Observability section added — console.log bookends required, never stripped, chunk progress logging on long steps. |
-| YouTube timestamps | Not addressed | Deferred — timestamps belong in `turns[].timestamp_seconds` populated from `scraper_metadata`; not in cleaned transcript text. |
-| YouTube sections | Not addressed | Deferred — `generateSections()` pipeline step produces synthetic sections for YouTube transcripts (Phase 1). |
-| Admin token | In implementation notes | Required cookie in browser (`admin_token`) matching `ADMIN_TOKEN` env var — set once per dev session. |
 
 ---
 
@@ -39,11 +13,12 @@
 |------|--------|----------|
 | `001_initial_schema.sql` | Deployed | appearances, fund_overview_cache, domain_mapping |
 | `002_turns_and_summaries.sql` | Deployed | `turns` JSONB + `turn_summaries` JSONB + GIN index on turns |
-| `003_sections.sql` (was 002 in v2 plan) | Deployed | `sections` JSONB DEFAULT '[]' on appearances |
-| `004_sections.sql` | Deployed | — (renumbered during session; check actual file names in repo) |
+| `003_tighten_anon_rls.sql` | Deployed | Row-level security tightening for anon role |
+| `004_sections.sql` | Deployed | `sections` JSONB DEFAULT '[]' on appearances |
 | `005_corrections.sql` | Created (Phase 1 prep) | `corrections` audit table for human edits to turns |
 | `006_turns_corrected_flag.sql` | Created (Phase 1 prep) | Documents Turn.corrected boolean intent (no DDL) |
-| `007_prompt_snapshot.sql` | Created (Phase 1B) | `prompt_context_snapshot TEXT` + `bullets_generated_at TIMESTAMPTZ` on appearances |
+| `007_prompt_snapshot.sql` | Deployed (Phase 1B) | `prompt_context_snapshot TEXT` + `bullets_generated_at TIMESTAMPTZ` on appearances |
+| `008_rename_raw_caption_data.sql` | Created (Phase 1D) | Renames `raw_caption_data` → `scraper_metadata` |
 | `003_embeddings.sql` | Not created — Phase 5 | `transcript_chunks` table + pgvector extension + HNSW index |
 
 ---
@@ -121,14 +96,15 @@ interface SectionHeading {
 }
 ```
 
-### entity_tags JSONB shape (current)
+### entity_tags JSONB shape
 ```typescript
 {
   fund_names: Array<{
     name: string;           // canonical fund name
     aliases: string[];      // informal references found in transcript
-    type: string;           // "private_equity", "hedge_fund", etc.
-    parent?: string;        // flat, one-level only (current limitation)
+    type: "primary" | "subsidiary";
+    parent?: string;        // flat, one-level only (current limitation — see tech debt #18a)
+    relevance?: "primary" | "mentioned";  // is the interview ABOUT this fund? (optional — absent on legacy data)
   }>;
   key_people: Array<{
     name: string;
@@ -140,34 +116,7 @@ interface SectionHeading {
 }
 ```
 
-**Known limitation — organization hierarchy:** The `parent` field is flat (one level). Real-world fund structures are often 4–5 entities deep with JVs, credit arms, spin-offs, and co-investment vehicles between the people being pitched and the ultimate parent. The current prompt doesn't guide the LLM on which entity to treat as primary vs. mentioned. See tech debt #18 for the planned rework.
-
-**Known limitation — relevance dilution:** All entity matches are treated equally. A KKR interview that mentions Apollo in passing ranks the same as a dedicated Apollo interview. Pollutes search results and fund overview synthesis. See tech debt #18(c) for `relevance: "primary" | "mentioned"` tagging.
-
-### entity_tags JSONB shape (planned — tech debt #18)
-```typescript
-{
-  fund_names: Array<{
-    mentioned_as: string;      // exact transcript reference ("Redding Ridge")
-    canonical_name: string;    // salesperson-recognizable ("Apollo Global Management")
-    aliases: string[];
-    type: string;
-    relationship?: string;     // "subsidiary", "credit arm", "spin-off"
-    relevance: "primary" | "mentioned";  // is the interview ABOUT this fund?
-    affiliated_entities?: Array<{
-      entity: string;
-      context: string;         // "co-invested on mid-market deal", "John Zito previously at Deutsche Bank"
-    }>;
-  }>;
-  key_people: Array<{
-    name: string;
-    title: string;
-    fund_affiliation: string;
-  }>;
-  sectors_themes: string[];
-  portfolio_companies: string[];
-}
-```
+**Known limitation — organization hierarchy:** The `parent` field is flat (one level). Real-world fund structures are often 4–5 entities deep with JVs, credit arms, spin-offs, and co-investment vehicles. See tech debt #18(a) for the planned rework (`mentioned_as` / `canonical_name` / `relationship` / `affiliated_entities`).
 
 **Known limitation — `sectors_themes`:** Unstructured `string[]` by design. The LLM generates whatever themes it finds in the transcript — no controlled vocabulary, no normalization ("private credit" vs. "direct lending" may appear inconsistently across appearances). Sufficient for display and fuzzy search. If filtered views or aggregations are needed (Phase 3+), add a coarse `sector_category` enum alongside free-text themes — preserves the LLM's specificity while enabling reliable filtering.
 
@@ -176,7 +125,7 @@ interface SectionHeading {
 ### fund_overview_cache
 `fund_name (TEXT PK), overview_text, appearance_ids (UUID[]), generated_at`
 
-**Planned improvement (tech debt #18c):** On cache-miss regeneration, filter to appearances where this fund's `relevance` is `"primary"`. Passing mentions should not feed the synthesis prompt.
+**When fund overview synthesis is built:** filter to appearances where this fund's `relevance` is `"primary"`. Passing mentions should not feed the synthesis prompt. Search already sorts primary before mentioned.
 
 ### domain_mapping
 `domain (TEXT PK), fund_name, added_by, created_at`
@@ -215,7 +164,7 @@ Merge logic:
 
 ## Bullets Prompt Architecture
 
-### Section injection (fixed in v3)
+### Section injection
 `lib/pipeline/bullets.ts` injects sections as a JSON lookup table:
 ```
 ## Sections Lookup Table
@@ -302,80 +251,86 @@ Three implementations were tried. Current (correct) approach:
 ```
 lib/
   scrapers/
-    base.ts                        Scraper interface, RateLimiter util
     colossus.ts                    ILTB/Colossus scraper (Playwright auth + Cheerio parsing)
-    youtube.ts                     YouTube scraper (yt-dlp + caption parsing) ✓
-    parse-turns.ts                 [NEW v3] Parses SpeakerName:\ntext → Turn[]
+    youtube.ts                     YouTube scraper (yt-dlp metadata + caption extraction)
+    parse-turns.ts                 Parses SpeakerName:\ntext → Turn[], accepts attribution param
     registry.ts                    URL → scraper routing, detectTranscriptSource
     colossus.test.ts
-    parse-turns.test.ts            [NEW v3]
+    youtube.test.ts
+    parse-turns.test.ts
     registry.test.ts
   pipeline/
-    clean.ts                       LLM cleaning (streaming via for-await, chunking-aware)
-    entities.ts                    LLM entity extraction (Zod-validated JSON)
+    clean.ts                       LLM cleaning (streaming via finalText(), YouTube speaker attribution variant)
+    entities.ts                    LLM entity extraction (manual JSON coercion, relevance tagging)
     bullets.ts                     LLM prep bullets (curated vs YouTube variants)
-    splitter.ts                    [NEW v3] Splits long transcripts for pipeline processing (renamed from chunker.ts)
-    sections.ts                    [Phase 1] generateSections() for YouTube transcripts
-    turn-summaries.ts              [Phase 1] One-sentence per-turn summaries
+    splitter.ts                    Splits long transcripts for pipeline processing
+    validate-speakers.ts           Post-clean speaker name validation (fuzzy match vs metadata)
+    sections.ts                    [Phase 1D] generateSections() for YouTube transcripts — NOT YET BUILT
+    turn-summaries.ts              [Phase 1D] One-sentence per-turn summaries — NOT YET BUILT
     clean.test.ts
     entities.test.ts
     bullets.test.ts
-    splitter.test.ts               [NEW v3] (renamed from chunker.test.ts)
-    turn-summaries.test.ts         [Phase 1]
+    splitter.test.ts
+    validate-speakers.test.ts
   prompts/
-    cleaning.ts                    Two variants: curated (lighter) vs YouTube (heavier, speaker attribution) ✓
-    entities.ts                    Entity extraction prompt
-    bullets.ts                     GENERATE_BULLETS_PROMPT_CURATED / _YOUTUBE
-    turn-summaries.ts              [Phase 1]
-    overview.ts                    [Phase 1 stretch / Phase 2] Fund overview synthesis prompt
+    clean.ts                       Two variants: CLEAN_TRANSCRIPT_PROMPT (curated) + buildYouTubeCleanPrompt (speaker attribution)
+    entities.ts                    Entity extraction prompt (with relevance tagging)
+    bullets.ts                     GENERATE_BULLETS_PROMPT_CURATED / _YOUTUBE + ROWSPACE_BUSINESS_CONTEXT
+    turn-summaries.ts              [Phase 1D] — NOT YET BUILT
+    overview.ts                    [Phase 1 stretch / Phase 2] — NOT YET BUILT
   db/
-    client.ts                      Supabase client (server only — browser client removed as dead code)
-    queries.ts                     Typed query functions: insert, update, search, fund cache
-    types.ts                       DB row types (AppearanceRow, ExtractStepOutput, etc.)
+    client.ts                      Supabase client (server only)
+    queries.ts                     Typed query functions: insert, update, search (relevance-sorted), fund cache
+    types.ts                       DB row types (AppearanceRow, ExtractStepOutput, AppearanceListRow, etc.)
     queries.test.ts
   queue/
-    orchestrator.ts                Coordinates pipeline steps per appearance
+    orchestrator.ts                Coordinates pipeline steps per appearance (step-level + batch-level progress logging)
     orchestrator.test.ts
   api/
     auth.ts                        Shared admin token check (checkAdminToken + unauthorizedResponse)
-src/app/
-  layout.tsx                       Geist + Playfair Display + Source Sans 3 fonts
-  page.tsx                         Phase 0 bulk paste UI
-  globals.css
-  transcript/[id]/
-    page.tsx                       Server component — fetches appearance, routes by status
-    TranscriptViewer.tsx           Client component — all interaction logic
-    types.ts                       TranscriptViewerProps interface
-  api/
-    appearances/route.ts           [Phase 0] GET all appearances
-    appearances/[id]/route.ts      [Phase 0] GET single appearance
-    search/route.ts                [Phase 1] Fund name search
-    fund-overview/route.ts         [Phase 1 stretch / Phase 2]
-    process/
-      extract/route.ts
-      clean/route.ts
-      entities/route.ts
-      bullets/route.ts             Includes /bullets/bulk [Phase 1B]
-      turn-summaries/route.ts      [Phase 1]
-      index-step/route.ts
-      manual-ingest/route.ts       [Phase 0] Insurance fallback — curl-only
-    feedback/route.ts              [Phase 2] Thumbs up/down + optional text on bullets
-    corrections/route.ts           [Phase 2] Turn edits + speaker reassignment
-    notion/route.ts                [Phase 3]
-    admin/stats/route.ts           [Phase 4]
-  search/page.tsx                  [Phase 1]
-  submit/page.tsx                  [Phase 1]
-  transcript/[id]/page.tsx         [Phase 1] — PRIMARY PRODUCT SURFACE
-  admin/page.tsx                   [Phase 4]
+src/
+  types/
+    appearance.ts                  TranscriptSource, Speaker, Turn (with attribution), EntityTags, FundName, isYouTubeSource()
+    scraper.ts                     Scraper interface, ScraperResult, SectionHeading
+    bullets.ts                     PrepBulletsData, SupportingQuote
+  app/
+    layout.tsx                     Geist + Playfair Display + Source Sans 3 fonts
+    page.tsx                       Phase 0 bulk paste UI
+    globals.css
+    transcript/[id]/
+      page.tsx                     Server component — fetches appearance, routes by status
+      TranscriptViewer.tsx         Client component — all interaction logic, inferred attribution disclaimer
+      RegenerateBulletsButton.tsx  Client component — triggers bullet regeneration
+      types.ts                     TranscriptViewerProps interface
+    search/page.tsx                [Phase 1]
+    api/
+      appearances/route.ts         GET all appearances
+      appearances/[id]/route.ts    GET single appearance
+      search/route.ts              Fund name search
+      process/
+        submit/route.ts            POST — bulk URL submission
+        run/route.ts               POST — trigger batch processing
+        retry/[id]/route.ts        POST — retry single failed appearance
+        status/route.ts            GET — processing queue status
+        status/[id]/route.ts       GET — single appearance status
+        bullets/route.ts           POST — single-appearance bullet regeneration
+        bullets/bulk/route.ts      POST — bulk bullet regeneration
+        manual-ingest/route.ts     POST — manual transcript paste
+      feedback/route.ts            [Phase 2] — NOT YET BUILT
+      corrections/route.ts         [Phase 2] — NOT YET BUILT
+      notion/route.ts              [Phase 3] — NOT YET BUILT
+      admin/stats/route.ts         [Phase 4] — NOT YET BUILT
 supabase/
   migrations/
     001_initial_schema.sql
-    002_turns_and_summaries.sql    turns + turn_summaries JSONB
-    003_sections.sql (or 004)      sections JSONB
-    005_corrections.sql            [Phase 2 prep] corrections audit table
-    006_turns_corrected_flag.sql   [Phase 2 prep] documents Turn.corrected intent
-    007_prompt_snapshot.sql         [Phase 1B] prompt_context_snapshot + bullets_generated_at
-    003_embeddings.sql             [Phase 5] transcript_chunks + pgvector
+    002_turns_and_summaries.sql
+    003_tighten_anon_rls.sql
+    004_sections.sql
+    005_corrections.sql            [Phase 2 prep]
+    006_turns_corrected_flag.sql   [Phase 2 prep]
+    007_prompt_snapshot.sql
+    008_rename_raw_caption_data.sql
+    003_embeddings.sql             [Phase 5] — NOT YET CREATED
 ```
 
 ---
@@ -425,9 +380,14 @@ supabase/
 - `BulletItem` + `CitationTooltip` — bullets as triage layer, each links to `/transcript/[id]#section-anchor` (future)
 - `AgeFlag` (future)
 
-**Phase 1D — YouTube Pipeline (IN PROGRESS — extraction + speaker attribution complete):**
-- ✓ YouTube scraper (yt-dlp for metadata + captions, speaker detection from title/description/channel)
-- ✓ YouTube-specific clean prompt with speaker attribution — pass scraped speakers[] array into clean step when available; instruct LLM to attribute dialogue turns from conversational context (e.g. "thanks for joining us" = host, domain expertise responses = guest). Falls back gracefully when speakers metadata is incomplete or absent. Re-parses turns from cleaned transcript for YouTube sources.
+**Phase 1D — YouTube Pipeline (IN PROGRESS):**
+- ✓ YouTube scraper — yt-dlp for metadata + captions, speaker detection from title/description/channel, caption segments stored in `scraper_metadata`
+- ✓ YouTube-specific clean prompt with speaker attribution — pass scraped speakers[] into clean step, LLM attributes dialogue turns from conversational context. Falls back to "Speaker 1/2" when metadata is absent. Re-parses turns from cleaned transcript for YouTube sources.
+- ✓ Speaker attribution trust layer — `Turn.attribution: "source" | "inferred"` flag, `validateSpeakerAttribution()` catches hallucinated names via fuzzy matching, transcript viewer shows disclaimer for inferred turns
+- ✓ Pipeline progress logging — step-level (`▶ Step 1/4: EXTRACT`) and batch-level (`═══ 1/5: Title ═══`) with cumulative elapsed time
+- ✓ `isYouTubeSource()` shared helper in `src/types/appearance.ts` — single source of truth for YouTube detection
+- ✓ Column rename: `raw_caption_data` → `scraper_metadata` (migration 008)
+- ✓ Entity relevance tagging: `fund_names[].relevance: "primary" | "mentioned"` — prompt, types, search sorting
 - `generateSections()` for YouTube transcripts — synthetic sections stored to `sections` column (4th LLM call for YouTube)
 - `turn-summaries` pipeline step (step 4.5) — `[{speaker, summary}]` stored to `turn_summaries`
 - YouTube timestamp extraction — populate `turns[].timestamp_seconds` from `scraper_metadata`
@@ -534,11 +494,11 @@ Trigger: double-click, or E shortcut when turn is focused.
 | 13 | `prompt_context_version` (INT) column — surface stale bullet indicator on AppearanceCard when prompt version changes | P2 | Phase 2/3 |
 | 14 | Proper job queue for bulk operations — `POST /api/process/bullets/bulk` holds HTTP connection (maxDuration=300s). Acceptable until corpus >100 appearances or multiple users; replace with Inngest, BullMQ, or Supabase-backed queue | P3 | Before corpus >100 |
 | 15 | Prompt context in Notion — separate page per prompt type, fetched at ingestion, context portion snapshotted. Prompt logic stays in code. Per-type version tracking via `prompt_context_version`. "Regenerate Bullets" button should offer a prompt template picker (dropdown of available Notion prompt pages) so prompt iteration is one-click: pick template → regenerate → compare output | P2 | Phase 2/3 |
-| 16 | `prep_bullets` JSONB fetched in lightweight list projection just for bullet count — `LIST_COLUMNS` includes full `prep_bullets` but UI only reads `prep_bullets?.bullets?.length`. Fix: drop `prep_bullets` from `LIST_COLUMNS` and either add a Supabase RPC/raw SQL returning `jsonb_array_length(prep_bullets->'bullets') as bullet_count`, use a computed column, or drop the bullet count from the list view if it's not essential. Acceptable until ~200 rows or ~20 bullets/row. | P3 | When list view performance degrades |
+| 16 | Heavy JSONB in list projection — `LIST_COLUMNS` includes full `prep_bullets` (for bullet count) and `entity_tags` (for relevance-based search sorting). Fix: replace with Supabase RPC or computed columns for bullet count and relevance. Acceptable until ~200 rows. | P3 | When list view performance degrades |
 | 17 | Hardcoded model `claude-sonnet-4-20250514` in all pipeline files | P3 | Extract to shared config constant or env var. Build admin UI only when non-developer users need to change it without deploying. |
-| 18 | Entity hierarchy, affiliations, and relevance tagging — three related gaps in entity extraction, all fixable in one prompt + Zod update. **(a) Hierarchy:** Current `parent` field is flat (one level). Real org structures are 4–5 levels deep with JVs, credit arms, co-investment vehicles. Add `mentioned_as` (exact transcript reference), `canonical_name` (salesperson-recognizable), `relationship` (subsidiary/credit arm/spin-off). **(b) Affiliations:** Add `affiliated_entities: [{entity, context}]` for non-hierarchical connections (co-investments, prior employers, seeders). Guard: "only extract affiliations explicitly stated or clearly implied — do not infer from general knowledge." Completeness ≪ accuracy. **(c) Relevance:** Add `relevance: "primary" \| "mentioned"` per fund_name entry. "Primary" = the interview is about this fund or its people. "Mentioned" = referenced in passing. **Downstream impacts of relevance tagging:** (1) Search results: primary matches ranked above mentioned matches, possibly separated in UI. (2) Fund overview cache: overview prompt receives bullets from primary matches only — passing mentions dilute synthesis quality. (3) Coverage counts: "Apollo: 7 appearances" should reflect primary appearances, not every transcript that name-dropped Apollo. All three downstream changes are query/UI adjustments, no new tables or migrations. | P2 | When corpus >50 and search misses become visible |
+| 18 | Entity hierarchy and affiliations — two remaining gaps in entity extraction. **(a) Hierarchy:** Current `parent` field is flat (one level). Real org structures are 4–5 levels deep with JVs, credit arms, co-investment vehicles. Add `mentioned_as` (exact transcript reference), `canonical_name` (salesperson-recognizable), `relationship` (subsidiary/credit arm/spin-off). **(b) Affiliations:** Add `affiliated_entities: [{entity, context}]` for non-hierarchical connections (co-investments, prior employers, seeders). Guard: "only extract affiliations explicitly stated or clearly implied — do not infer from general knowledge." Completeness ≪ accuracy. ~~**(c) Relevance:** `relevance: "primary" \| "mentioned"`~~ **Done** — prompt tags each fund_name, search sorts primary before mentioned, fund overview TODO added. | P2 | When corpus >50 and search misses become visible |
 | 19 | ~~`vote/route.ts`~~ | ~~P3~~ | **Resolved:** Removed from project structure. Voting is not a separate feature — it's the evolution of bullet feedback (tech debt #7). Thumbs up/down replaces [×] flag in Phase 2 via `/api/feedback`. Positive feedback feeds few-shot prompt example selection in Phase 4+. |
-| 20 | yt-dlp runs locally only. YouTube extraction depends on yt-dlp binary, which can't run on Vercel serverless. Current workaround: extract locally, pipeline writes raw data to Supabase, Vercel handles clean/entities/bullets. When Phase 4 self-serve submission is built, move extract step to Docker-based environment (Railway, Fly.io, Cloud Run) or replace with API-based extraction. For other users uploading transcripts, or scheduling regular pull for eg ILTB.
+| 20 | yt-dlp runs locally only — YouTube extraction depends on yt-dlp binary, which can't run on Vercel serverless. Current workaround: extract locally, pipeline writes raw data to Supabase, Vercel handles clean/entities/bullets. | P2 | When Phase 4 self-serve submission is built, move extract step to Docker-based environment (Railway, Fly.io, Cloud Run) or replace with API-based extraction. |
 
 ---
 
