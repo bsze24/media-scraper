@@ -5,11 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project context
 Meeting Prep Tool — an internal tool that indexes podcast transcripts and youtube transcripts (ie conferences panels, interviews) and generates AI-powered meeting prep for conversations with external prospects. Initial use case is for AI-data platform selling into investment funds.
 
-Full PRD: docs/prd.md
 
-Current phase: Phase 0 — Pipeline + Bootstrap
-Milestone: Paste 20 Invest Like the Best (Colossus) URLs → transcripts scraped, cleaned, entity-tagged,
-prep bullets generated. Query Supabase for "Apollo" and get instant results.
+Full PRD: docs/prd.md
+Current phase: Phase 1 — Transcript Viewer + Lookup UI
+Milestone (1C): Type "Apollo" → instant results. Click bullet → transcript viewer at correct section with search pre-loaded.
+Milestone (1D): Paste a YouTube URL (conference panel or interview) → transcript scraped, cleaned with speaker attribution, synthetic sections generated, entities extracted, bullets generated. Verify: turns[].timestamp_seconds populated, citation link opens YouTube at correct moment.
 
 Tech stack: Next.js 16 app using the App Router with TypeScript, React 19, and Tailwind CSS v4.
 
@@ -22,11 +22,12 @@ entity/bullet storage. Claude API (Anthropic SDK) for transcript processing pipe
 Deployed on Vercel.
 
 ## Context files — read these before starting any task
+- CLAUDE.md
 - docs/prd.md — full product requirements
-- docs/implementation-plan-v2.md — current build plan by phase
+- docs/implementation-plan.md — current build plan by phase
 
 ## Protected files
-- Never use the Write tool on `docs/implementation-plan-v3.md` — always use Edit with targeted replacements.
+- Never use the Write tool on `docs/implementation-plan.md` — always use Edit with targeted replacements.
 
 ## Architecture rules
 - All LLM processing happens at INGESTION time, never at query time.
@@ -37,16 +38,9 @@ Deployed on Vercel.
 - Prompts live in lib/prompts/ as exported strings — never inline in pipeline functions.
 
 ## File structure
-lib/
-  scrapers/       — One file per source (colossus.ts, youtube.ts)
-  pipeline/       — cleanTranscript, extractEntities, generatePrepBullets
-  prompts/        — Prompt templates as exported strings/objects
-  db/             — Supabase client, query functions, types
-  queue/          — Processing orchestration and status tracking
-src/app/          — Next.js pages (lookup UI, admin, URL submission — Phase 1+)
-docs/             — prd.md and any other design docs
-supabase/
-  migrations/     — SQL migration files
+lib/          — scrapers, pipeline, prompts, db, queue, api (server-side logic)
+src/app/      — Next.js pages and API routes
+docs/         — prd.md, implementation-plan.md
 
 ## Commands
 

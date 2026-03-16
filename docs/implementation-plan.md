@@ -1,5 +1,5 @@
-# Meeting Prep Tool — Technical Implementation Plan (v4)
-**Last updated:** March 14, 2026
+# Meeting Prep Tool — Technical Implementation Plan
+**Last updated:** March 15, 2026
 **Branch:** phase1/transcript-ui (Phase 0: phase0/bootstrap-pipeline)
 **Status:** Phase 1B complete — orchestrator improvements (chunk parallelization, bullets-only reprocess, bulk regenerate), prompt context snapshot, search page. Phase 2 schema prep migrations created.
 
@@ -27,7 +27,7 @@
 | `section_anchor` on bullets | Always null | Populated correctly — LLM matches quotes to sections lookup table, falls back to fuzzy lookup. |
 | `chunker.ts` naming | Ambiguous — overlaps with RAG chunks concept | Renamed to `splitter.ts` / `splitForProcessing` to disambiguate from RAG `transcript_chunks` (Phase 5). |
 | CLAUDE.md observability | Not documented | Observability section added — console.log bookends required, never stripped, chunk progress logging on long steps. |
-| YouTube timestamps | Not addressed | Deferred — timestamps belong in `turns[].timestamp_seconds` populated from `raw_caption_data`; not in cleaned transcript text. |
+| YouTube timestamps | Not addressed | Deferred — timestamps belong in `turns[].timestamp_seconds` populated from `scraper_metadata`; not in cleaned transcript text. |
 | YouTube sections | Not addressed | Deferred — `generateSections()` pipeline step produces synthetic sections for YouTube transcripts (Phase 1). |
 | Admin token | In implementation notes | Required cookie in browser (`admin_token`) matching `ADMIN_TOKEN` env var — set once per dev session. |
 
@@ -60,7 +60,7 @@ title
 appearance_date (DATE)
 speakers (JSONB: [{name, role, affiliation}])
 raw_transcript (TEXT)
-raw_caption_data (JSONB)                         — YouTube: contains timestamped caption segments
+scraper_metadata (JSONB)                         — general-purpose scraper output (YouTube: caption segments; Colossus: sections + episode number)
 cleaned_transcript (TEXT)
 turns (JSONB: [{speaker, text, turn_index}])     — parsed from speaker-labeled transcript at ingest
 turn_summaries (JSONB: [{speaker, summary}])     — nullable, Phase 1 pipeline step
@@ -83,7 +83,7 @@ interface Turn {
   turn_index: number;
   section_anchor?: string;       // stamped at parse time from sections[]; undefined before first heading
   corrected?: boolean;           // true if human-verified (Phase 2 corrections UI)
-  timestamp_seconds?: number;    // YouTube only (Phase 1) — extracted from raw_caption_data
+  timestamp_seconds?: number;    // YouTube only (Phase 1) — extracted from scraper_metadata
   attribution?: "source" | "inferred";  // "source" = from original transcript, "inferred" = LLM-attributed. Omitted on legacy turns (treated as "source").
 }
 ```
@@ -237,7 +237,7 @@ LLM returns `section` and `section_anchor` directly. Post-processing uses `sq.se
 ## YouTube Pipeline (Phase 1) — Deferred Items
 
 ### Timestamps
-Timestamps belong in `turns[].timestamp_seconds`, populated from `raw_caption_data` at ingest — not in cleaned transcript text. Schema change is a no-op (JSONB is schemaless); TypeScript type update adds `timestamp_seconds?: number` to `Turn` interface.
+Timestamps belong in `turns[].timestamp_seconds`, populated from `scraper_metadata` at ingest — not in cleaned transcript text. Schema change is a no-op (JSONB is schemaless); TypeScript type update adds `timestamp_seconds?: number` to `Turn` interface.
 
 ### Synthetic sections (Task 2.5 — Phase 1)
 YouTube episodes have no HTML section anchors. Add `generateSections()` pipeline step:
@@ -430,7 +430,7 @@ supabase/
 - ✓ YouTube-specific clean prompt with speaker attribution — pass scraped speakers[] array into clean step when available; instruct LLM to attribute dialogue turns from conversational context (e.g. "thanks for joining us" = host, domain expertise responses = guest). Falls back gracefully when speakers metadata is incomplete or absent. Re-parses turns from cleaned transcript for YouTube sources.
 - `generateSections()` for YouTube transcripts — synthetic sections stored to `sections` column (4th LLM call for YouTube)
 - `turn-summaries` pipeline step (step 4.5) — `[{speaker, summary}]` stored to `turn_summaries`
-- YouTube timestamp extraction — populate `turns[].timestamp_seconds` from `raw_caption_data`
+- YouTube timestamp extraction — populate `turns[].timestamp_seconds` from `scraper_metadata`
 
 **Fund overview (Phase 1 stretch / Phase 2):**
 - Write `lib/prompts/overview.ts` — synthesis prompt that receives `prep_bullets` + metadata from all matching appearances for a fund, produces a cross-appearance narrative (consistent themes, evolving views, key people)
