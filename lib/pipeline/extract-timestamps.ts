@@ -24,8 +24,13 @@ function extractWords(text: string, count: number): string[] {
  * Count the number of common words between two word arrays (set intersection).
  */
 function wordOverlap(a: string[], b: string[]): number {
+  const setA = new Set(a);
   const setB = new Set(b);
-  return a.filter((w) => setB.has(w)).length;
+  let count = 0;
+  for (const w of setA) {
+    if (setB.has(w)) count++;
+  }
+  return count;
 }
 
 /**
