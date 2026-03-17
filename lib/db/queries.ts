@@ -16,7 +16,7 @@ import type { ProcessingStatus, EntityTags } from "@/types/appearance";
 // ideal but Supabase doesn't support computed columns in .select(). Acceptable until
 // bullet count exceeds ~20 per row or corpus exceeds ~200 rows.
 const LIST_COLUMNS =
-  "id, title, source_name, appearance_date, speakers, processing_status, prep_bullets, entity_tags" as const;
+  "id, title, source_name, source_url, appearance_date, speakers, processing_status, processing_detail, processing_error, updated_at, created_at, prep_bullets, entity_tags" as const;
 
 // ---------------------------------------------------------------------------
 // Read
@@ -189,6 +189,18 @@ export async function removeProcessingWarning(
     row_id: id,
     prefix,
   });
+  if (error) throw error;
+}
+
+export async function updateProcessingDetail(
+  id: string,
+  detail: string | null
+): Promise<void> {
+  const supabase = createServerClient();
+  const { error } = await supabase
+    .from("appearances")
+    .update({ processing_detail: detail })
+    .eq("id", id);
   if (error) throw error;
 }
 

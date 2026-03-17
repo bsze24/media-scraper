@@ -2,6 +2,7 @@ import {
   getAppearanceById,
   listAppearances,
   updateProcessingStatus,
+  updateProcessingDetail,
   claimForProcessing,
   writeExtractResult,
   writeCleanResult,
@@ -59,6 +60,7 @@ export async function processAppearance(id: string): Promise<void> {
   try {
     // Step 1: Extract
     console.log(`\n[pipeline] ▶ Step 1/4: EXTRACT — ${title}`);
+    await updateProcessingDetail(id, "extracting captions");
 
     let rawTranscript: string;
     let sections: import("@/types/scraper").SectionHeading[] = [];
@@ -99,6 +101,7 @@ export async function processAppearance(id: string): Promise<void> {
       await writeExtractResult(id, extractOutput);
     }
 
+    await updateProcessingDetail(id, `extract complete — ${rawTranscript.length} chars`);
     console.log(`[pipeline] ✓ Extract complete — ${rawTranscript.length} chars (${stepTime()})`);
 
     // Validation 1: minimum transcript length
@@ -124,14 +127,18 @@ export async function processAppearance(id: string): Promise<void> {
     let cleanedChunks: string[] | null = null;
     const cleanOpts = { transcriptSource, speakers };
     if (rawChunks) {
+      await updateProcessingDetail(id, `cleaning chunk 1/${rawChunks.length}`);
       // Clean chunks in parallel
       cleanedChunks = await Promise.all(
-        rawChunks.map((chunk) =>
-          cleanTranscript(chunk, cleanOpts).then((o) => o.cleaned_transcript)
-        )
+        rawChunks.map(async (chunk, ci) => {
+          const result = await cleanTranscript(chunk, cleanOpts).then((o) => o.cleaned_transcript);
+          await updateProcessingDetail(id, `cleaning chunk ${ci + 1}/${rawChunks.length} complete`);
+          return result;
+        })
       );
       finalCleaned = mergeCleaned(cleanedChunks);
     } else {
+      await updateProcessingDetail(id, "cleaning transcript");
       const cleanOutput = await cleanTranscript(rawTranscript, cleanOpts);
       finalCleaned = cleanOutput.cleaned_transcript;
     }
@@ -146,7 +153,8 @@ export async function processAppearance(id: string): Promise<void> {
 
     // Normalize variant speaker name forms (e.g. "Marc" / "Rowan" → "Marc Rowan")
     // Runs for all sources — Colossus can drift during cleaning, YouTube drifts more.
-    const { normalizedTranscript, replacements: nameReplacements } =
+    await updateProcessingDetail(id, "normalizing speaker names");
+    const { normalizedTranscript, replacements: nameReplacements, ambiguousCount } =
       normalizeSpeakerNames(finalCleaned, speakers);
     if (Object.keys(nameReplacements).length > 0) {
       finalCleaned = normalizedTranscript;
@@ -163,6 +171,10 @@ export async function processAppearance(id: string): Promise<void> {
       console.log(`[pipeline]   ↳ Speaker normalization: {${mapStr}}`);
     } else {
       console.log(`[pipeline]   ↳ Speaker normalization: no changes needed`);
+    }
+
+    if (ambiguousCount > 0) {
+      await appendProcessingWarning(id, `speaker_normalization_ambiguous:${ambiguousCount}`);
     }
 
     await writeCleanResult(id, { cleaned_transcript: finalCleaned });
@@ -183,6 +195,7 @@ export async function processAppearance(id: string): Promise<void> {
     // (which now has speaker labels) instead of the raw transcript (which doesn't).
     // These turns are marked "inferred" since speaker labels came from LLM attribution.
     if (isYouTubeSource(transcriptSource)) {
+      await updateProcessingDetail(id, "re-parsing turns from cleaned transcript");
       currentTurns = parseTurns(finalCleaned, sections, "inferred");
       await writeTurns(id, currentTurns);
       console.log(`[pipeline]   ↳ Re-parsed ${currentTurns.length} turns from cleaned transcript`);
@@ -198,6 +211,7 @@ export async function processAppearance(id: string): Promise<void> {
     // Step 3: Entities + Turn Summaries (parallel — both read from cleaned transcript/turns)
     console.log(`[pipeline] ▶ Step 3/4: ENTITIES + TURN SUMMARIES — ${title}`);
     await updateProcessingStatus(id, "analyzing");
+    await updateProcessingDetail(id, "analyzing — entities + turn summaries");
 
     // Run entities and turn summaries in parallel
     const entitiesPromise = (async () => {
@@ -242,6 +256,8 @@ export async function processAppearance(id: string): Promise<void> {
 
     const entityCount = (finalEntities.entity_tags.fund_names?.length ?? 0) +
       (finalEntities.entity_tags.key_people?.length ?? 0);
+    const turnSummaryCount = turnSummariesResult.summaries.length;
+    await updateProcessingDetail(id, `analysis complete — ${entityCount} entities, ${turnSummaryCount} summaries`);
     console.log(`[pipeline] ✓ Entities complete — ${entityCount} entities (${stepTime()})`);
     console.log(`[pipeline] ✓ Turn summaries complete — ${turnSummariesResult.summaries.length} summaries (${stepTime()})`);
 
@@ -251,17 +267,20 @@ export async function processAppearance(id: string): Promise<void> {
     // Chunk-level parallelism within each step is safe.
     let finalBullets: BulletsStepOutput;
     if (cleanedChunks && rawChunks) {
+      await updateProcessingDetail(id, `generating bullets chunk 1/${cleanedChunks.length}`);
       const bulletChunks = await Promise.all(
-        cleanedChunks.map((chunk, ci) => {
+        cleanedChunks.map(async (chunk, ci) => {
           const chunkSections = sections.filter(
             (s) => rawChunks[ci].includes(s.heading)
           );
-          return generatePrepBullets(
+          const result = await generatePrepBullets(
             chunk,
             finalEntities.entity_tags,
             chunkSections,
             transcriptSource
           );
+          await updateProcessingDetail(id, `generating bullets chunk ${ci + 1}/${cleanedChunks.length} complete`);
+          return result;
         })
       );
       finalBullets = {
@@ -269,6 +288,7 @@ export async function processAppearance(id: string): Promise<void> {
         prompt_context_snapshot: bulletChunks[0]?.prompt_context_snapshot,
       };
     } else {
+      await updateProcessingDetail(id, "generating bullets");
       finalBullets = await generatePrepBullets(
         finalCleaned,
         finalEntities.entity_tags,
@@ -278,6 +298,7 @@ export async function processAppearance(id: string): Promise<void> {
     }
     await writeBulletsResult(id, finalBullets);
     const bulletCount = finalBullets.prep_bullets.bullets?.length ?? 0;
+    await updateProcessingDetail(id, `bullets complete — ${bulletCount} bullets`);
     console.log(`[pipeline] ✓ Bullets complete — ${bulletCount} bullets (${stepTime()})`);
 
     // Validation 6: bullets — suspiciously low count
@@ -289,6 +310,8 @@ export async function processAppearance(id: string): Promise<void> {
 
     // Done — warnings already appended via appendProcessingWarning;
     // updateProcessingStatus with status "complete" preserves them.
+    const turnCount = currentTurns.length;
+    await updateProcessingDetail(id, `${bulletCount} bullets, ${turnCount} turns, ${entityCount} entities`);
     await updateProcessingStatus(id, "complete");
     console.log(`[pipeline] ✅ COMPLETE — ${title} (total: ${stepTime()})`);
 
@@ -336,6 +359,7 @@ export async function reprocessBullets(id: string): Promise<BulletsStepOutput> {
 
   const title = row.title ?? id;
   console.log(`[reprocessBullets] starting: ${title}`);
+  await updateProcessingDetail(id, null);
 
   try {
     // Split on raw_transcript (section headings are intact there), not
@@ -393,6 +417,12 @@ export async function reprocessBullets(id: string): Promise<BulletsStepOutput> {
       );
     }
 
+    // Recompute summary from current row data
+    const reprocessedBulletCount = result.prep_bullets.bullets?.length ?? 0;
+    const reprocessedTurnCount = row.turns?.length ?? 0;
+    const reprocessedEntityCount = (row.entity_tags.fund_names?.length ?? 0) +
+      (row.entity_tags.key_people?.length ?? 0);
+    await updateProcessingDetail(id, `${reprocessedBulletCount} bullets, ${reprocessedTurnCount} turns, ${reprocessedEntityCount} entities`);
     console.log(`[reprocessBullets] complete: ${title}`);
     return result;
   } catch (err) {
@@ -419,6 +449,7 @@ export async function reprocessTurnSummaries(
 
   const title = row.title ?? id;
   console.log(`[reprocessTurnSummaries] starting: ${title}`);
+  await updateProcessingDetail(id, null);
 
   const result = await generateTurnSummaries(row.turns);
   await writeTurnSummaries(id, result.summaries);
@@ -429,6 +460,12 @@ export async function reprocessTurnSummaries(
     await appendProcessingWarning(id, result.warning);
   }
 
+  // Recompute summary from current row data
+  const reBulletCount = row.prep_bullets?.bullets?.length ?? 0;
+  const reTurnCount = row.turns?.length ?? 0;
+  const reEntityCount = (row.entity_tags.fund_names?.length ?? 0) +
+    (row.entity_tags.key_people?.length ?? 0);
+  await updateProcessingDetail(id, `${reBulletCount} bullets, ${reTurnCount} turns, ${reEntityCount} entities`);
   console.log(`[reprocessTurnSummaries] complete: ${title} — ${result.summaries.length} summaries`);
   return result.summaries;
 }

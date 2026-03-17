@@ -8,6 +8,7 @@ import {
   countByStatus,
   getAppearanceById,
   updateProcessingStatus,
+  updateProcessingDetail,
 } from "@lib/db/queries";
 import { detectTranscriptSource } from "@lib/scrapers/registry";
 import { processOne, reprocessBullets } from "@lib/queue/orchestrator";
@@ -79,13 +80,15 @@ export async function retryAppearance(
   await requireAdmin();
   const row = await getAppearanceById(id);
   if (!row) throw new Error("Not found");
-  if (row.processing_status !== "failed") {
-    throw new Error(
-      `Cannot retry: status is "${row.processing_status}", expected "failed"`
-    );
+  if (row.processing_status === "complete") {
+    throw new Error("Appearance already complete");
+  }
+  if (row.processing_status === "queued") {
+    throw new Error("Appearance already queued");
   }
 
   await updateProcessingStatus(id, "queued", null);
+  await updateProcessingDetail(id, null);
   return { id, status: "queued" };
 }
 
@@ -114,7 +117,9 @@ export async function getAllAppearances(): Promise<
     source_url: string;
     title: string | null;
     processing_status: ProcessingStatus;
+    processing_detail: string | null;
     processing_error: string | null;
+    updated_at: string;
     created_at: string;
   }[]
 > {
@@ -124,7 +129,9 @@ export async function getAllAppearances(): Promise<
     source_url: r.source_url,
     title: r.title,
     processing_status: r.processing_status,
+    processing_detail: r.processing_detail,
     processing_error: r.processing_error,
+    updated_at: r.updated_at,
     created_at: r.created_at,
   }));
 }

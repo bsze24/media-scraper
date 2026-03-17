@@ -27,6 +27,7 @@ export interface AppearanceRow {
   turn_summaries: Array<{ speaker: string; summary: string; turn_index: number }> | null;
   sections: SectionHeading[];
   processing_status: ProcessingStatus;
+  processing_detail: string | null;
   prompt_context_snapshot: string | null;
   bullets_generated_at: string | null;
   processing_error: string | null;
@@ -88,6 +89,11 @@ export type AppearanceListRow = Pick<
   | "appearance_date"
   | "speakers"
   | "processing_status"
+  | "processing_detail"
+  | "processing_error"
+  | "updated_at"
+  | "source_url"
+  | "created_at"
   | "prep_bullets"
   | "entity_tags"
 >;

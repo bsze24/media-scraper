@@ -17,7 +17,9 @@ interface AppearanceItem {
   source_url: string;
   title: string | null;
   processing_status: ProcessingStatus;
+  processing_detail: string | null;
   processing_error: string | null;
+  updated_at: string;
   created_at: string;
 }
 
@@ -53,9 +55,24 @@ const STATUS_BADGES: Record<
   },
 };
 
+const IN_FLIGHT_STATUSES: Set<ProcessingStatus> = new Set([
+  "extracting",
+  "cleaning",
+  "analyzing",
+]);
+
 function truncateUrl(url: string, max = 50): string {
   if (url.length <= max) return url;
   return url.slice(0, max - 1) + "\u2026";
+}
+
+function formatElapsed(updatedAt: string): string {
+  const elapsed = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 1000);
+  if (elapsed < 0) return "0s";
+  if (elapsed < 60) return `${elapsed}s`;
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  return `${mins}m ${secs}s`;
 }
 
 export default function Home() {
@@ -65,6 +82,7 @@ export default function Home() {
   const [counts, setCounts] = useState<StatusCounts | null>(null);
   const [processing, setProcessing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [retryingAll, setRetryingAll] = useState(false);
   const stopRef = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -166,12 +184,34 @@ export default function Home() {
     }
   }
 
+  async function handleRetryAllFailed() {
+    const failedRows = appearances.filter((a) => a.processing_status === "failed");
+    if (failedRows.length === 0) return;
+
+    const confirmed = window.confirm(`Reset ${failedRows.length} failed row${failedRows.length === 1 ? "" : "s"}?`);
+    if (!confirmed) return;
+
+    setRetryingAll(true);
+    try {
+      for (const row of failedRows) {
+        await retryAppearance(row.id);
+      }
+    } catch (err) {
+      console.error("Retry all failed:", err);
+    } finally {
+      setRetryingAll(false);
+      await refresh();
+    }
+  }
+
   const activeCount =
     (counts?.extracting ?? 0) + (counts?.cleaning ?? 0) + (counts?.analyzing ?? 0);
 
+  const failedCount = counts?.failed ?? 0;
+
   return (
     <div className="min-h-screen bg-zinc-50 p-8 font-sans dark:bg-zinc-950">
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="mx-auto max-w-5xl space-y-6">
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
           Meeting Prep Tool — Admin
         </h1>
@@ -225,6 +265,15 @@ export default function Home() {
                 Failed: <strong>{counts.failed}</strong>
               </span>
               <div className="ml-auto flex gap-2">
+                {failedCount > 0 && (
+                  <button
+                    onClick={handleRetryAllFailed}
+                    disabled={retryingAll}
+                    className="rounded border border-amber-300 px-4 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950"
+                  >
+                    {retryingAll ? "Retrying\u2026" : "Retry All Failed"}
+                  </button>
+                )}
                 <button
                   onClick={handleProcessAll}
                   disabled={processing || (counts.queued ?? 0) === 0}
@@ -261,6 +310,9 @@ export default function Home() {
                     Status
                   </th>
                   <th className="px-4 py-2 font-medium text-zinc-600 dark:text-zinc-400">
+                    Detail
+                  </th>
+                  <th className="px-4 py-2 font-medium text-zinc-600 dark:text-zinc-400">
                     Action
                   </th>
                 </tr>
@@ -268,6 +320,10 @@ export default function Home() {
               <tbody>
                 {appearances.map((a) => {
                   const badge = STATUS_BADGES[a.processing_status];
+                  const isInFlight = IN_FLIGHT_STATUSES.has(a.processing_status);
+                  const isComplete = a.processing_status === "complete";
+                  const isFailed = a.processing_status === "failed";
+                  const canRetry = !isComplete && a.processing_status !== "queued";
                   return (
                     <tr
                       key={a.id}
@@ -288,7 +344,12 @@ export default function Home() {
                         >
                           {badge.label}
                         </span>
-                        {a.processing_error && (
+                        {isInFlight && (
+                          <span className="ml-2 text-xs text-zinc-400">
+                            {formatElapsed(a.updated_at)}
+                          </span>
+                        )}
+                        {isFailed && a.processing_error && (
                           <span
                             className="ml-2 text-xs text-red-500"
                             title={a.processing_error}
@@ -297,9 +358,21 @@ export default function Home() {
                             {a.processing_error.length > 40 ? "\u2026" : ""}
                           </span>
                         )}
+                        {isComplete && a.processing_error && (
+                          <span
+                            className="ml-2 text-xs text-amber-500"
+                            title={a.processing_error}
+                          >
+                            {a.processing_error.slice(0, 40)}
+                            {a.processing_error.length > 40 ? "\u2026" : ""}
+                          </span>
+                        )}
+                      </td>
+                      <td className="max-w-[200px] truncate px-4 py-2 text-xs text-zinc-500 dark:text-zinc-400">
+                        {a.processing_detail ?? "\u2014"}
                       </td>
                       <td className="px-4 py-2">
-                        {a.processing_status === "failed" && (
+                        {canRetry && (
                           <button
                             onClick={() => handleRetry(a.id)}
                             className="text-xs font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
