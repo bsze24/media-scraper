@@ -159,68 +159,37 @@ export async function claimForProcessing(
 }
 
 /**
- * Append a warning to processing_error without overwriting existing warnings.
- * Multiple warnings are concatenated with " | " separators.
- *
- * Note: uses read-then-write (not atomic). Safe because all callers within a
- * single pipeline run are sequential. If future callers run in parallel (e.g.
- * inside Promise.all), replace with a Supabase RPC using SQL concatenation:
- * COALESCE(processing_error || ' | ', '') || $1
+ * Atomically append a warning to processing_error without overwriting
+ * existing warnings. Uses a Postgres function (single UPDATE) so concurrent
+ * callers cannot lose each other's writes.
  */
 export async function appendProcessingWarning(
   id: string,
   warning: string
 ): Promise<void> {
   const supabase = createServerClient();
-  const { data, error: readError } = await supabase
-    .from("appearances")
-    .select("processing_error")
-    .eq("id", id)
-    .single();
-
-  if (readError) throw readError;
-
-  const existing = data?.processing_error;
-  const newValue = existing ? `${existing} | ${warning}` : warning;
-
-  const { error: writeError } = await supabase
-    .from("appearances")
-    .update({ processing_error: newValue })
-    .eq("id", id);
-
-  if (writeError) throw writeError;
+  const { error } = await supabase.rpc("append_processing_warning", {
+    row_id: id,
+    warning,
+  });
+  if (error) throw error;
 }
 
 /**
- * Remove a specific warning prefix from processing_error.
- * Matches any pipe-separated segment starting with `prefix`.
- * If no segments remain, sets processing_error to null.
+ * Atomically remove a specific warning prefix from processing_error.
+ * Filters out any pipe-separated segment starting with `prefix`.
+ * Sets processing_error to null if no segments remain.
  */
 export async function removeProcessingWarning(
   id: string,
   prefix: string
 ): Promise<void> {
   const supabase = createServerClient();
-  const { data, error: readError } = await supabase
-    .from("appearances")
-    .select("processing_error")
-    .eq("id", id)
-    .single();
-
-  if (readError) throw readError;
-
-  const existing = data?.processing_error;
-  if (!existing) return;
-
-  const segments = existing.split(" | ").filter((s: string) => !s.startsWith(prefix));
-  const newValue = segments.length > 0 ? segments.join(" | ") : null;
-
-  const { error: writeError } = await supabase
-    .from("appearances")
-    .update({ processing_error: newValue })
-    .eq("id", id);
-
-  if (writeError) throw writeError;
+  const { error } = await supabase.rpc("remove_processing_warning", {
+    row_id: id,
+    prefix,
+  });
+  if (error) throw error;
 }
 
 export async function updateProcessingStatus(
