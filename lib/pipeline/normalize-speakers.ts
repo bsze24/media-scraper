@@ -10,6 +10,7 @@
 interface NormalizationResult {
   normalizedTranscript: string;
   replacements: Record<string, string>;
+  ambiguousCount: number;
 }
 
 /**
@@ -66,9 +67,10 @@ function findCanonicalMatches(
  */
 function buildFallbackCanonicalMap(
   transcriptNames: Set<string>
-): Record<string, string> {
+): { map: Record<string, string>; ambiguousCount: number } {
   const names = Array.from(transcriptNames);
   const map: Record<string, string> = {};
+  let ambiguousCount = 0;
 
   for (const name of names) {
     // Find all names that this name is a strict subset of (shorter → longer)
@@ -81,6 +83,7 @@ function buildFallbackCanonicalMap(
       map[name] = supersets[0];
     } else if (supersets.length > 1) {
       // Ambiguous: "Marc" could be "Marc Rowan" or "Marc Smith" — skip
+      ambiguousCount++;
       console.warn(
         `[normalize-speakers] fallback: ambiguous "${name}" — could be ${supersets.map((s) => `"${s}"`).join(" or ")}. Skipping.`
       );
@@ -88,7 +91,7 @@ function buildFallbackCanonicalMap(
     // If no supersets, this is already the longest form or unrelated — skip
   }
 
-  return map;
+  return { map, ambiguousCount };
 }
 
 /**
@@ -106,7 +109,7 @@ export function normalizeSpeakerNames(
   const transcriptNames = extractTranscriptSpeakers(cleanedTranscript);
 
   if (transcriptNames.size === 0) {
-    return { normalizedTranscript: cleanedTranscript, replacements: {} };
+    return { normalizedTranscript: cleanedTranscript, replacements: {}, ambiguousCount: 0 };
   }
 
   const canonicalNames = knownSpeakers.map((s) => s.name);
@@ -114,14 +117,16 @@ export function normalizeSpeakerNames(
 
   if (canonicalNames.length === 0) {
     // No metadata at all — build canonical map from transcript itself
-    const fallbackMap = buildFallbackCanonicalMap(transcriptNames);
+    const { map: fallbackMap, ambiguousCount } = buildFallbackCanonicalMap(transcriptNames);
     return {
       normalizedTranscript: applyReplacements(cleanedTranscript, fallbackMap),
       replacements: fallbackMap,
+      ambiguousCount,
     };
   }
 
   // Match transcript names to metadata canonical names
+  let ambiguousCount = 0;
   {
     for (const found of transcriptNames) {
       // Skip if already mapped by fallback or is an exact match
@@ -132,6 +137,7 @@ export function normalizeSpeakerNames(
       if (matches.length === 1) {
         replacements[found] = matches[0];
       } else if (matches.length > 1) {
+        ambiguousCount++;
         console.warn(
           `[normalize-speakers] ambiguous match for "${found}" — could be ${matches.map((m) => `"${m}"`).join(" or ")}. Skipping.`
         );
@@ -143,6 +149,7 @@ export function normalizeSpeakerNames(
   return {
     normalizedTranscript: applyReplacements(cleanedTranscript, replacements),
     replacements,
+    ambiguousCount,
   };
 }
 
