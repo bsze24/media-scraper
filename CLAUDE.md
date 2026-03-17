@@ -84,6 +84,7 @@ Never strip these logs to "clean up" — they are the primary debugging signal f
 - Verify no API keys, tokens, or secrets in committed code (use .env.local)
 - Verify Supabase queries use parameterized inputs (no string interpolation)
 - Verify pipeline functions have console.log bookends
+- Self-audit against session prompt: If this session was driven by a session prompt (.md file), compare every task in the prompt against what was built. For each task, confirm it was done with specific evidence (function name, file, line) or flag what's missing/different. Do not commit until all tasks are accounted for.
 
 ## Communication style
 When correcting a mistake or changing approach, briefly explain *why* (e.g., "one branch per PR because...") so I learn the underlying principle, not just the fix.
