@@ -287,6 +287,18 @@ export async function writeTurns(
   if (error) throw error;
 }
 
+export async function writeSections(
+  id: string,
+  sections: import("@/types/scraper").SectionHeading[]
+): Promise<void> {
+  const supabase = createServerClient();
+  const { error } = await supabase
+    .from("appearances")
+    .update({ sections })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 export async function writeTurnSummaries(
   id: string,
   turnSummaries: Array<{ speaker: string; summary: string; turn_index: number }>

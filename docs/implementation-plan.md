@@ -59,7 +59,7 @@ interface Turn {
   section_anchor?: string;       // stamped at parse time from sections[]; undefined before first heading
   corrected?: boolean;           // true if human-verified (Phase 2 corrections UI)
   timestamp_seconds?: number;    // YouTube only (Phase 1) — extracted from scraper_metadata
-  attribution?: "source" | "inferred";  // "source" = from original transcript, "inferred" = LLM-attributed. Omitted on legacy turns (treated as "source").
+  attribution?: "source" | "derived" | "inferred";  // "source" = from original transcript, "derived" = mechanically extracted, "inferred" = LLM-attributed. Omitted on legacy turns (treated as "source").
 }
 ```
 
@@ -76,6 +76,9 @@ Array<{
 interface SectionHeading {
   heading: string;   // human-readable: "Apollo's DNA"
   anchor: string;    // slug: "apollos-dna"
+  turn_index?: number;    // which turn starts this section
+  start_time?: number;    // seconds into video (YouTube chapters)
+  source?: "source" | "derived" | "inferred";  // data trust tier
 }
 ```
 
@@ -185,11 +188,14 @@ LLM returns `section` and `section_anchor` directly. Post-processing uses `sq.se
 
 ## YouTube Pipeline (Phase 1) — Deferred Items
 
-### Timestamps
-Timestamps belong in `turns[].timestamp_seconds`, populated from `scraper_metadata` at ingest — not in cleaned transcript text. Schema change is a no-op (JSONB is schemaless); TypeScript type update adds `timestamp_seconds?: number` to `Turn` interface.
+### Timestamps — ✅ Implemented (PR A)
+`turns[].timestamp_seconds` populated from caption segments via `extractTimestamps()` in `lib/pipeline/extract-timestamps.ts`. Uses word-overlap matching between turn opening words and caption segment text. Wired into orchestrator after YouTube turn re-parse. Coverage validation warns if <80% of turns are timestamped.
 
-### Synthetic sections (Task 2.5 — Phase 1)
-YouTube episodes have no HTML section anchors. Add `generateSections()` pipeline step:
+### Chapters → Sections — ✅ Implemented (PR A)
+YouTube chapters from yt-dlp metadata are mapped to `SectionHeading[]` with `start_time` and `source: "source"` in the scraper. Section-to-turn mapping (`mapSectionsToTurns()`) assigns `turn_index` from nearest timestamped turn. Videos without chapters get `sections: []`.
+
+### Synthetic sections (Task 2.5 — Phase 1, PR B)
+YouTube episodes without chapters need synthetic sections. Add `generateSections()` pipeline step:
 
 **File:** `lib/pipeline/sections.ts`
 ```typescript
@@ -404,7 +410,8 @@ Every LLM-dependent pipeline step has a validation guard that checks output qual
 - ✓ Entity relevance tagging: `fund_names[].relevance: "primary" | "mentioned"` — prompt, types, search sorting
 - `generateSections()` for YouTube transcripts — synthetic sections stored to `sections` column (4th LLM call for YouTube)
 - ✓ `turn-summaries` pipeline step — `generateTurnSummaries()` runs parallel with entities, `[{speaker, summary, turn_index}]` stored to `turn_summaries`. Transcript viewer shows AI summaries for collapsed host turns with fallback to first sentence.
-- YouTube timestamp extraction — populate `turns[].timestamp_seconds` from `scraper_metadata`
+- ✓ YouTube timestamp extraction — `extractTimestamps()` populates `turns[].timestamp_seconds` from caption segments via word-overlap matching
+- ✓ YouTube chapters → sections — yt-dlp chapters mapped to `SectionHeading[]` with `start_time`, `turn_index`, and `source: "source"`
 
 **Fund overview (Phase 1 stretch / Phase 2):**
 - Write `lib/prompts/overview.ts` — synthesis prompt that receives `prep_bullets` + metadata from all matching appearances for a fund, produces a cross-appearance narrative (consistent themes, evolving views, key people)
