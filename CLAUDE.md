@@ -81,6 +81,12 @@ Apply consistently. When adding a new field with quality hierarchy, use this uni
 - `Turn.attribution`: `"source" | "inferred"` (retrofit to include `"derived"` when relevant)
 - `SectionHeading.source`: `"source" | "derived" | "inferred"` (planned)
 
+## Session Prompt Audit
+If this session was driven by a session prompt (.md file), do not commit until completing this audit: 
+1. **Task verification:** Compare every task in the prompt against what was built. For each task, confirm it was done with specific evidence (function name, file, line) or flag what's missing/different. 
+2. **Assumptions:** List any assumptions you made that weren't explicit in the prompt — places where two reasonable implementations were possible and you picked one. Explain why you chose what you chose. 
+3. **Skips & divergences:** List anything from the prompt you intentionally skipped or interpreted differently, and why.
+
 ## Before Committing
 - Run `npm run typecheck && npm test && npm run test:e2e && npm run build`
 - Scan all changed files for:
@@ -94,11 +100,6 @@ Apply consistently. When adding a new field with quality hierarchy, use this uni
 - Verify no API keys, tokens, or secrets in committed code (use .env.local)
 - Verify Supabase queries use parameterized inputs (no string interpolation)
 - Verify pipeline functions have console.log bookends
-- Self-audit against session prompt: If this session was driven by a session prompt (.md file):
-1. Compare every task in the prompt against what was built. For each task, confirm it was done with specific evidence (function name, file, line) or flag what's missing/different.
-2. List any assumptions you made that weren't explicit in the prompt — places where two reasonable implementations were possible and you picked one. Explain why you chose what you chose.
-3. List anything from the prompt you intentionally skipped or interpreted differently, and why.
-Do not commit until all tasks are accounted for.
 
 ## Communication style
 When correcting a mistake or changing approach, briefly explain *why* (e.g., "one branch per PR because...") so I learn the underlying principle, not just the fix.
