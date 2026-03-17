@@ -19,6 +19,7 @@ const mockWriteBulletsResult = vi.fn();
 const mockInvalidateFundOverviewCache = vi.fn();
 const mockExtractFundNames = vi.fn();
 const mockAppendProcessingWarning = vi.fn();
+const mockRemoveProcessingWarning = vi.fn();
 
 vi.mock("@lib/db/queries", () => ({
   getAppearanceById: (...args: unknown[]) => mockGetAppearanceById(...args),
@@ -33,6 +34,7 @@ vi.mock("@lib/db/queries", () => ({
   writeTurnSummaries: (...args: unknown[]) => mockWriteTurnSummaries(...args),
   updateProcessingError: (...args: unknown[]) => mockUpdateProcessingError(...args),
   appendProcessingWarning: (...args: unknown[]) => mockAppendProcessingWarning(...args),
+  removeProcessingWarning: (...args: unknown[]) => mockRemoveProcessingWarning(...args),
   writeBulletsResult: (...args: unknown[]) => mockWriteBulletsResult(...args),
   invalidateFundOverviewCache: (...args: unknown[]) =>
     mockInvalidateFundOverviewCache(...args),

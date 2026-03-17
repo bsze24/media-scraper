@@ -198,6 +198,38 @@ export async function appendProcessingWarning(
   if (writeError) throw writeError;
 }
 
+/**
+ * Remove a specific warning prefix from processing_error.
+ * Matches any pipe-separated segment starting with `prefix`.
+ * If no segments remain, sets processing_error to null.
+ */
+export async function removeProcessingWarning(
+  id: string,
+  prefix: string
+): Promise<void> {
+  const supabase = createServerClient();
+  const { data, error: readError } = await supabase
+    .from("appearances")
+    .select("processing_error")
+    .eq("id", id)
+    .single();
+
+  if (readError) throw readError;
+
+  const existing = data?.processing_error;
+  if (!existing) return;
+
+  const segments = existing.split(" | ").filter((s: string) => !s.startsWith(prefix));
+  const newValue = segments.length > 0 ? segments.join(" | ") : null;
+
+  const { error: writeError } = await supabase
+    .from("appearances")
+    .update({ processing_error: newValue })
+    .eq("id", id);
+
+  if (writeError) throw writeError;
+}
+
 export async function updateProcessingStatus(
   id: string,
   status: ProcessingStatus,
@@ -205,25 +237,17 @@ export async function updateProcessingStatus(
 ): Promise<void> {
   const supabase = createServerClient();
 
-  // When completing, read existing processing_error to preserve earlier warnings
-  // appended by validation steps. Only overwrite if an explicit error is passed
-  // (e.g. fatal failure) or if no warnings were accumulated.
-  let finalError: string | null = error ?? null;
-  if (status === "complete" && error === undefined) {
-    const { data } = await supabase
-      .from("appearances")
-      .select("processing_error")
-      .eq("id", id)
-      .single();
-    finalError = data?.processing_error ?? null;
+  // Only include processing_error in the update when explicitly provided.
+  // Intermediate status transitions (cleaning, analyzing) must NOT touch
+  // processing_error — earlier validation warnings would be wiped.
+  const updatePayload: Record<string, unknown> = { processing_status: status };
+  if (error !== undefined) {
+    updatePayload.processing_error = error ?? null;
   }
 
   const { error: dbError } = await supabase
     .from("appearances")
-    .update({
-      processing_status: status,
-      processing_error: finalError,
-    })
+    .update(updatePayload)
     .eq("id", id);
 
   if (dbError) throw dbError;

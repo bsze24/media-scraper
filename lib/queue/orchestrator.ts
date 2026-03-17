@@ -9,6 +9,7 @@ import {
   writeTurnSummaries,
   updateProcessingError,
   appendProcessingWarning,
+  removeProcessingWarning,
   writeEntitiesResult,
   writeBulletsResult,
   invalidateFundOverviewCache,
@@ -390,11 +391,11 @@ export async function reprocessTurnSummaries(
   const result = await generateTurnSummaries(row.turns);
   await writeTurnSummaries(id, result.summaries);
 
-  // Append warning on mismatch, clear on success
+  // Append warning on mismatch, remove stale warning on success
   if (result.warning) {
     await appendProcessingWarning(id, result.warning);
   } else {
-    await updateProcessingError(id, null);
+    await removeProcessingWarning(id, "turn_summaries_incomplete");
   }
 
   console.log(`[reprocessTurnSummaries] complete: ${title} — ${result.summaries.length} summaries`);

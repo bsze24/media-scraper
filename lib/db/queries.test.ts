@@ -13,6 +13,7 @@ import {
   searchByFundName,
   extractFundNames,
   appendProcessingWarning,
+  removeProcessingWarning,
 } from "./queries";
 import type { AppearanceRow } from "./types";
 import type { EntityTags } from "@/types/appearance";
@@ -125,6 +126,71 @@ describe("appendProcessingWarning", () => {
     expect(writeChain.update).toHaveBeenCalledWith({
       processing_error: "existing_warning: first issue | new_warning: second issue",
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// removeProcessingWarning
+// ---------------------------------------------------------------------------
+
+describe("removeProcessingWarning", () => {
+  it("removes a matching segment and preserves others", async () => {
+    const readChain = mockChain({
+      data: { processing_error: "extract_too_short: 100 chars | turn_summaries_incomplete: expected 5, got 3" },
+      error: null,
+    });
+    const writeChain = mockChain({ data: null, error: null });
+
+    const mockClient = {
+      from: vi.fn()
+        .mockReturnValueOnce(readChain)
+        .mockReturnValueOnce(writeChain),
+    };
+    vi.mocked(createServerClient).mockReturnValue(mockClient as any);
+
+    await removeProcessingWarning("id-1", "turn_summaries_incomplete");
+
+    expect(writeChain.update).toHaveBeenCalledWith({
+      processing_error: "extract_too_short: 100 chars",
+    });
+  });
+
+  it("sets null when removing the only segment", async () => {
+    const readChain = mockChain({
+      data: { processing_error: "turn_summaries_incomplete: expected 5, got 3" },
+      error: null,
+    });
+    const writeChain = mockChain({ data: null, error: null });
+
+    const mockClient = {
+      from: vi.fn()
+        .mockReturnValueOnce(readChain)
+        .mockReturnValueOnce(writeChain),
+    };
+    vi.mocked(createServerClient).mockReturnValue(mockClient as any);
+
+    await removeProcessingWarning("id-1", "turn_summaries_incomplete");
+
+    expect(writeChain.update).toHaveBeenCalledWith({
+      processing_error: null,
+    });
+  });
+
+  it("no-ops when processing_error is null", async () => {
+    const readChain = mockChain({
+      data: { processing_error: null },
+      error: null,
+    });
+
+    const mockClient = {
+      from: vi.fn().mockReturnValue(readChain),
+    };
+    vi.mocked(createServerClient).mockReturnValue(mockClient as any);
+
+    await removeProcessingWarning("id-1", "turn_summaries_incomplete");
+
+    // Only one from() call (the read), no update
+    expect(mockClient.from).toHaveBeenCalledTimes(1);
   });
 });
 
