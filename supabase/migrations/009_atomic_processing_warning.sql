@@ -18,7 +18,7 @@ RETURNS void AS $$
     array_to_string(
       ARRAY(
         SELECT s FROM unnest(string_to_array(processing_error, ' | ')) AS s
-        WHERE s NOT LIKE prefix || '%'
+        WHERE NOT starts_with(s, prefix)
       ),
       ' | '
     ),

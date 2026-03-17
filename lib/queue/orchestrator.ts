@@ -146,8 +146,10 @@ export async function processAppearance(id: string): Promise<void> {
     await writeCleanResult(id, { cleaned_transcript: finalCleaned });
     console.log(`[pipeline] ✓ Clean complete — ${finalCleaned.length} chars (${stepTime()})`);
 
-    // Validation 2: clean output/input ratio
-    const cleanRatio = finalCleaned.length / rawTranscript.length;
+    // Validation 2: clean output/input ratio (guard against empty rawTranscript)
+    const cleanRatio = rawTranscript.length > 0
+      ? finalCleaned.length / rawTranscript.length
+      : 0;
     if (cleanRatio < 0.30 || cleanRatio > 1.50) {
       const pct = (cleanRatio * 100).toFixed(0);
       const warning = `clean_ratio_warning: input ${rawTranscript.length} chars, output ${finalCleaned.length} chars (${pct}%)`;
