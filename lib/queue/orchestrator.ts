@@ -7,7 +7,6 @@ import {
   writeCleanResult,
   writeTurns,
   writeTurnSummaries,
-  updateProcessingError,
   appendProcessingWarning,
   removeProcessingWarning,
   writeEntitiesResult,
