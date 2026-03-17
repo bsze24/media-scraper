@@ -391,11 +391,10 @@ export async function reprocessTurnSummaries(
   const result = await generateTurnSummaries(row.turns);
   await writeTurnSummaries(id, result.summaries);
 
-  // Append warning on mismatch, remove stale warning on success
+  // Remove stale warning first to prevent duplicates, then append new if present
+  await removeProcessingWarning(id, "turn_summaries_incomplete");
   if (result.warning) {
     await appendProcessingWarning(id, result.warning);
-  } else {
-    await removeProcessingWarning(id, "turn_summaries_incomplete");
   }
 
   console.log(`[reprocessTurnSummaries] complete: ${title} — ${result.summaries.length} summaries`);

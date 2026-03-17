@@ -26,7 +26,7 @@ export async function POST(
     );
   }
 
-  await updateProcessingStatus(id, "queued");
+  await updateProcessingStatus(id, "queued", null);
 
   return NextResponse.json({ id, status: "queued" });
 }
