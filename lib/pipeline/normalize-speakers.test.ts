@@ -133,4 +133,39 @@ describe("normalizeSpeakerNames", () => {
     expect(result.replacements).toEqual({});
     expect(result.normalizedTranscript).toBe(transcript);
   });
+
+  it("does not remap full names that only share one part with a canonical name", () => {
+    const transcript = [
+      "Marc Rowan:\nText.\n",
+      "\nMarc Smith:\nDifferent person.\n",
+    ].join("\n");
+
+    const result = normalizeSpeakerNames(transcript, [{ name: "Marc Rowan" }]);
+
+    // "Marc Smith" shares "Marc" but is NOT a subset of "Marc Rowan" — must not be remapped
+    expect(result.replacements).toEqual({});
+    expect(result.normalizedTranscript).toMatch(/^Marc Smith:\n/m);
+    expect(result.normalizedTranscript).toMatch(/^Marc Rowan:\n/m);
+  });
+
+  it("fallback does not merge distinct full names sharing a first name", () => {
+    const transcript = [
+      "Marc Rowan:\nText.\n",
+      "\nMarc Smith:\nText.\n",
+      "\nMarc:\nShort form.\n",
+    ].join("\n");
+
+    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // No metadata — fallback mode
+    const result = normalizeSpeakerNames(transcript, []);
+
+    // "Marc" is ambiguous (subset of both "Marc Rowan" and "Marc Smith") — skip
+    expect(result.replacements).toEqual({});
+    expect(result.normalizedTranscript).toMatch(/^Marc:\n/m);
+    expect(result.normalizedTranscript).toMatch(/^Marc Rowan:\n/m);
+    expect(result.normalizedTranscript).toMatch(/^Marc Smith:\n/m);
+
+    consoleSpy.mockRestore();
+  });
 });

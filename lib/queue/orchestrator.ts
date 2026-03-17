@@ -150,6 +150,9 @@ export async function processAppearance(id: string): Promise<void> {
       normalizeSpeakerNames(finalCleaned, speakers);
     if (Object.keys(nameReplacements).length > 0) {
       finalCleaned = normalizedTranscript;
+      // Invalidate pre-normalization chunks so downstream steps (entities, bullets)
+      // see normalized speaker names. They'll use finalCleaned directly instead.
+      cleanedChunks = null;
       const mapStr = Object.entries(nameReplacements)
         .map(([from, to]) => `"${from}" → "${to}"`)
         .join(", ");

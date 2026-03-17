@@ -34,60 +34,58 @@ function nameParts(name: string): string[] {
 }
 
 /**
- * Check if two names share at least one name part.
+ * Check if all parts of `shorter` appear in `longer`.
+ * "Marc" is a subset of "Marc Rowan", but "Marc Smith" is NOT a subset
+ * of "Marc Rowan" (Smith doesn't appear in the canonical name).
  */
-function sharesNamePart(a: string, b: string): boolean {
-  const aParts = nameParts(a);
-  const bParts = nameParts(b);
-  return aParts.some((ap) => bParts.includes(ap));
+function isSubsetOf(shorter: string, longer: string): boolean {
+  const sParts = nameParts(shorter);
+  const lParts = nameParts(longer);
+  return sParts.every((sp) => lParts.includes(sp));
 }
 
 /**
  * Find canonical name matches from metadata for a given transcript speaker name.
- * Returns all canonical names that share a name part with the variant.
+ * Only matches when the variant's name parts are a strict subset of a canonical
+ * name (or vice versa). Prevents "Marc Smith" from matching "Marc Rowan".
  */
 function findCanonicalMatches(
   variant: string,
   canonicalNames: string[]
 ): string[] {
-  return canonicalNames.filter((canonical) => sharesNamePart(variant, canonical));
+  return canonicalNames.filter(
+    (canonical) => isSubsetOf(variant, canonical) || isSubsetOf(canonical, variant)
+  );
 }
 
 /**
- * Build canonical name map from transcript when metadata is empty or incomplete.
- * Groups names sharing a first or last name part, picks the longest as canonical.
+ * Build canonical name map from transcript when metadata is empty.
+ * Only clusters names where one is a strict subset of the other
+ * (e.g. "Marc" is a subset of "Marc Rowan"). Picks the longest as canonical.
+ * Skips ambiguous cases where a short name is a subset of multiple full names.
  */
 function buildFallbackCanonicalMap(
   transcriptNames: Set<string>
 ): Record<string, string> {
   const names = Array.from(transcriptNames);
   const map: Record<string, string> = {};
-  const assigned = new Set<string>();
 
-  // Group names by shared name parts
   for (const name of names) {
-    if (assigned.has(name)) continue;
-
-    const cluster = names.filter(
-      (other) => other === name || sharesNamePart(name, other)
+    // Find all names that this name is a strict subset of (shorter → longer)
+    const supersets = names.filter(
+      (other) => other !== name && isSubsetOf(name, other)
     );
 
-    // Pick the longest name in the cluster as canonical
-    const canonical = cluster.reduce((a, b) => (a.length >= b.length ? a : b));
-
-    for (const member of cluster) {
-      if (member !== canonical) {
-        // Check for ambiguity: does this member share parts with names
-        // outside this cluster?
-        const otherMatches = names.filter(
-          (n) => !cluster.includes(n) && sharesNamePart(member, n)
-        );
-        if (otherMatches.length === 0) {
-          map[member] = canonical;
-        }
-      }
-      assigned.add(member);
+    if (supersets.length === 1) {
+      // Unambiguous: "Marc" → "Marc Rowan" (only one longer form)
+      map[name] = supersets[0];
+    } else if (supersets.length > 1) {
+      // Ambiguous: "Marc" could be "Marc Rowan" or "Marc Smith" — skip
+      console.warn(
+        `[normalize-speakers] fallback: ambiguous "${name}" — could be ${supersets.map((s) => `"${s}"`).join(" or ")}. Skipping.`
+      );
     }
+    // If no supersets, this is already the longest form or unrelated — skip
   }
 
   return map;
