@@ -158,6 +158,18 @@ export async function claimForProcessing(
   return (data?.length ?? 0) > 0;
 }
 
+export async function updateProcessingError(
+  id: string,
+  error: string | null
+): Promise<void> {
+  const supabase = createServerClient();
+  const { error: dbError } = await supabase
+    .from("appearances")
+    .update({ processing_error: error })
+    .eq("id", id);
+  if (dbError) throw dbError;
+}
+
 export async function updateProcessingStatus(
   id: string,
   status: ProcessingStatus,
@@ -231,6 +243,18 @@ export async function writeTurns(
   const { error } = await supabase
     .from("appearances")
     .update({ turns })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function writeTurnSummaries(
+  id: string,
+  turnSummaries: Array<{ speaker: string; summary: string; turn_index: number }>
+): Promise<void> {
+  const supabase = createServerClient();
+  const { error } = await supabase
+    .from("appearances")
+    .update({ turn_summaries: turnSummaries })
     .eq("id", id);
   if (error) throw error;
 }

@@ -32,6 +32,7 @@ export interface TranscriptViewerProps {
         section_anchor: string | null;
       }>;
     }>;
+    turn_summaries: Record<number, string> | null; // turn_index → summary text
     bullets_generated_at: string | null;
     transcript_char_count: number;
   };

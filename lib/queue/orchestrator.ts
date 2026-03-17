@@ -6,6 +6,8 @@ import {
   writeExtractResult,
   writeCleanResult,
   writeTurns,
+  writeTurnSummaries,
+  updateProcessingError,
   writeEntitiesResult,
   writeBulletsResult,
   invalidateFundOverviewCache,
@@ -18,6 +20,7 @@ import { parseTurns } from "@lib/scrapers/parse-turns";
 import { cleanTranscript } from "@lib/pipeline/clean";
 import { validateSpeakerAttribution } from "@lib/pipeline/validate-speakers";
 import { extractEntities } from "@lib/pipeline/entities";
+import { generateTurnSummaries } from "@lib/pipeline/turn-summaries";
 import { generatePrepBullets } from "@lib/pipeline/bullets";
 import {
   splitForProcessing,
@@ -59,15 +62,16 @@ export async function processAppearance(id: string): Promise<void> {
     let sections: import("@/types/scraper").SectionHeading[] = [];
     let transcriptSource = row.transcript_source;
     let speakers = row.speakers ?? [];
+    let currentTurns: import("@/types/appearance").Turn[] = [];
 
     if (row.raw_transcript) {
       // Manual ingest — transcript already provided, skip scraper
       rawTranscript = row.raw_transcript;
       // Parse turns for manual transcripts too — manual ingest has source-provided labels
-      const turns = parseTurns(rawTranscript, undefined, "source");
+      currentTurns = parseTurns(rawTranscript, undefined, "source");
       await writeExtractResult(id, {
         raw_transcript: rawTranscript,
-        turns,
+        turns: currentTurns,
         sections: [],
       });
     } else {
@@ -79,6 +83,7 @@ export async function processAppearance(id: string): Promise<void> {
       transcriptSource = result.transcriptSource;
       speakers = result.speakers;
 
+      currentTurns = parseTurns(result.rawTranscript, result.sections, "source");
       const extractOutput: ExtractStepOutput = {
         title: result.title,
         appearance_date: result.appearanceDate,
@@ -86,7 +91,7 @@ export async function processAppearance(id: string): Promise<void> {
         speakers: result.speakers,
         raw_transcript: result.rawTranscript,
         scraper_metadata: result.captionData,
-        turns: parseTurns(result.rawTranscript, result.sections, "source"),
+        turns: currentTurns,
         sections: result.sections,
       };
       await writeExtractResult(id, extractOutput);
@@ -137,30 +142,48 @@ export async function processAppearance(id: string): Promise<void> {
     // (which now has speaker labels) instead of the raw transcript (which doesn't).
     // These turns are marked "inferred" since speaker labels came from LLM attribution.
     if (isYouTubeSource(transcriptSource)) {
-      const cleanedTurns = parseTurns(finalCleaned, sections, "inferred");
-      await writeTurns(id, cleanedTurns);
-      console.log(`[pipeline]   ↳ Re-parsed ${cleanedTurns.length} turns from cleaned transcript`);
+      currentTurns = parseTurns(finalCleaned, sections, "inferred");
+      await writeTurns(id, currentTurns);
+      console.log(`[pipeline]   ↳ Re-parsed ${currentTurns.length} turns from cleaned transcript`);
     }
 
-    // Step 3: Entities
-    console.log(`[pipeline] ▶ Step 3/4: ENTITIES — ${title}`);
+    // Step 3: Entities + Turn Summaries (parallel — both read from cleaned transcript/turns)
+    console.log(`[pipeline] ▶ Step 3/4: ENTITIES + TURN SUMMARIES — ${title}`);
     await updateProcessingStatus(id, "analyzing");
-    let finalEntities: EntitiesStepOutput;
-    if (cleanedChunks) {
-      // Entity chunks in parallel
-      const entityChunks = await Promise.all(
-        cleanedChunks.map((chunk) => extractEntities(chunk))
-      );
-      finalEntities = {
-        entity_tags: mergeEntityTags(entityChunks.map((e) => e.entity_tags)),
-      };
-    } else {
-      finalEntities = await extractEntities(finalCleaned);
-    }
+
+    // Run entities and turn summaries in parallel
+    const entitiesPromise = (async () => {
+      let result: EntitiesStepOutput;
+      if (cleanedChunks) {
+        const entityChunks = await Promise.all(
+          cleanedChunks.map((chunk) => extractEntities(chunk))
+        );
+        result = {
+          entity_tags: mergeEntityTags(entityChunks.map((e) => e.entity_tags)),
+        };
+      } else {
+        result = await extractEntities(finalCleaned);
+      }
+      return result;
+    })();
+
+    const turnSummariesPromise = generateTurnSummaries(currentTurns);
+
+    const [finalEntities, turnSummariesResult] = await Promise.all([
+      entitiesPromise,
+      turnSummariesPromise,
+    ]);
+
     await writeEntitiesResult(id, finalEntities);
+    await writeTurnSummaries(id, turnSummariesResult.summaries);
+
+    // Track warning — will be persisted with the completion status update
+    const turnSummariesWarning = turnSummariesResult.warning ?? null;
+
     const entityCount = (finalEntities.entity_tags.fund_names?.length ?? 0) +
       (finalEntities.entity_tags.key_people?.length ?? 0);
     console.log(`[pipeline] ✓ Entities complete — ${entityCount} entities (${stepTime()})`);
+    console.log(`[pipeline] ✓ Turn summaries complete — ${turnSummariesResult.summaries.length} summaries (${stepTime()})`);
 
     // Step 4: Bullets (still "analyzing")
     console.log(`[pipeline] ▶ Step 4/4: BULLETS — ${title}`);
@@ -197,8 +220,8 @@ export async function processAppearance(id: string): Promise<void> {
     const bulletCount = finalBullets.prep_bullets.bullets?.length ?? 0;
     console.log(`[pipeline] ✓ Bullets complete — ${bulletCount} bullets (${stepTime()})`);
 
-    // Done
-    await updateProcessingStatus(id, "complete");
+    // Done — preserve turn summaries warning if present
+    await updateProcessingStatus(id, "complete", turnSummariesWarning);
     console.log(`[pipeline] ✅ COMPLETE — ${title} (total: ${stepTime()})`);
 
     // Cache invalidation is best-effort — pipeline data is already persisted,
@@ -301,6 +324,33 @@ export async function reprocessBullets(id: string): Promise<BulletsStepOutput> {
     );
     throw err;
   }
+}
+
+export async function reprocessTurnSummaries(
+  id: string
+): Promise<Array<{ speaker: string; summary: string; turn_index: number }>> {
+  const row = await getAppearanceById(id);
+  if (!row) throw new Error(`Appearance not found: ${id}`);
+  if (row.processing_status !== "complete") {
+    throw new Error(
+      `Cannot reprocess: status is "${row.processing_status}", expected "complete"`
+    );
+  }
+  if (!row.turns || row.turns.length === 0) {
+    throw new Error(`No turns for appearance ${id}`);
+  }
+
+  const title = row.title ?? id;
+  console.log(`[reprocessTurnSummaries] starting: ${title}`);
+
+  const result = await generateTurnSummaries(row.turns);
+  await writeTurnSummaries(id, result.summaries);
+
+  // Update processing_error: set warning on mismatch, clear on success
+  await updateProcessingError(id, result.warning ?? null);
+
+  console.log(`[reprocessTurnSummaries] complete: ${title} — ${result.summaries.length} summaries`);
+  return result.summaries;
 }
 
 export async function processBatch(

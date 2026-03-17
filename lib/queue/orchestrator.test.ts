@@ -13,6 +13,8 @@ const mockClaimForProcessing = vi.fn();
 const mockWriteExtractResult = vi.fn();
 const mockWriteCleanResult = vi.fn();
 const mockWriteEntitiesResult = vi.fn();
+const mockWriteTurnSummaries = vi.fn();
+const mockUpdateProcessingError = vi.fn();
 const mockWriteBulletsResult = vi.fn();
 const mockInvalidateFundOverviewCache = vi.fn();
 const mockExtractFundNames = vi.fn();
@@ -27,6 +29,8 @@ vi.mock("@lib/db/queries", () => ({
   writeCleanResult: (...args: unknown[]) => mockWriteCleanResult(...args),
   writeEntitiesResult: (...args: unknown[]) =>
     mockWriteEntitiesResult(...args),
+  writeTurnSummaries: (...args: unknown[]) => mockWriteTurnSummaries(...args),
+  updateProcessingError: (...args: unknown[]) => mockUpdateProcessingError(...args),
   writeBulletsResult: (...args: unknown[]) => mockWriteBulletsResult(...args),
   invalidateFundOverviewCache: (...args: unknown[]) =>
     mockInvalidateFundOverviewCache(...args),
@@ -67,6 +71,12 @@ vi.mock("@lib/pipeline/clean", () => ({
 const mockExtractEntities = vi.fn();
 vi.mock("@lib/pipeline/entities", () => ({
   extractEntities: (...args: unknown[]) => mockExtractEntities(...args),
+}));
+
+const mockGenerateTurnSummaries = vi.fn();
+vi.mock("@lib/pipeline/turn-summaries", () => ({
+  generateTurnSummaries: (...args: unknown[]) =>
+    mockGenerateTurnSummaries(...args),
 }));
 
 const mockGeneratePrepBullets = vi.fn();
@@ -127,6 +137,7 @@ import {
   processBatch,
   processOne,
   reprocessBullets,
+  reprocessTurnSummaries,
 } from "./orchestrator";
 
 // ---------------------------------------------------------------------------
@@ -141,6 +152,10 @@ beforeEach(() => {
   ]);
   // Default: claim always succeeds
   mockClaimForProcessing.mockResolvedValue(true);
+  // Default: turn summaries returns matching result
+  mockGenerateTurnSummaries.mockResolvedValue({
+    summaries: [{ speaker: "Patrick", summary: "Says hello", turn_index: 0 }],
+  });
 });
 
 describe("processAppearance", () => {

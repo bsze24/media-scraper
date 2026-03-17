@@ -38,7 +38,7 @@ raw_transcript (TEXT)
 scraper_metadata (JSONB)                         — general-purpose scraper output (YouTube: caption segments; Colossus: sections + episode number)
 cleaned_transcript (TEXT)
 turns (JSONB: [{speaker, text, turn_index}])     — parsed from speaker-labeled transcript at ingest
-turn_summaries (JSONB: [{speaker, summary}])     — nullable, Phase 1 pipeline step
+turn_summaries (JSONB: [{speaker, summary, turn_index}]) — LLM-generated, one per turn, under 20 words each
 sections (JSONB: [{heading, anchor}])            — scraped for Colossus; synthetic for YouTube (Phase 1)
 entity_tags (JSONB)
 prep_bullets (JSONB)
@@ -389,7 +389,7 @@ supabase/
 - ✓ Column rename: `raw_caption_data` → `scraper_metadata` (migration 008)
 - ✓ Entity relevance tagging: `fund_names[].relevance: "primary" | "mentioned"` — prompt, types, search sorting
 - `generateSections()` for YouTube transcripts — synthetic sections stored to `sections` column (4th LLM call for YouTube)
-- `turn-summaries` pipeline step (step 4.5) — `[{speaker, summary}]` stored to `turn_summaries`
+- ✓ `turn-summaries` pipeline step — `generateTurnSummaries()` runs parallel with entities, `[{speaker, summary, turn_index}]` stored to `turn_summaries`. Transcript viewer shows AI summaries for collapsed host turns with fallback to first sentence.
 - YouTube timestamp extraction — populate `turns[].timestamp_seconds` from `scraper_metadata`
 
 **Fund overview (Phase 1 stretch / Phase 2):**
@@ -482,7 +482,7 @@ Trigger: double-click, or E shortcut when turn is focused.
 | 1 | ~~`Appearance` type missing `sections` field~~ | ~~P0~~ | Done — `sections` added to `Appearance` type |
 | 2 | `rowspace_angles` missing `supporting_quotes` | P1 | Add to Zod schema + bullets prompt |
 | 3 | Bullets prompt needs few-shot examples for `rowspace_angles` | P1 | After using the tool for real meeting prep, take 2-3 bullets where the Rowspace angle was genuinely useful and paste them into `lib/prompts/bullets.ts` as examples. LLM pattern-matches to examples better than abstract instructions. Trigger: real usage, not staring at Supabase output. |
-| 4 | `turn_summaries` not populated | P1 | Phase 1 pipeline step |
+| 4 | ~~`turn_summaries` not populated~~ | ~~P1~~ | Done — `generateTurnSummaries()` pipeline step runs parallel with entities. Transcript viewer shows summaries for collapsed host turns. |
 | 5 | Stuck-row retry UI | P2 | "Reset to queued" for any non-complete status |
 | 6 | Multi-speaker scraper test coverage | P3 | Low priority — DOM selectors change anyway |
 | 7 | Bullet feedback writes to local state only. Current [×] flag is negative-only. **Phase 2 plan:** Replace [×] with thumbs up / thumbs down, both with optional text feedback overlay. Wire to `POST /api/feedback` with backend storage. Accumulated positive ratings become candidates for few-shot prompt examples (Phase 4+). | P2 | Wire POST /api/feedback in Phase 2 |
@@ -499,6 +499,7 @@ Trigger: double-click, or E shortcut when turn is focused.
 | 18 | Entity hierarchy and affiliations — two remaining gaps in entity extraction. **(a) Hierarchy:** Current `parent` field is flat (one level). Real org structures are 4–5 levels deep with JVs, credit arms, co-investment vehicles. Add `mentioned_as` (exact transcript reference), `canonical_name` (salesperson-recognizable), `relationship` (subsidiary/credit arm/spin-off). **(b) Affiliations:** Add `affiliated_entities: [{entity, context}]` for non-hierarchical connections (co-investments, prior employers, seeders). Guard: "only extract affiliations explicitly stated or clearly implied — do not infer from general knowledge." Completeness ≪ accuracy. ~~**(c) Relevance:** `relevance: "primary" \| "mentioned"`~~ **Done** — prompt tags each fund_name, search sorts primary before mentioned, fund overview TODO added. | P2 | When corpus >50 and search misses become visible |
 | 19 | ~~`vote/route.ts`~~ | ~~P3~~ | **Resolved:** Removed from project structure. Voting is not a separate feature — it's the evolution of bullet feedback (tech debt #7). Thumbs up/down replaces [×] flag in Phase 2 via `/api/feedback`. Positive feedback feeds few-shot prompt example selection in Phase 4+. |
 | 20 | yt-dlp runs locally only — YouTube extraction depends on yt-dlp binary, which can't run on Vercel serverless. Current workaround: extract locally, pipeline writes raw data to Supabase, Vercel handles clean/entities/bullets. | P2 | When Phase 4 self-serve submission is built, move extract step to Docker-based environment (Railway, Fly.io, Cloud Run) or replace with API-based extraction. |
+| 21 | Turn attribution heuristic assumes all non-YouTube sources have speaker labels. Orchestrator stamps attribution: "source" for all curated sources without inspecting whether the raw transcript actually contains SpeakerName:\n formatting. Correct for current sources (Colossus, manual with labels) but would silently mismark turns if a future scraper produces unlabeled transcripts. Fix: inspect raw transcript for speaker label patterns before stamping, or require scrapers to declare hasSpeakerLabels: boolean on their result. Trigger: when adding a new scraper for a source without speaker-labeled transcripts.
 
 ---
 

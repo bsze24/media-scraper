@@ -122,6 +122,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     sections,
     turns,
     has_inferred_attribution,
+    turn_summaries,
     prep_bullets,
     bullets_generated_at,
     transcript_char_count,
@@ -786,6 +787,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         const isTurnHit =
                           hasSearch && searchResults.turnKeys.has(key);
                         const { first, hasMore } = firstSentence(turn.text);
+                        const summary = turn_summaries?.[turn.turn_index];
                         const dimmed =
                           activeSpeaker &&
                           activeSpeaker !== turn.speaker;
@@ -805,14 +807,16 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                                 {turn.speaker}
                               </div>
                               <p className="font-[family-name:var(--font-source-sans)] text-[12.5px] italic leading-relaxed text-[#bbb]">
-                                {highlightText(
-                                  hostExpanded || isTurnHit || !hasMore
-                                    ? turn.text
-                                    : first,
-                                  debouncedQuery
-                                )}
+                                {hostExpanded || isTurnHit
+                                  ? highlightText(turn.text, debouncedQuery)
+                                  : summary
+                                    ? <span className="not-italic text-[#a8a0c0]" title="AI-generated summary">✦ {summary}</span>
+                                    : hasMore
+                                      ? highlightText(first, debouncedQuery)
+                                      : highlightText(turn.text, debouncedQuery)
+                                }
                               </p>
-                              {hasMore && (
+                              {(hasMore || summary) && (
                                 <span
                                   className="mt-0.5 inline-block cursor-pointer font-[family-name:var(--font-source-sans)] text-[10.5px] text-[#bbb] hover:text-[#777]"
                                   onClick={() =>
