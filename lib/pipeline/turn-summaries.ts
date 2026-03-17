@@ -123,9 +123,16 @@ export async function generateTurnSummaries(
   if (missing.length > 0) {
     logMismatch(1, turns.length, summaries.length, missing);
 
-    // Retry once
+    // Retry once — merge results from both attempts, preferring attempt 2
     console.log(`[turn-summaries] retrying…`);
-    summaries = await callLLM(turns);
+    const attempt2 = await callLLM(turns);
+
+    // Merge: attempt 2 wins for any turn_index present in both
+    const merged = new Map<number, TurnSummary>();
+    for (const s of summaries) merged.set(s.turn_index, s);
+    for (const s of attempt2) merged.set(s.turn_index, s);
+    summaries = Array.from(merged.values()).sort((a, b) => a.turn_index - b.turn_index);
+
     missing = findMissingTurns(turns, summaries);
 
     if (missing.length > 0) {
