@@ -71,6 +71,16 @@ Long-running steps (clean.ts) should also log chunk progress every 5 seconds via
 
 Never strip these logs to "clean up" — they are the primary debugging signal for pipeline issues.
 
+## Data trust tiers
+Three-tier provenance model used across the pipeline for any field where data quality varies by extraction method:
+- `"source"` — directly from original content (HTML scraping, human-edited labels, structured API data). No UI indicator needed.
+- `"derived"` — mechanically extracted from source data (regex parsing, timestamp matching, text splitting). Subtle UI indicator.
+- `"inferred"` — LLM-generated or best-guess (speaker attribution, synthetic sections, entity extraction). Visible UI indicator + hover disclaimer.
+
+Apply consistently. When adding a new field with quality hierarchy, use this union type rather than inventing per-feature terminology. Current usages:
+- `Turn.attribution`: `"source" | "inferred"` (retrofit to include `"derived"` when relevant)
+- `SectionHeading.source`: `"source" | "derived" | "inferred"` (planned)
+
 ## Before Committing
 - Run `npm run typecheck && npm test && npm run test:e2e && npm run build`
 - Scan all changed files for:
@@ -84,7 +94,11 @@ Never strip these logs to "clean up" — they are the primary debugging signal f
 - Verify no API keys, tokens, or secrets in committed code (use .env.local)
 - Verify Supabase queries use parameterized inputs (no string interpolation)
 - Verify pipeline functions have console.log bookends
-- Self-audit against session prompt: If this session was driven by a session prompt (.md file), compare every task in the prompt against what was built. For each task, confirm it was done with specific evidence (function name, file, line) or flag what's missing/different. Do not commit until all tasks are accounted for.
+- Self-audit against session prompt: If this session was driven by a session prompt (.md file):
+1. Compare every task in the prompt against what was built. For each task, confirm it was done with specific evidence (function name, file, line) or flag what's missing/different.
+2. List any assumptions you made that weren't explicit in the prompt — places where two reasonable implementations were possible and you picked one. Explain why you chose what you chose.
+3. List anything from the prompt you intentionally skipped or interpreted differently, and why.
+Do not commit until all tasks are accounted for.
 
 ## Communication style
 When correcting a mistake or changing approach, briefly explain *why* (e.g., "one branch per PR because...") so I learn the underlying principle, not just the fix.
