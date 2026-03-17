@@ -194,10 +194,12 @@ export default function Home() {
     setRetryingAll(true);
     try {
       for (const row of failedRows) {
-        await retryAppearance(row.id);
+        try {
+          await retryAppearance(row.id);
+        } catch (err) {
+          console.error(`Retry failed for ${row.id}:`, err);
+        }
       }
-    } catch (err) {
-      console.error("Retry all failed:", err);
     } finally {
       setRetryingAll(false);
       await refresh();
