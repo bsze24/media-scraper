@@ -8,6 +8,7 @@ import {
   writeTurns,
   writeTurnSummaries,
   updateProcessingError,
+  appendProcessingWarning,
   writeEntitiesResult,
   writeBulletsResult,
   invalidateFundOverviewCache,
@@ -99,6 +100,13 @@ export async function processAppearance(id: string): Promise<void> {
 
     console.log(`[pipeline] ✓ Extract complete — ${rawTranscript.length} chars (${stepTime()})`);
 
+    // Validation 1: minimum transcript length
+    if (rawTranscript.length < 500) {
+      const warning = `extract_too_short: rawTranscript is ${rawTranscript.length} chars, minimum expected 500`;
+      console.warn(`[pipeline] ⚠ ${warning}`);
+      await appendProcessingWarning(id, warning);
+    }
+
     const CHUNK_THRESHOLD = 120_000;
     const needsChunking = rawTranscript.length >= CHUNK_THRESHOLD;
     const rawChunks = needsChunking
@@ -138,6 +146,15 @@ export async function processAppearance(id: string): Promise<void> {
     await writeCleanResult(id, { cleaned_transcript: finalCleaned });
     console.log(`[pipeline] ✓ Clean complete — ${finalCleaned.length} chars (${stepTime()})`);
 
+    // Validation 2: clean output/input ratio
+    const cleanRatio = finalCleaned.length / rawTranscript.length;
+    if (cleanRatio < 0.30 || cleanRatio > 1.50) {
+      const pct = (cleanRatio * 100).toFixed(0);
+      const warning = `clean_ratio_warning: input ${rawTranscript.length} chars, output ${finalCleaned.length} chars (${pct}%)`;
+      console.warn(`[pipeline] ⚠ ${warning}`);
+      await appendProcessingWarning(id, warning);
+    }
+
     // For YouTube sources, re-parse turns from the cleaned transcript
     // (which now has speaker labels) instead of the raw transcript (which doesn't).
     // These turns are marked "inferred" since speaker labels came from LLM attribution.
@@ -145,6 +162,13 @@ export async function processAppearance(id: string): Promise<void> {
       currentTurns = parseTurns(finalCleaned, sections, "inferred");
       await writeTurns(id, currentTurns);
       console.log(`[pipeline]   ↳ Re-parsed ${currentTurns.length} turns from cleaned transcript`);
+    }
+
+    // Validation 3: suspiciously low turn count
+    if (currentTurns.length < 5 && rawTranscript.length > 10_000) {
+      const warning = `turns_low_count: ${currentTurns.length} turns from ${rawTranscript.length} char transcript`;
+      console.warn(`[pipeline] ⚠ ${warning}`);
+      await appendProcessingWarning(id, warning);
     }
 
     // Step 3: Entities + Turn Summaries (parallel — both read from cleaned transcript/turns)
@@ -177,8 +201,20 @@ export async function processAppearance(id: string): Promise<void> {
     await writeEntitiesResult(id, finalEntities);
     await writeTurnSummaries(id, turnSummariesResult.summaries);
 
-    // Track warning — will be persisted with the completion status update
-    const turnSummariesWarning = turnSummariesResult.warning ?? null;
+    // Validation 4: turn summaries count mismatch (already handled inside generateTurnSummaries)
+    if (turnSummariesResult.warning) {
+      await appendProcessingWarning(id, turnSummariesResult.warning);
+    }
+
+    // Validation 5: entities — no fund names on substantial transcript
+    if (
+      (finalEntities.entity_tags.fund_names?.length ?? 0) === 0 &&
+      finalCleaned.length > 10_000
+    ) {
+      const warning = `entities_no_funds: 0 fund_names extracted from ${finalCleaned.length} char transcript`;
+      console.warn(`[pipeline] ⚠ ${warning}`);
+      await appendProcessingWarning(id, warning);
+    }
 
     const entityCount = (finalEntities.entity_tags.fund_names?.length ?? 0) +
       (finalEntities.entity_tags.key_people?.length ?? 0);
@@ -220,8 +256,16 @@ export async function processAppearance(id: string): Promise<void> {
     const bulletCount = finalBullets.prep_bullets.bullets?.length ?? 0;
     console.log(`[pipeline] ✓ Bullets complete — ${bulletCount} bullets (${stepTime()})`);
 
-    // Done — preserve turn summaries warning if present
-    await updateProcessingStatus(id, "complete", turnSummariesWarning);
+    // Validation 6: bullets — suspiciously low count
+    if (bulletCount < 3 && finalCleaned.length > 10_000) {
+      const warning = `bullets_low_count: ${bulletCount} bullets from ${finalCleaned.length} char transcript`;
+      console.warn(`[pipeline] ⚠ ${warning}`);
+      await appendProcessingWarning(id, warning);
+    }
+
+    // Done — warnings already appended via appendProcessingWarning;
+    // updateProcessingStatus with status "complete" preserves them.
+    await updateProcessingStatus(id, "complete");
     console.log(`[pipeline] ✅ COMPLETE — ${title} (total: ${stepTime()})`);
 
     // Cache invalidation is best-effort — pipeline data is already persisted,
@@ -346,8 +390,12 @@ export async function reprocessTurnSummaries(
   const result = await generateTurnSummaries(row.turns);
   await writeTurnSummaries(id, result.summaries);
 
-  // Update processing_error: set warning on mismatch, clear on success
-  await updateProcessingError(id, result.warning ?? null);
+  // Append warning on mismatch, clear on success
+  if (result.warning) {
+    await appendProcessingWarning(id, result.warning);
+  } else {
+    await updateProcessingError(id, null);
+  }
 
   console.log(`[reprocessTurnSummaries] complete: ${title} — ${result.summaries.length} summaries`);
   return result.summaries;

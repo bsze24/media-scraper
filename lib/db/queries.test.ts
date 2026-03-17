@@ -12,6 +12,7 @@ import {
   invalidateFundOverviewCache,
   searchByFundName,
   extractFundNames,
+  appendProcessingWarning,
 } from "./queries";
 import type { AppearanceRow } from "./types";
 import type { EntityTags } from "@/types/appearance";
@@ -77,6 +78,54 @@ function makeTestRow(overrides: Partial<AppearanceRow> = {}): AppearanceRow {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+// ---------------------------------------------------------------------------
+// appendProcessingWarning
+// ---------------------------------------------------------------------------
+
+describe("appendProcessingWarning", () => {
+  it("sets warning when processing_error is null", async () => {
+    const readChain = mockChain({
+      data: { processing_error: null },
+      error: null,
+    });
+    const writeChain = mockChain({ data: null, error: null });
+
+    const mockClient = {
+      from: vi.fn()
+        .mockReturnValueOnce(readChain)
+        .mockReturnValueOnce(writeChain),
+    };
+    vi.mocked(createServerClient).mockReturnValue(mockClient as any);
+
+    await appendProcessingWarning("id-1", "test_warning: something went wrong");
+
+    expect(writeChain.update).toHaveBeenCalledWith({
+      processing_error: "test_warning: something went wrong",
+    });
+  });
+
+  it("concatenates with ' | ' separator when processing_error already exists", async () => {
+    const readChain = mockChain({
+      data: { processing_error: "existing_warning: first issue" },
+      error: null,
+    });
+    const writeChain = mockChain({ data: null, error: null });
+
+    const mockClient = {
+      from: vi.fn()
+        .mockReturnValueOnce(readChain)
+        .mockReturnValueOnce(writeChain),
+    };
+    vi.mocked(createServerClient).mockReturnValue(mockClient as any);
+
+    await appendProcessingWarning("id-1", "new_warning: second issue");
+
+    expect(writeChain.update).toHaveBeenCalledWith({
+      processing_error: "existing_warning: first issue | new_warning: second issue",
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
