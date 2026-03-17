@@ -127,14 +127,12 @@ export async function processAppearance(id: string): Promise<void> {
     let cleanedChunks: string[] | null = null;
     const cleanOpts = { transcriptSource, speakers };
     if (rawChunks) {
-      await updateProcessingDetail(id, `cleaning chunk 1/${rawChunks.length}`);
+      await updateProcessingDetail(id, `cleaning ${rawChunks.length} chunks`);
       // Clean chunks in parallel
       cleanedChunks = await Promise.all(
-        rawChunks.map(async (chunk, ci) => {
-          const result = await cleanTranscript(chunk, cleanOpts).then((o) => o.cleaned_transcript);
-          await updateProcessingDetail(id, `cleaning chunk ${ci + 1}/${rawChunks.length} complete`);
-          return result;
-        })
+        rawChunks.map((chunk) =>
+          cleanTranscript(chunk, cleanOpts).then((o) => o.cleaned_transcript)
+        )
       );
       finalCleaned = mergeCleaned(cleanedChunks);
     } else {
@@ -267,20 +265,18 @@ export async function processAppearance(id: string): Promise<void> {
     // Chunk-level parallelism within each step is safe.
     let finalBullets: BulletsStepOutput;
     if (cleanedChunks && rawChunks) {
-      await updateProcessingDetail(id, `generating bullets chunk 1/${cleanedChunks.length}`);
+      await updateProcessingDetail(id, `generating bullets — ${cleanedChunks.length} chunks`);
       const bulletChunks = await Promise.all(
-        cleanedChunks.map(async (chunk, ci) => {
+        cleanedChunks.map((chunk, ci) => {
           const chunkSections = sections.filter(
             (s) => rawChunks[ci].includes(s.heading)
           );
-          const result = await generatePrepBullets(
+          return generatePrepBullets(
             chunk,
             finalEntities.entity_tags,
             chunkSections,
             transcriptSource
           );
-          await updateProcessingDetail(id, `generating bullets chunk ${ci + 1}/${cleanedChunks.length} complete`);
-          return result;
         })
       );
       finalBullets = {
