@@ -12,6 +12,8 @@ import {
   invalidateFundOverviewCache,
   searchByFundName,
   extractFundNames,
+  appendProcessingWarning,
+  removeProcessingWarning,
 } from "./queries";
 import type { AppearanceRow } from "./types";
 import type { EntityTags } from "@/types/appearance";
@@ -77,6 +79,60 @@ function makeTestRow(overrides: Partial<AppearanceRow> = {}): AppearanceRow {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+// ---------------------------------------------------------------------------
+// appendProcessingWarning — atomic RPC
+// ---------------------------------------------------------------------------
+
+describe("appendProcessingWarning", () => {
+  it("calls append_processing_warning RPC with correct args", async () => {
+    const mockRpc = vi.fn().mockResolvedValue({ error: null });
+    const mockClient = { rpc: mockRpc };
+    vi.mocked(createServerClient).mockReturnValue(mockClient as any);
+
+    await appendProcessingWarning("id-1", "test_warning: something went wrong");
+
+    expect(mockRpc).toHaveBeenCalledWith("append_processing_warning", {
+      row_id: "id-1",
+      warning: "test_warning: something went wrong",
+    });
+  });
+
+  it("throws on RPC error", async () => {
+    const mockRpc = vi.fn().mockResolvedValue({ error: { message: "db error" } });
+    const mockClient = { rpc: mockRpc };
+    vi.mocked(createServerClient).mockReturnValue(mockClient as any);
+
+    await expect(appendProcessingWarning("id-1", "warn")).rejects.toEqual({ message: "db error" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// removeProcessingWarning — atomic RPC
+// ---------------------------------------------------------------------------
+
+describe("removeProcessingWarning", () => {
+  it("calls remove_processing_warning RPC with correct args", async () => {
+    const mockRpc = vi.fn().mockResolvedValue({ error: null });
+    const mockClient = { rpc: mockRpc };
+    vi.mocked(createServerClient).mockReturnValue(mockClient as any);
+
+    await removeProcessingWarning("id-1", "turn_summaries_incomplete");
+
+    expect(mockRpc).toHaveBeenCalledWith("remove_processing_warning", {
+      row_id: "id-1",
+      prefix: "turn_summaries_incomplete",
+    });
+  });
+
+  it("throws on RPC error", async () => {
+    const mockRpc = vi.fn().mockResolvedValue({ error: { message: "db error" } });
+    const mockClient = { rpc: mockRpc };
+    vi.mocked(createServerClient).mockReturnValue(mockClient as any);
+
+    await expect(removeProcessingWarning("id-1", "test")).rejects.toEqual({ message: "db error" });
+  });
 });
 
 // ---------------------------------------------------------------------------

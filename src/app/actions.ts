@@ -85,7 +85,7 @@ export async function retryAppearance(
     );
   }
 
-  await updateProcessingStatus(id, "queued");
+  await updateProcessingStatus(id, "queued", null);
   return { id, status: "queued" };
 }
 

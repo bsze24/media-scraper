@@ -158,16 +158,38 @@ export async function claimForProcessing(
   return (data?.length ?? 0) > 0;
 }
 
-export async function updateProcessingError(
+/**
+ * Atomically append a warning to processing_error without overwriting
+ * existing warnings. Uses a Postgres function (single UPDATE) so concurrent
+ * callers cannot lose each other's writes.
+ */
+export async function appendProcessingWarning(
   id: string,
-  error: string | null
+  warning: string
 ): Promise<void> {
   const supabase = createServerClient();
-  const { error: dbError } = await supabase
-    .from("appearances")
-    .update({ processing_error: error })
-    .eq("id", id);
-  if (dbError) throw dbError;
+  const { error } = await supabase.rpc("append_processing_warning", {
+    row_id: id,
+    warning,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Atomically remove a specific warning prefix from processing_error.
+ * Filters out any pipe-separated segment starting with `prefix`.
+ * Sets processing_error to null if no segments remain.
+ */
+export async function removeProcessingWarning(
+  id: string,
+  prefix: string
+): Promise<void> {
+  const supabase = createServerClient();
+  const { error } = await supabase.rpc("remove_processing_warning", {
+    row_id: id,
+    prefix,
+  });
+  if (error) throw error;
 }
 
 export async function updateProcessingStatus(
@@ -176,12 +198,18 @@ export async function updateProcessingStatus(
   error?: string | null
 ): Promise<void> {
   const supabase = createServerClient();
+
+  // Only include processing_error in the update when explicitly provided.
+  // Intermediate status transitions (cleaning, analyzing) must NOT touch
+  // processing_error — earlier validation warnings would be wiped.
+  const updatePayload: Record<string, unknown> = { processing_status: status };
+  if (error !== undefined) {
+    updatePayload.processing_error = error ?? null;
+  }
+
   const { error: dbError } = await supabase
     .from("appearances")
-    .update({
-      processing_status: status,
-      processing_error: error ?? null,
-    })
+    .update(updatePayload)
     .eq("id", id);
 
   if (dbError) throw dbError;

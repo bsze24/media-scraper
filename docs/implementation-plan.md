@@ -45,7 +45,7 @@ prep_bullets (JSONB)
 prompt_context_snapshot (TEXT)                    — Rowspace business context at bullet generation time
 bullets_generated_at (TIMESTAMPTZ)                — when bullets were last generated
 processing_status (TEXT: queued/extracting/cleaning/analyzing/complete/failed)
-processing_error (TEXT)
+processing_error (TEXT)                              — can contain warnings (pipe-separated) on complete appearances, not just fatal errors
 created_at, updated_at
 transcript_search_vector (tsvector GENERATED from cleaned_transcript)
 ```
@@ -284,7 +284,7 @@ lib/
     types.ts                       DB row types (AppearanceRow, ExtractStepOutput, AppearanceListRow, etc.)
     queries.test.ts
   queue/
-    orchestrator.ts                Coordinates pipeline steps per appearance (step-level + batch-level progress logging)
+    orchestrator.ts                Coordinates pipeline steps per appearance (step-level + batch-level progress logging + validation guards)
     orchestrator.test.ts
   api/
     auth.ts                        Shared admin token check (checkAdminToken + unauthorizedResponse)
@@ -332,6 +332,20 @@ supabase/
     008_rename_raw_caption_data.sql
     003_embeddings.sql             [Phase 5] — NOT YET CREATED
 ```
+
+---
+
+## Pipeline Validation Pattern
+
+Every LLM-dependent pipeline step has a validation guard that checks output quality without blocking the pipeline. On failure, a structured warning string is appended to `processing_error` via `appendProcessingWarning()` (pipe-separated for multiple warnings). The appearance still completes with `processing_status: "complete"`. Query `WHERE processing_error IS NOT NULL AND processing_status = 'complete'` to surface appearances needing review.
+
+**Validations:**
+1. **extract_too_short** — rawTranscript < 500 chars
+2. **clean_ratio_warning** — cleaned/raw ratio outside 0.30–1.50
+3. **turns_low_count** — < 5 turns from > 10k char transcript
+4. **turn_summaries_incomplete** — LLM returned fewer summaries than turns (retries once, then writes partial)
+5. **entities_no_funds** — 0 fund_names from > 10k char transcript
+6. **bullets_low_count** — < 3 bullets from > 10k char transcript
 
 ---
 

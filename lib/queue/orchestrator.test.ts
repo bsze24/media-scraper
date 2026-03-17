@@ -14,10 +14,11 @@ const mockWriteExtractResult = vi.fn();
 const mockWriteCleanResult = vi.fn();
 const mockWriteEntitiesResult = vi.fn();
 const mockWriteTurnSummaries = vi.fn();
-const mockUpdateProcessingError = vi.fn();
 const mockWriteBulletsResult = vi.fn();
 const mockInvalidateFundOverviewCache = vi.fn();
 const mockExtractFundNames = vi.fn();
+const mockAppendProcessingWarning = vi.fn();
+const mockRemoveProcessingWarning = vi.fn();
 
 vi.mock("@lib/db/queries", () => ({
   getAppearanceById: (...args: unknown[]) => mockGetAppearanceById(...args),
@@ -30,7 +31,8 @@ vi.mock("@lib/db/queries", () => ({
   writeEntitiesResult: (...args: unknown[]) =>
     mockWriteEntitiesResult(...args),
   writeTurnSummaries: (...args: unknown[]) => mockWriteTurnSummaries(...args),
-  updateProcessingError: (...args: unknown[]) => mockUpdateProcessingError(...args),
+  appendProcessingWarning: (...args: unknown[]) => mockAppendProcessingWarning(...args),
+  removeProcessingWarning: (...args: unknown[]) => mockRemoveProcessingWarning(...args),
   writeBulletsResult: (...args: unknown[]) => mockWriteBulletsResult(...args),
   invalidateFundOverviewCache: (...args: unknown[]) =>
     mockInvalidateFundOverviewCache(...args),
@@ -245,10 +247,13 @@ describe("processAppearance", () => {
       "Content gate detected"
     );
 
+    expect(mockAppendProcessingWarning).toHaveBeenCalledWith(
+      "row-1",
+      "FATAL: Content gate detected"
+    );
     expect(mockUpdateProcessingStatus).toHaveBeenCalledWith(
       "row-1",
-      "failed",
-      "Content gate detected"
+      "failed"
     );
   });
 
@@ -259,10 +264,13 @@ describe("processAppearance", () => {
 
     await expect(processAppearance("row-1")).rejects.toThrow("API rate limit");
 
+    expect(mockAppendProcessingWarning).toHaveBeenCalledWith(
+      "row-1",
+      "FATAL: API rate limit"
+    );
     expect(mockUpdateProcessingStatus).toHaveBeenCalledWith(
       "row-1",
-      "failed",
-      "API rate limit"
+      "failed"
     );
   });
 
@@ -590,5 +598,125 @@ describe("processAppearance — chunked path", () => {
     expect(mockCleanTranscript).toHaveBeenCalledTimes(1);
     expect(mockExtractEntities).toHaveBeenCalledTimes(1);
     expect(mockGeneratePrepBullets).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("pipeline validations", () => {
+  // A transcript long enough to pass extract_too_short (>=500 chars)
+  const normalTranscript = "x".repeat(600);
+
+  function setupHappyPath(overrides: Partial<ScraperResult> = {}) {
+    mockGetAppearanceById.mockResolvedValue(makeRow());
+    mockExtract.mockResolvedValue({ ...scraperResult, rawTranscript: normalTranscript, ...overrides });
+    // Cleaned output within normal ratio range (0.30–1.50) of 600 chars
+    mockCleanTranscript.mockResolvedValue({ cleaned_transcript: "c".repeat(400) });
+    mockExtractEntities.mockResolvedValue({
+      entity_tags: { fund_names: [{ name: "Apollo", aliases: [], type: "primary" }] },
+    });
+    mockGeneratePrepBullets.mockResolvedValue({
+      prep_bullets: { bullets: [{ text: "b1" }, { text: "b2" }, { text: "b3" }], rowspace_angles: [] },
+    });
+    mockExtractFundNames.mockReturnValue(["Apollo"]);
+  }
+
+  it("does not append warnings on a normal successful run", async () => {
+    setupHappyPath();
+    await processAppearance("row-1");
+    expect(mockAppendProcessingWarning).not.toHaveBeenCalled();
+  });
+
+  it("appends extract_too_short when rawTranscript < 500 chars", async () => {
+    setupHappyPath({ rawTranscript: "short" });
+    await processAppearance("row-1");
+    expect(mockAppendProcessingWarning).toHaveBeenCalledWith(
+      "row-1",
+      expect.stringContaining("extract_too_short")
+    );
+  });
+
+  it("appends clean_ratio_warning when ratio is too low", async () => {
+    // rawTranscript is ~20 chars from scraperResult, cleaned is 12000 chars
+    // We need raw > cleaned*3.33 for ratio < 0.30
+    const longRaw = "x".repeat(10_000);
+    setupHappyPath({ rawTranscript: longRaw });
+    // cleaned_transcript is only "cleaned text" (12 chars) → ratio ~0.001
+    await processAppearance("row-1");
+    expect(mockAppendProcessingWarning).toHaveBeenCalledWith(
+      "row-1",
+      expect.stringContaining("clean_ratio_warning")
+    );
+  });
+
+  it("appends turns_low_count when few turns from long transcript", async () => {
+    const longRaw = "x".repeat(15_000);
+    setupHappyPath({ rawTranscript: longRaw });
+    // mockParseTurns returns 1 turn by default (from beforeEach)
+    // Cleaned text is short so clean_ratio_warning also fires, that's fine
+    await processAppearance("row-1");
+    expect(mockAppendProcessingWarning).toHaveBeenCalledWith(
+      "row-1",
+      expect.stringContaining("turns_low_count")
+    );
+  });
+
+  it("appends turn_summaries_incomplete when summaries have warning", async () => {
+    setupHappyPath();
+    mockGenerateTurnSummaries.mockResolvedValue({
+      summaries: [{ speaker: "Patrick", summary: "Says hello", turn_index: 0 }],
+      warning: "turn_summaries_incomplete: expected 2, got 1, missing turn_indexes: [1]",
+    });
+    await processAppearance("row-1");
+    expect(mockAppendProcessingWarning).toHaveBeenCalledWith(
+      "row-1",
+      expect.stringContaining("turn_summaries_incomplete")
+    );
+  });
+
+  it("appends entities_no_funds on substantial transcript with no funds", async () => {
+    mockGetAppearanceById.mockResolvedValue(makeRow());
+    mockExtract.mockResolvedValue(scraperResult);
+    // Cleaned transcript > 10k chars
+    mockCleanTranscript.mockResolvedValue({
+      cleaned_transcript: "c".repeat(15_000),
+    });
+    mockExtractEntities.mockResolvedValue({ entity_tags: { fund_names: [] } });
+    mockGeneratePrepBullets.mockResolvedValue({
+      prep_bullets: { bullets: [{ text: "b1" }, { text: "b2" }, { text: "b3" }], rowspace_angles: [] },
+    });
+    mockExtractFundNames.mockReturnValue([]);
+    await processAppearance("row-1");
+    expect(mockAppendProcessingWarning).toHaveBeenCalledWith(
+      "row-1",
+      expect.stringContaining("entities_no_funds")
+    );
+  });
+
+  it("appends bullets_low_count on substantial transcript with few bullets", async () => {
+    mockGetAppearanceById.mockResolvedValue(makeRow());
+    mockExtract.mockResolvedValue(scraperResult);
+    mockCleanTranscript.mockResolvedValue({
+      cleaned_transcript: "c".repeat(15_000),
+    });
+    mockExtractEntities.mockResolvedValue({
+      entity_tags: { fund_names: [{ name: "Apollo", aliases: [], type: "primary" }] },
+    });
+    mockGeneratePrepBullets.mockResolvedValue({
+      prep_bullets: { bullets: [{ text: "b1" }], rowspace_angles: [] },
+    });
+    mockExtractFundNames.mockReturnValue(["Apollo"]);
+    await processAppearance("row-1");
+    expect(mockAppendProcessingWarning).toHaveBeenCalledWith(
+      "row-1",
+      expect.stringContaining("bullets_low_count")
+    );
+  });
+
+  it("still completes successfully with warnings — status is 'complete'", async () => {
+    setupHappyPath({ rawTranscript: "short" }); // triggers extract_too_short
+    await processAppearance("row-1");
+    const statusCalls = mockUpdateProcessingStatus.mock.calls.map(
+      (c: unknown[]) => c[1]
+    );
+    expect(statusCalls).toContain("complete");
   });
 });
