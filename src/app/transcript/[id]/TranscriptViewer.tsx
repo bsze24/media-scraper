@@ -810,7 +810,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                                 {hostExpanded || isTurnHit
                                   ? highlightText(turn.text, debouncedQuery)
                                   : summary
-                                    ? <span className="not-italic text-[#a8a0c0]" title="AI-generated summary">✦ {summary}</span>
+                                    ? summary
                                     : hasMore
                                       ? highlightText(first, debouncedQuery)
                                       : highlightText(turn.text, debouncedQuery)
@@ -826,7 +826,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                                     }))
                                   }
                                 >
-                                  {hostExpanded ? "▲ less" : "▼ more"}
+                                  {summary
+                                    ? (hostExpanded ? "summary" : "full text")
+                                    : (hostExpanded ? "▲ less" : "▼ more")
+                                  }
                                 </span>
                               )}
                             </div>
