@@ -248,4 +248,10 @@ Guidelines:
 - Generate 1-2 Rowspace angles
 - Quotes must be verbatim from the transcript
 
+---
+
+${ROWSPACE_BUSINESS_CONTEXT}
+
+---
+
 Return only valid JSON, no markdown fences, no preamble.`;

@@ -155,8 +155,7 @@ export async function generatePrepBullets(
 
     return {
       prep_bullets: prepBullets,
-      // Snapshot the business context used for curated sources; null for YouTube/other
-      prompt_context_snapshot: curated ? ROWSPACE_BUSINESS_CONTEXT : undefined,
+      prompt_context_snapshot: ROWSPACE_BUSINESS_CONTEXT,
     };
   } finally {
     clearInterval(logTimer);
