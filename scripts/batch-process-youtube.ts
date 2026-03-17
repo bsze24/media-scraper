@@ -72,14 +72,25 @@ async function phase1Insert(urls: string[]): Promise<void> {
 }
 
 async function phase2Process(): Promise<void> {
-  const rows = await listAppearances({ status: "queued" });
+  const allQueued = await listAppearances({ status: "queued" });
+  // Filter to YouTube sources only — Colossus rows need throttling that
+  // this script doesn't implement. Use the orchestrator's processBatch()
+  // for Colossus URLs.
+  const rows = allQueued.filter((r) =>
+    r.transcript_source === "youtube_captions" || r.transcript_source === "youtube_whisper"
+  );
 
   if (rows.length === 0) {
-    console.log("\n[process] No queued appearances to process.");
+    const skippedColossus = allQueued.length - rows.length;
+    console.log(`\n[process] No queued YouTube appearances to process.${skippedColossus > 0 ? ` (${skippedColossus} non-YouTube rows skipped)` : ""}`);
     return;
   }
 
-  console.log(`\n[process] Phase 2: Processing ${rows.length} queued appearances (concurrency: 2)\n`);
+  if (rows.length < allQueued.length) {
+    console.log(`\n[process] Skipping ${allQueued.length - rows.length} non-YouTube queued row(s) — use processBatch() for Colossus`);
+  }
+
+  console.log(`\n[process] Phase 2: Processing ${rows.length} queued YouTube appearances (concurrency: 2)\n`);
 
   const limit = pLimit(2);
   const total = rows.length;
