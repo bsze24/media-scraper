@@ -249,10 +249,13 @@ describe("processAppearance", () => {
       "Content gate detected"
     );
 
+    expect(mockAppendProcessingWarning).toHaveBeenCalledWith(
+      "row-1",
+      "FATAL: Content gate detected"
+    );
     expect(mockUpdateProcessingStatus).toHaveBeenCalledWith(
       "row-1",
-      "failed",
-      "Content gate detected"
+      "failed"
     );
   });
 
@@ -263,10 +266,13 @@ describe("processAppearance", () => {
 
     await expect(processAppearance("row-1")).rejects.toThrow("API rate limit");
 
+    expect(mockAppendProcessingWarning).toHaveBeenCalledWith(
+      "row-1",
+      "FATAL: API rate limit"
+    );
     expect(mockUpdateProcessingStatus).toHaveBeenCalledWith(
       "row-1",
-      "failed",
-      "API rate limit"
+      "failed"
     );
   });
 

@@ -281,7 +281,10 @@ export async function processAppearance(id: string): Promise<void> {
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await updateProcessingStatus(id, "failed", message);
+    // Prepend fatal error to any accumulated validation warnings so both
+    // the crash reason and earlier diagnostics are visible in processing_error.
+    await appendProcessingWarning(id, `FATAL: ${message}`);
+    await updateProcessingStatus(id, "failed");
     throw err;
   }
 }

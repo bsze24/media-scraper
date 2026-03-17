@@ -173,6 +173,11 @@ export async function updateProcessingError(
 /**
  * Append a warning to processing_error without overwriting existing warnings.
  * Multiple warnings are concatenated with " | " separators.
+ *
+ * Note: uses read-then-write (not atomic). Safe because all callers within a
+ * single pipeline run are sequential. If future callers run in parallel (e.g.
+ * inside Promise.all), replace with a Supabase RPC using SQL concatenation:
+ * COALESCE(processing_error || ' | ', '') || $1
  */
 export async function appendProcessingWarning(
   id: string,
