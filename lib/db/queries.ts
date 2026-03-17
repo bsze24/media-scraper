@@ -158,18 +158,6 @@ export async function claimForProcessing(
   return (data?.length ?? 0) > 0;
 }
 
-export async function updateProcessingError(
-  id: string,
-  error: string | null
-): Promise<void> {
-  const supabase = createServerClient();
-  const { error: dbError } = await supabase
-    .from("appearances")
-    .update({ processing_error: error })
-    .eq("id", id);
-  if (dbError) throw dbError;
-}
-
 /**
  * Append a warning to processing_error without overwriting existing warnings.
  * Multiple warnings are concatenated with " | " separators.

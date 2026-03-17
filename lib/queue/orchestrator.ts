@@ -281,10 +281,16 @@ export async function processAppearance(id: string): Promise<void> {
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    // Prepend fatal error to any accumulated validation warnings so both
-    // the crash reason and earlier diagnostics are visible in processing_error.
-    await appendProcessingWarning(id, `FATAL: ${message}`);
-    await updateProcessingStatus(id, "failed");
+    // Try to preserve validation warnings alongside the fatal error.
+    // If appendProcessingWarning fails (transient DB error), fall back
+    // to overwriting processing_error with just the fatal message —
+    // setting "failed" status must never be blocked.
+    try {
+      await appendProcessingWarning(id, `FATAL: ${message}`);
+      await updateProcessingStatus(id, "failed");
+    } catch {
+      await updateProcessingStatus(id, "failed", message);
+    }
     throw err;
   }
 }
