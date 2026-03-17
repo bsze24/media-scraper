@@ -77,7 +77,7 @@ export function extractTimestamps(
 
     if (bestOverlap >= MATCH_THRESHOLD && bestStart > lastMatchedTimestamp) {
       lastMatchedTimestamp = bestStart;
-      segScanPos = bestSegIdx;
+      segScanPos = bestSegIdx + 1;
       return { ...turn, timestamp_seconds: bestStart };
     }
 
