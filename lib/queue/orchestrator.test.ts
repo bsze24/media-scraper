@@ -14,6 +14,7 @@ const mockWriteExtractResult = vi.fn();
 const mockWriteCleanResult = vi.fn();
 const mockWriteEntitiesResult = vi.fn();
 const mockWriteTurnSummaries = vi.fn();
+const mockUpdateProcessingError = vi.fn();
 const mockWriteBulletsResult = vi.fn();
 const mockInvalidateFundOverviewCache = vi.fn();
 const mockExtractFundNames = vi.fn();
@@ -29,6 +30,7 @@ vi.mock("@lib/db/queries", () => ({
   writeEntitiesResult: (...args: unknown[]) =>
     mockWriteEntitiesResult(...args),
   writeTurnSummaries: (...args: unknown[]) => mockWriteTurnSummaries(...args),
+  updateProcessingError: (...args: unknown[]) => mockUpdateProcessingError(...args),
   writeBulletsResult: (...args: unknown[]) => mockWriteBulletsResult(...args),
   invalidateFundOverviewCache: (...args: unknown[]) =>
     mockInvalidateFundOverviewCache(...args),
