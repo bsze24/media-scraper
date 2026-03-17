@@ -42,3 +42,6 @@ next-env.d.ts
 
 # other
 /notes/
+
+# URL lists (may contain proprietary content lists)
+urls/*.txt
