@@ -20,6 +20,7 @@ import { colossusDelay } from "@lib/scrapers/colossus";
 import { parseTurns } from "@lib/scrapers/parse-turns";
 import { cleanTranscript } from "@lib/pipeline/clean";
 import { validateSpeakerAttribution } from "@lib/pipeline/validate-speakers";
+import { normalizeSpeakerNames } from "@lib/pipeline/normalize-speakers";
 import { extractEntities } from "@lib/pipeline/entities";
 import { generateTurnSummaries } from "@lib/pipeline/turn-summaries";
 import { generatePrepBullets } from "@lib/pipeline/bullets";
@@ -141,6 +142,20 @@ export async function processAppearance(id: string): Promise<void> {
         finalCleaned = corrected;
         console.log(`[pipeline]   ↳ Fixed ${replacements.length} hallucinated speaker name(s)`);
       }
+    }
+
+    // Normalize variant speaker name forms (e.g. "Marc" / "Rowan" → "Marc Rowan")
+    // Runs for all sources — Colossus can drift during cleaning, YouTube drifts more.
+    const { normalizedTranscript, replacements: nameReplacements } =
+      normalizeSpeakerNames(finalCleaned, speakers);
+    if (Object.keys(nameReplacements).length > 0) {
+      finalCleaned = normalizedTranscript;
+      const mapStr = Object.entries(nameReplacements)
+        .map(([from, to]) => `"${from}" → "${to}"`)
+        .join(", ");
+      console.log(`[pipeline]   ↳ Speaker normalization: {${mapStr}}`);
+    } else {
+      console.log(`[pipeline]   ↳ Speaker normalization: no changes needed`);
     }
 
     await writeCleanResult(id, { cleaned_transcript: finalCleaned });
