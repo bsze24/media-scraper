@@ -21,7 +21,7 @@ export interface TranscriptViewerProps {
       text: string;
       turn_index: number;
       section_anchor?: string;
-      attribution?: "source" | "inferred";
+      attribution?: "source" | "derived" | "inferred";
     }>;
     has_inferred_attribution: boolean;
     prep_bullets: Array<{

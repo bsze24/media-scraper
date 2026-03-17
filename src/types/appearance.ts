@@ -36,7 +36,7 @@ export interface Speaker {
   affiliation?: string;
 }
 
-export type TurnAttribution = "source" | "inferred";
+export type TurnAttribution = "source" | "derived" | "inferred";
 
 export interface Turn {
   speaker: string;
@@ -44,6 +44,7 @@ export interface Turn {
   turn_index: number;
   section_anchor?: string;
   corrected?: boolean;
+  timestamp_seconds?: number;
   attribution?: TurnAttribution;
 }
 

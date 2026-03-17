@@ -12,6 +12,7 @@ import {
   removeProcessingWarning,
   writeEntitiesResult,
   writeBulletsResult,
+  writeSections,
   invalidateFundOverviewCache,
   extractFundNames,
 } from "@lib/db/queries";
@@ -22,6 +23,7 @@ import { parseTurns } from "@lib/scrapers/parse-turns";
 import { cleanTranscript } from "@lib/pipeline/clean";
 import { validateSpeakerAttribution } from "@lib/pipeline/validate-speakers";
 import { normalizeSpeakerNames } from "@lib/pipeline/normalize-speakers";
+import { extractTimestamps, mapSectionsToTurns } from "@lib/pipeline/extract-timestamps";
 import { extractEntities } from "@lib/pipeline/entities";
 import { generateTurnSummaries } from "@lib/pipeline/turn-summaries";
 import { generatePrepBullets } from "@lib/pipeline/bullets";
@@ -67,6 +69,7 @@ export async function processAppearance(id: string): Promise<void> {
     let transcriptSource = row.transcript_source;
     let speakers = row.speakers ?? [];
     let currentTurns: import("@/types/appearance").Turn[] = [];
+    let captionData: Record<string, unknown> | null = null;
 
     if (row.raw_transcript) {
       // Manual ingest — transcript already provided, skip scraper
@@ -86,6 +89,7 @@ export async function processAppearance(id: string): Promise<void> {
       sections = result.sections;
       transcriptSource = result.transcriptSource;
       speakers = result.speakers;
+      captionData = result.captionData;
 
       currentTurns = parseTurns(result.rawTranscript, result.sections, "source");
       const extractOutput: ExtractStepOutput = {
@@ -195,8 +199,33 @@ export async function processAppearance(id: string): Promise<void> {
     if (isYouTubeSource(transcriptSource)) {
       await updateProcessingDetail(id, "re-parsing turns from cleaned transcript");
       currentTurns = parseTurns(finalCleaned, sections, "inferred");
-      await writeTurns(id, currentTurns);
       console.log(`[pipeline]   ↳ Re-parsed ${currentTurns.length} turns from cleaned transcript`);
+
+      // Stamp timestamps on turns from caption segments
+      const captionSegments = (captionData as Record<string, unknown> | null)?.segments as
+        import("@lib/scrapers/youtube").CaptionSegment[] | undefined;
+      if (captionSegments && captionSegments.length > 0) {
+        await updateProcessingDetail(id, "extracting timestamps from captions");
+        currentTurns = extractTimestamps(currentTurns, captionSegments);
+        const timestampedCount = currentTurns.filter((t) => t.timestamp_seconds != null).length;
+        console.log(`[pipeline]   ↳ Timestamped ${timestampedCount}/${currentTurns.length} turns`);
+
+        // Validation: low timestamp coverage
+        const coverage = currentTurns.length > 0 ? timestampedCount / currentTurns.length : 1;
+        if (coverage < 0.8) {
+          await appendProcessingWarning(id, `timestamp_coverage_low:${Math.round(coverage * 100)}%`);
+        }
+      }
+
+      // Map sections to nearest timestamped turn
+      if (sections.length > 0) {
+        await updateProcessingDetail(id, "mapping sections to turns");
+        sections = mapSectionsToTurns(sections, currentTurns);
+        await writeSections(id, sections);
+        console.log(`[pipeline]   ↳ Mapped ${sections.filter((s) => s.turn_index != null).length}/${sections.length} sections to turns`);
+      }
+
+      await writeTurns(id, currentTurns);
     }
 
     // Validation 3: suspiciously low turn count

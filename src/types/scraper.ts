@@ -3,6 +3,9 @@ import type { Speaker, TranscriptSource } from "./appearance";
 export interface SectionHeading {
   heading: string;
   anchor: string;
+  turn_index?: number;
+  start_time?: number;
+  source?: "source" | "derived" | "inferred";
 }
 
 export interface ScraperResult {

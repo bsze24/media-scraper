@@ -5,6 +5,7 @@ import {
   formatTimestamp,
   buildRawTranscript,
   extractSpeakers,
+  slugify,
 } from "./youtube";
 import type { CaptionSegment } from "./youtube";
 
@@ -154,5 +155,13 @@ describe("extractSpeakers", () => {
       "Unknown Channel"
     );
     expect(speakers).toEqual([]);
+  });
+});
+
+describe("slugify", () => {
+  it("converts headings to URL-friendly slugs", () => {
+    expect(slugify("Apollo's DNA")).toBe("apollos-dna");
+    expect(slugify("The Big Picture: 2024 & Beyond")).toBe("the-big-picture-2024-beyond");
+    expect(slugify("  Extra   Spaces  ")).toBe("extra-spaces");
   });
 });

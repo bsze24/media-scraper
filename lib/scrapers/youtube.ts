@@ -3,7 +3,7 @@ import { readFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Scraper, ScraperResult } from "@/types/scraper";
+import type { Scraper, ScraperResult, SectionHeading } from "@/types/scraper";
 import type { Speaker, SpeakerRole } from "@/types/appearance";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -282,6 +282,33 @@ function parseUploadDate(yyyymmdd: string): string {
   return `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;
 }
 
+/**
+ * Convert a string to a URL-friendly slug.
+ */
+export function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/**
+ * Map yt-dlp chapters to SectionHeading objects.
+ */
+function chaptersToSections(
+  chapters: YtDlpMetadata["chapters"]
+): SectionHeading[] {
+  if (!chapters || chapters.length === 0) return [];
+  return chapters.map((ch) => ({
+    heading: ch.title,
+    anchor: slugify(ch.title),
+    start_time: ch.start_time,
+    source: "source" as const,
+  }));
+}
+
 // ── Scraper ────────────────────────────────────────────────────────────────
 
 export const youtubeScraper: Scraper = {
@@ -328,6 +355,8 @@ export const youtubeScraper: Scraper = {
       `[youtube] complete, transcript: ${rawTranscript.length} chars, ${speakers.length} speakers detected`
     );
 
+    const sections = chaptersToSections(metadata.chapters);
+
     return {
       title: metadata.title,
       appearanceDate: parseUploadDate(metadata.upload_date),
@@ -335,8 +364,12 @@ export const youtubeScraper: Scraper = {
       transcriptSource: "youtube_captions",
       speakers,
       rawTranscript,
-      captionData: { segments: captionSegments },
-      sections: [],
+      captionData: {
+        segments: captionSegments,
+        description: metadata.description,
+        duration: metadata.duration,
+      },
+      sections,
       sourceUrl: canonicalUrl,
     };
   },
