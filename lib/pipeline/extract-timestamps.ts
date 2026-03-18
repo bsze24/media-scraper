@@ -120,3 +120,35 @@ export function mapSectionsToTurns(
     return { ...section, turn_index: closest.turn_index };
   });
 }
+
+/**
+ * Stamp section_anchor on turns based on section turn_index ranges.
+ * Each turn gets the anchor of the section whose turn_index is the
+ * highest value <= the turn's turn_index. Turns before the first
+ * section get no section_anchor.
+ */
+export function stampSectionAnchors(
+  turns: Turn[],
+  sections: SectionHeading[]
+): Turn[] {
+  if (sections.length === 0) return turns;
+
+  // Sort sections by turn_index ascending
+  const sorted = sections
+    .filter((s) => s.turn_index != null)
+    .sort((a, b) => a.turn_index! - b.turn_index!);
+
+  if (sorted.length === 0) return turns;
+
+  return turns.map((turn) => {
+    let anchor: string | undefined;
+    for (const section of sorted) {
+      if (section.turn_index! <= turn.turn_index) {
+        anchor = section.anchor;
+      } else {
+        break;
+      }
+    }
+    return anchor ? { ...turn, section_anchor: anchor } : turn;
+  });
+}

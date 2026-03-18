@@ -62,6 +62,7 @@ function transformAppearance(row: AppearanceRow): TranscriptViewerProps["appeara
       text: t.text,
       turn_index: t.turn_index,
       section_anchor: t.section_anchor,
+      timestamp_seconds: t.timestamp_seconds,
       attribution: t.attribution,
     };
   });
@@ -93,6 +94,9 @@ function transformAppearance(row: AppearanceRow): TranscriptViewerProps["appeara
     sections: row.sections.map((s) => ({
       heading: s.heading,
       anchor: s.anchor,
+      turn_index: s.turn_index,
+      start_time: s.start_time,
+      source: s.source,
     })),
     turns,
     has_inferred_attribution: turns.some((t) => t.attribution === "inferred"),

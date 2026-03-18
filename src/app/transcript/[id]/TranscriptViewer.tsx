@@ -95,6 +95,20 @@ function highlightText(text: string, query: string): ReactNode {
   );
 }
 
+function formatTimestamp(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function sectionSourceLabel(source?: string): string | null {
+  if (source === "derived") return "(parsed)";
+  if (source === "inferred") return "(AI)";
+  return null;
+}
+
 function firstSentence(text: string): { first: string; hasMore: boolean } {
   const dotIdx = text.indexOf(". ");
   if (dotIdx > 0 && dotIdx < text.length - 2) {
@@ -106,6 +120,11 @@ function firstSentence(text: string): { first: string; hasMore: boolean } {
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
+
+interface YTPlayer {
+  seekTo(seconds: number, allowSeekAhead: boolean): void;
+  playVideo(): void;
+}
 
 interface BulletFeedback {
   flagged: boolean;
@@ -181,6 +200,52 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   const panelInputRef = useRef<HTMLInputElement>(null);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const ytPlayerRef = useRef<YTPlayer | null>(null);
+  const ytContainerRef = useRef<HTMLDivElement>(null);
+
+  const seekToTime = useCallback((seconds: number) => {
+    const player = ytPlayerRef.current;
+    if (player) {
+      player.seekTo(seconds, true);
+      player.playVideo();
+    }
+  }, []);
+
+  // Initialize YouTube IFrame API when video panel opens
+  useEffect(() => {
+    if (!videoOpen || !youtube_id || ytPlayerRef.current) return;
+
+    const containerId = "yt-player-container";
+
+    function createPlayer() {
+      if (!document.getElementById(containerId)) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const YT = (window as any).YT;
+      if (!YT?.Player) return;
+      new YT.Player(containerId, {
+        videoId: youtube_id,
+        playerVars: { rel: 0 },
+        events: {
+          onReady: (event: { target: YTPlayer }) => {
+            ytPlayerRef.current = event.target;
+          },
+        },
+      });
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((window as any).YT?.Player) {
+      createPlayer();
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).onYouTubeIframeAPIReady = createPlayer;
+      if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
+        const tag = document.createElement("script");
+        tag.src = "https://www.youtube.com/iframe_api";
+        document.head.appendChild(tag);
+      }
+    }
+  }, [videoOpen, youtube_id]);
 
   // Debounce search
   useEffect(() => {
@@ -652,6 +717,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                     }}
                   >
                     {s.heading}
+                    {sectionSourceLabel(s.source) && (
+                      <span className="ml-1 text-[10px] text-[#ccc]">
+                        {sectionSourceLabel(s.source)}
+                      </span>
+                    )}
                   </span>
                 </div>
               );
@@ -697,11 +767,20 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         style={dimmed ? { opacity: 0.3 } : undefined}
                       >
                         <div
-                          className={`mb-0.5 font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] ${
+                          className={`mb-0.5 flex items-baseline justify-between font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] ${
                             isHost ? "text-[#ccc]" : "text-[#c9a84c]"
                           }`}
                         >
-                          {turn.speaker}
+                          <span>{turn.speaker}</span>
+                          {turn.timestamp_seconds != null && (
+                            <span
+                              className={`cursor-pointer font-normal normal-case tracking-normal hover:text-[#888] ${isHost ? "text-[#ddd]" : "text-[#bbb]"}`}
+                              onClick={() => seekToTime(turn.timestamp_seconds!)}
+                              title={`Jump to ${formatTimestamp(turn.timestamp_seconds)}`}
+                            >
+                              {formatTimestamp(turn.timestamp_seconds)}
+                            </span>
+                          )}
                         </div>
                         <p
                           className={`font-[family-name:var(--font-source-sans)] leading-relaxed ${
@@ -761,6 +840,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                       <span className="font-[family-name:var(--font-playfair)] text-[13.5px] font-semibold">
                         {section.heading}
                       </span>
+                      {sectionSourceLabel(section.source) && (
+                        <span className="font-[family-name:var(--font-source-sans)] text-[10px] text-[#ccc]">
+                          {sectionSourceLabel(section.source)}
+                        </span>
+                      )}
                       {isHit && hitCount > 0 && (
                         <span className="font-[family-name:var(--font-source-sans)] text-[10.5px] font-semibold text-[#5b9bd5]">
                           {hitCount} match{hitCount !== 1 ? "es" : ""}
@@ -803,8 +887,17 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                               }`}
                               style={dimmed ? { opacity: 0.3 } : undefined}
                             >
-                              <div className="mb-0.5 font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#ccc]">
-                                {turn.speaker}
+                              <div className="mb-0.5 flex items-baseline justify-between font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#ccc]">
+                                <span>{turn.speaker}</span>
+                                {turn.timestamp_seconds != null && (
+                                  <span
+                                    className="cursor-pointer font-normal normal-case tracking-normal text-[#ddd] hover:text-[#999]"
+                                    onClick={() => seekToTime(turn.timestamp_seconds!)}
+                                    title={`Jump to ${formatTimestamp(turn.timestamp_seconds)}`}
+                                  >
+                                    {formatTimestamp(turn.timestamp_seconds)}
+                                  </span>
+                                )}
                               </div>
                               <p className="font-[family-name:var(--font-source-sans)] text-[12.5px] italic leading-relaxed text-[#bbb]">
                                 {hostExpanded || isTurnHit
@@ -847,8 +940,17 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                             }`}
                             style={dimmed ? { opacity: 0.3 } : undefined}
                           >
-                            <div className="mb-1 font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#c9a84c]">
-                              {turn.speaker}
+                            <div className="mb-1 flex items-baseline justify-between font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#c9a84c]">
+                              <span>{turn.speaker}</span>
+                              {turn.timestamp_seconds != null && (
+                                <span
+                                  className="cursor-pointer font-normal normal-case tracking-normal text-[#bbb] hover:text-[#888]"
+                                  onClick={() => seekToTime(turn.timestamp_seconds!)}
+                                  title={`Jump to ${formatTimestamp(turn.timestamp_seconds)}`}
+                                >
+                                  {formatTimestamp(turn.timestamp_seconds)}
+                                </span>
+                              )}
                             </div>
                             <p className="font-[family-name:var(--font-source-sans)] text-[13.5px] leading-[1.65] text-[#1a1a1a]">
                               {highlightText(turn.text, debouncedQuery)}
@@ -894,16 +996,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   </button>
                 </div>
                 {youtube_id ? (
-                  <div className="aspect-video w-full overflow-hidden rounded bg-[#111]">
-                    <iframe
-                      src={`https://www.youtube.com/embed/${youtube_id}`}
-                      width="100%"
-                      height="100%"
-                      frameBorder="0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                      className="block h-full w-full"
-                    />
+                  <div
+                    ref={ytContainerRef}
+                    className="aspect-video w-full overflow-hidden rounded bg-[#111]"
+                  >
+                    <div id="yt-player-container" className="h-full w-full" />
                   </div>
                 ) : (
                   <div className="px-3 py-5 text-center font-[family-name:var(--font-source-sans)] text-[11px] leading-relaxed text-[#bbb]">

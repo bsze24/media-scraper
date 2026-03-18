@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractTimestamps, mapSectionsToTurns } from "./extract-timestamps";
+import { extractTimestamps, mapSectionsToTurns, stampSectionAnchors } from "./extract-timestamps";
 import type { Turn } from "@/types/appearance";
 import type { CaptionSegment } from "@lib/scrapers/youtube";
 import type { SectionHeading } from "@/types/scraper";
@@ -140,5 +140,63 @@ describe("mapSectionsToTurns", () => {
 
     const result = mapSectionsToTurns(sections, turns);
     expect(result[0].turn_index).toBeUndefined();
+  });
+});
+
+describe("stampSectionAnchors", () => {
+  it("stamps section_anchor on turns based on turn_index ranges", () => {
+    const sections: SectionHeading[] = [
+      { heading: "Intro", anchor: "intro", turn_index: 0 },
+      { heading: "Main Topic", anchor: "main-topic", turn_index: 3 },
+      { heading: "Closing", anchor: "closing", turn_index: 6 },
+    ];
+    const turns = [
+      makeTurn(0, "a"), makeTurn(1, "b"), makeTurn(2, "c"),
+      makeTurn(3, "d"), makeTurn(4, "e"), makeTurn(5, "f"),
+      makeTurn(6, "g"), makeTurn(7, "h"),
+    ];
+
+    const result = stampSectionAnchors(turns, sections);
+    expect(result[0].section_anchor).toBe("intro");
+    expect(result[1].section_anchor).toBe("intro");
+    expect(result[2].section_anchor).toBe("intro");
+    expect(result[3].section_anchor).toBe("main-topic");
+    expect(result[4].section_anchor).toBe("main-topic");
+    expect(result[5].section_anchor).toBe("main-topic");
+    expect(result[6].section_anchor).toBe("closing");
+    expect(result[7].section_anchor).toBe("closing");
+  });
+
+  it("returns turns unchanged when sections is empty", () => {
+    const turns = [makeTurn(0, "a"), makeTurn(1, "b")];
+    const result = stampSectionAnchors(turns, []);
+    expect(result[0].section_anchor).toBeUndefined();
+    expect(result[1].section_anchor).toBeUndefined();
+  });
+
+  it("leaves turns before the first section without section_anchor", () => {
+    const sections: SectionHeading[] = [
+      { heading: "Topic", anchor: "topic", turn_index: 3 },
+    ];
+    const turns = [makeTurn(0, "a"), makeTurn(1, "b"), makeTurn(2, "c"), makeTurn(3, "d")];
+
+    const result = stampSectionAnchors(turns, sections);
+    expect(result[0].section_anchor).toBeUndefined();
+    expect(result[1].section_anchor).toBeUndefined();
+    expect(result[2].section_anchor).toBeUndefined();
+    expect(result[3].section_anchor).toBe("topic");
+  });
+
+  it("skips sections without turn_index", () => {
+    const sections: SectionHeading[] = [
+      { heading: "No Index", anchor: "no-index" },
+      { heading: "Has Index", anchor: "has-index", turn_index: 2 },
+    ];
+    const turns = [makeTurn(0, "a"), makeTurn(1, "b"), makeTurn(2, "c")];
+
+    const result = stampSectionAnchors(turns, sections);
+    expect(result[0].section_anchor).toBeUndefined();
+    expect(result[1].section_anchor).toBeUndefined();
+    expect(result[2].section_anchor).toBe("has-index");
   });
 });
