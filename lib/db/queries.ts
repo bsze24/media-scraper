@@ -201,7 +201,11 @@ export async function updateProcessingDetail(
     .from("appearances")
     .update({ processing_detail: detail })
     .eq("id", id);
-  if (error) throw error;
+  // Best-effort — don't crash the pipeline if the column doesn't exist yet
+  // (migration 010 may not have been applied). Log and continue.
+  if (error) {
+    console.warn(`[updateProcessingDetail] failed for ${id}: ${error.message}`);
+  }
 }
 
 export async function updateProcessingStatus(
