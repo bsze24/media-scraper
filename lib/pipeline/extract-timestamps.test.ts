@@ -187,6 +187,16 @@ describe("stampSectionAnchors", () => {
     expect(result[3].section_anchor).toBe("topic");
   });
 
+  it("stamps all turns when single section starts at 0", () => {
+    const sections: SectionHeading[] = [
+      { heading: "Everything", anchor: "everything", turn_index: 0 },
+    ];
+    const turns = [makeTurn(0, "a"), makeTurn(1, "b"), makeTurn(2, "c"), makeTurn(3, "d")];
+
+    const result = stampSectionAnchors(turns, sections);
+    expect(result.every((t) => t.section_anchor === "everything")).toBe(true);
+  });
+
   it("skips sections without turn_index", () => {
     const sections: SectionHeading[] = [
       { heading: "No Index", anchor: "no-index" },
