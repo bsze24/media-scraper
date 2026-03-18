@@ -24,6 +24,8 @@ import { cleanTranscript } from "@lib/pipeline/clean";
 import { validateSpeakerAttribution } from "@lib/pipeline/validate-speakers";
 import { normalizeSpeakerNames } from "@lib/pipeline/normalize-speakers";
 import { extractTimestamps, mapSectionsToTurns } from "@lib/pipeline/extract-timestamps";
+import { parseDescriptionSections } from "@lib/pipeline/parse-description-sections";
+import { generateSections } from "@lib/pipeline/sections";
 import { extractEntities } from "@lib/pipeline/entities";
 import { generateTurnSummaries } from "@lib/pipeline/turn-summaries";
 import { generatePrepBullets } from "@lib/pipeline/bullets";
@@ -71,10 +73,18 @@ export async function processAppearance(id: string): Promise<void> {
     let currentTurns: import("@/types/appearance").Turn[] = [];
     let captionData: Record<string, unknown> | null = null;
 
-    if (row.raw_transcript) {
+    if (row.raw_transcript && row.scraper_metadata) {
+      // Retry — extract step already completed on a prior run.
+      // Restore captionData and sections from the persisted row
+      // so timestamp extraction and section mapping still work.
+      rawTranscript = row.raw_transcript;
+      captionData = row.scraper_metadata;
+      sections = row.sections ?? [];
+      speakers = row.speakers ?? speakers;
+      currentTurns = parseTurns(rawTranscript, sections, "source");
+    } else if (row.raw_transcript) {
       // Manual ingest — transcript already provided, skip scraper
       rawTranscript = row.raw_transcript;
-      // Parse turns for manual transcripts too — manual ingest has source-provided labels
       currentTurns = parseTurns(rawTranscript, undefined, "source");
       await writeExtractResult(id, {
         raw_transcript: rawTranscript,
@@ -214,6 +224,31 @@ export async function processAppearance(id: string): Promise<void> {
         const coverage = currentTurns.length > 0 ? timestampedCount / currentTurns.length : 1;
         if (coverage < 0.8) {
           await appendProcessingWarning(id, `timestamp_coverage_low:${Math.round(coverage * 100)}%`);
+        }
+      }
+
+      // Section creation cascade — tiers 2 and 3 (tier 1 = chapters, already in scraper)
+      if (sections.length === 0) {
+        // Tier 2: parse description timestamps
+        const description = (captionData as Record<string, unknown> | null)?.description as string | undefined;
+        if (description) {
+          await updateProcessingDetail(id, "parsing description for sections");
+          sections = parseDescriptionSections(description);
+          if (sections.length > 0) {
+            console.log(`[pipeline]   ↳ Parsed ${sections.length} sections from description (derived)`);
+          }
+        }
+
+        // Tier 3: LLM fallback
+        if (sections.length === 0) {
+          await updateProcessingDetail(id, "generating sections (LLM)");
+          sections = await generateSections(finalCleaned, title, currentTurns.length);
+          if (sections.length > 0) {
+            console.log(`[pipeline]   ↳ Generated ${sections.length} sections via LLM (inferred)`);
+          } else {
+            await appendProcessingWarning(id, "sections_generation_empty");
+            console.log(`[pipeline]   ↳ No sections available — no chapters, no description timestamps, LLM produced none`);
+          }
         }
       }
 
