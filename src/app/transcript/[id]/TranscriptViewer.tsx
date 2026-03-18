@@ -201,7 +201,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const panelInputRef = useRef<HTMLInputElement>(null);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const ytPlayerRef = useRef<YTPlayer | null>(null);
-  const ytContainerRef = useRef<HTMLDivElement>(null);
 
   const seekToTime = useCallback((seconds: number) => {
     const player = ytPlayerRef.current;
@@ -213,7 +212,13 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   // Initialize YouTube IFrame API when video panel opens
   useEffect(() => {
-    if (!videoOpen || !youtube_id || ytPlayerRef.current) return;
+    if (!videoOpen || !youtube_id) return;
+    // If player already exists from a previous open, skip re-init —
+    // but only if the container div still has the iframe (not unmounted)
+    if (ytPlayerRef.current && document.getElementById("yt-player-container")?.querySelector("iframe")) {
+      return;
+    }
+    ytPlayerRef.current = null;
 
     const containerId = "yt-player-container";
 
@@ -245,6 +250,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         document.head.appendChild(tag);
       }
     }
+
+    return () => {
+      ytPlayerRef.current = null;
+    };
   }, [videoOpen, youtube_id]);
 
   // Debounce search
@@ -996,10 +1005,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   </button>
                 </div>
                 {youtube_id ? (
-                  <div
-                    ref={ytContainerRef}
-                    className="aspect-video w-full overflow-hidden rounded bg-[#111]"
-                  >
+                  <div className="aspect-video w-full overflow-hidden rounded bg-[#111]">
                     <div id="yt-player-container" className="h-full w-full" />
                   </div>
                 ) : (
