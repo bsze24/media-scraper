@@ -75,6 +75,15 @@ function formatElapsed(updatedAt: string): string {
   return `${mins}m ${secs}s`;
 }
 
+function getAdminCookie(): string | null {
+  const match = document.cookie.match(/(?:^|;\s*)admin_token=([^;]*)/);
+  return match ? match[1] : null;
+}
+
+function setAdminCookie(token: string) {
+  document.cookie = `admin_token=${token}; path=/; max-age=${60 * 60 * 24 * 30}`;
+}
+
 export default function Home() {
   const [urlText, setUrlText] = useState("");
   const [submitMessage, setSubmitMessage] = useState("");
@@ -83,7 +92,15 @@ export default function Home() {
   const [processing, setProcessing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [retryingAll, setRetryingAll] = useState(false);
+  const [authed, setAuthed] = useState(false);
+  const [tokenInput, setTokenInput] = useState("");
+  const [authError, setAuthError] = useState(false);
   const stopRef = useRef(false);
+
+  // Check for existing admin cookie on mount
+  useEffect(() => {
+    if (getAdminCookie()) setAuthed(true);
+  }, []);
 
   const refresh = useCallback(async () => {
     const [newAppearances, newCounts] = await Promise.all([
@@ -210,6 +227,49 @@ export default function Home() {
     (counts?.extracting ?? 0) + (counts?.cleaning ?? 0) + (counts?.analyzing ?? 0);
 
   const failedCount = counts?.failed ?? 0;
+
+  if (!authed) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-zinc-950">
+        <div className="w-80 space-y-4">
+          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+            Admin Login
+          </h1>
+          <input
+            type="password"
+            placeholder="Admin token"
+            value={tokenInput}
+            onChange={(e) => {
+              setTokenInput(e.target.value);
+              setAuthError(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && tokenInput.trim()) {
+                setAdminCookie(tokenInput.trim());
+                setAuthed(true);
+                refresh();
+              }
+            }}
+            className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+          />
+          <button
+            onClick={() => {
+              if (!tokenInput.trim()) return;
+              setAdminCookie(tokenInput.trim());
+              setAuthed(true);
+              refresh();
+            }}
+            className="w-full rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            Sign in
+          </button>
+          {authError && (
+            <p className="text-xs text-red-500">Invalid token</p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50 p-8 font-sans dark:bg-zinc-950">
