@@ -202,11 +202,17 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const ytPlayerRef = useRef<YTPlayer | null>(null);
 
+  const pendingSeekRef = useRef<number | null>(null);
+
   const seekToTime = useCallback((seconds: number) => {
     const player = ytPlayerRef.current;
     if (player) {
       player.seekTo(seconds, true);
       player.playVideo();
+    } else {
+      // Panel not open — open it and queue the seek for when the player is ready
+      pendingSeekRef.current = seconds;
+      setVideoOpen(true);
     }
   }, []);
 
@@ -229,10 +235,18 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       if (!YT?.Player) return;
       new YT.Player(containerId, {
         videoId: youtube_id,
+        width: "100%",
+        height: "100%",
         playerVars: { rel: 0 },
         events: {
           onReady: (event: { target: YTPlayer }) => {
             ytPlayerRef.current = event.target;
+            // If a timestamp click opened the panel, seek now that the player is ready
+            if (pendingSeekRef.current != null) {
+              event.target.seekTo(pendingSeekRef.current, true);
+              event.target.playVideo();
+              pendingSeekRef.current = null;
+            }
           },
         },
       });
