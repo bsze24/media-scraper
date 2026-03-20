@@ -14,6 +14,9 @@ export interface TranscriptViewerProps {
     sections: Array<{
       heading: string;
       anchor: string;
+      turn_index?: number;
+      start_time?: number;
+      source?: "source" | "derived" | "inferred";
     }>;
     turns: Array<{
       speaker: string;
@@ -21,6 +24,7 @@ export interface TranscriptViewerProps {
       text: string;
       turn_index: number;
       section_anchor?: string;
+      timestamp_seconds?: number;
       attribution?: "source" | "derived" | "inferred";
     }>;
     has_inferred_attribution: boolean;

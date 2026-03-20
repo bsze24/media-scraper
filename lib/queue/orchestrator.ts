@@ -23,7 +23,7 @@ import { parseTurns } from "@lib/scrapers/parse-turns";
 import { cleanTranscript } from "@lib/pipeline/clean";
 import { validateSpeakerAttribution } from "@lib/pipeline/validate-speakers";
 import { normalizeSpeakerNames } from "@lib/pipeline/normalize-speakers";
-import { extractTimestamps, mapSectionsToTurns } from "@lib/pipeline/extract-timestamps";
+import { extractTimestamps, mapSectionsToTurns, stampSectionAnchors } from "@lib/pipeline/extract-timestamps";
 import { parseDescriptionSections } from "@lib/pipeline/parse-description-sections";
 import { generateSections } from "@lib/pipeline/sections";
 import { extractEntities } from "@lib/pipeline/entities";
@@ -258,6 +258,9 @@ export async function processAppearance(id: string): Promise<void> {
         sections = mapSectionsToTurns(sections, currentTurns);
         await writeSections(id, sections);
         console.log(`[pipeline]   ↳ Mapped ${sections.filter((s) => s.turn_index != null).length}/${sections.length} sections to turns`);
+
+        // Stamp section_anchor on turns so the viewer can group by section
+        currentTurns = stampSectionAnchors(currentTurns, sections);
       }
 
       await writeTurns(id, currentTurns);

@@ -111,6 +111,15 @@ export async function regenerateBullets(
   }
 }
 
+export async function validateAdminToken(): Promise<boolean> {
+  try {
+    await requireAdmin();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function getAllAppearances(): Promise<
   {
     id: string;
