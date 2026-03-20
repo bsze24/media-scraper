@@ -194,19 +194,13 @@ LLM returns `section` and `section_anchor` directly. Post-processing uses `sq.se
 ### Chapters → Sections — ✅ Implemented (PR A)
 YouTube chapters from yt-dlp metadata are mapped to `SectionHeading[]` with `start_time` and `source: "source"` in the scraper. Section-to-turn mapping (`mapSectionsToTurns()`) assigns `turn_index` from nearest timestamped turn. Videos without chapters get `sections: []`.
 
-### Synthetic sections (Task 2.5 — Phase 1, PR B)
-YouTube episodes without chapters need synthetic sections. Add `generateSections()` pipeline step:
+### Section Generation — ✅ Implemented (PR B1)
+Three-tier cascade for YouTube sections, evaluated in order:
+1. **Tier 1 (source):** yt-dlp chapters → `SectionHeading[]` in scraper (PR A)
+2. **Tier 2 (derived):** `parseDescriptionSections()` in `lib/pipeline/parse-description-sections.ts` — regex parsing of description timestamps (MM:SS or H:MM:SS at line start). Requires ≥2 timestamp lines.
+3. **Tier 3 (inferred):** `generateSections()` in `lib/pipeline/sections.ts` — LLM identifies 4-8 topic shifts, returns `turn_index` directly. Prompt in `lib/prompts/sections.ts`.
 
-**File:** `lib/pipeline/sections.ts`
-```typescript
-export async function generateSections(
-  cleanedTranscript: string
-): Promise<SectionHeading[]>
-```
-
-Prompt asks LLM to identify 5-10 logical topic breaks, name them concisely (3-6 words), return `{heading, anchor}[]` where anchor is heading lowercased + hyphenated.
-
-**Wire into orchestrator:** After clean step, if `transcript_source === "youtube_captions"` and `sections` is empty → call `generateSections(cleanedTranscript)` → write to `sections` column.
+Cascade runs in orchestrator after timestamp extraction. `mapSectionsToTurns()` maps tiers 1-2 sections (which have `start_time`) to nearest timestamped turn. Tier 3 sections already have `turn_index` from LLM.
 
 **Important:** YouTube section anchors are synthetic — no external URL to link to. Transcript page navigation works; citation links do not scroll an external page.
 
@@ -271,7 +265,7 @@ lib/
     bullets.ts                     LLM prep bullets (curated vs YouTube variants)
     splitter.ts                    Splits long transcripts for pipeline processing
     validate-speakers.ts           Post-clean speaker name validation (fuzzy match vs metadata)
-    sections.ts                    [Phase 1D] generateSections() for YouTube transcripts — NOT YET BUILT
+    sections.ts                    [Phase 1D] generateSections() for YouTube transcripts — ✅ IMPLEMENTED (PR B1)
     turn-summaries.ts              [Phase 1D] One-sentence per-turn summaries — NOT YET BUILT
     clean.test.ts
     entities.test.ts
@@ -408,7 +402,7 @@ Every LLM-dependent pipeline step has a validation guard that checks output qual
 - ✓ `isYouTubeSource()` shared helper in `src/types/appearance.ts` — single source of truth for YouTube detection
 - ✓ Column rename: `raw_caption_data` → `scraper_metadata` (migration 008)
 - ✓ Entity relevance tagging: `fund_names[].relevance: "primary" | "mentioned"` — prompt, types, search sorting
-- `generateSections()` for YouTube transcripts — synthetic sections stored to `sections` column (4th LLM call for YouTube)
+- ✓ `generateSections()` for YouTube transcripts — three-tier cascade: chapters (source), description timestamps (derived), LLM fallback (inferred). Also adds `parseDescriptionSections()` for tier 2.
 - ✓ `turn-summaries` pipeline step — `generateTurnSummaries()` runs parallel with entities, `[{speaker, summary, turn_index}]` stored to `turn_summaries`. Transcript viewer shows AI summaries for collapsed host turns with fallback to first sentence.
 - ✓ YouTube timestamp extraction — `extractTimestamps()` populates `turns[].timestamp_seconds` from caption segments via word-overlap matching
 - ✓ YouTube chapters → sections — yt-dlp chapters mapped to `SectionHeading[]` with `start_time`, `turn_index`, and `source: "source"`
