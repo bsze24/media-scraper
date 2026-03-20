@@ -7,6 +7,7 @@ import {
   retryAppearance,
   getQueueStatus,
   getAllAppearances,
+  validateAdminToken,
 } from "./actions";
 import type { ProcessingStatus } from "@/types/appearance";
 
@@ -243,21 +244,31 @@ export default function Home() {
               setTokenInput(e.target.value);
               setAuthError(false);
             }}
-            onKeyDown={(e) => {
+            onKeyDown={async (e) => {
               if (e.key === "Enter" && tokenInput.trim()) {
                 setAdminCookie(tokenInput.trim());
-                setAuthed(true);
-                refresh();
+                const valid = await validateAdminToken();
+                if (valid) {
+                  setAuthed(true);
+                  refresh();
+                } else {
+                  setAuthError(true);
+                }
               }
             }}
             className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
           />
           <button
-            onClick={() => {
+            onClick={async () => {
               if (!tokenInput.trim()) return;
               setAdminCookie(tokenInput.trim());
-              setAuthed(true);
-              refresh();
+              const valid = await validateAdminToken();
+              if (valid) {
+                setAuthed(true);
+                refresh();
+              } else {
+                setAuthError(true);
+              }
             }}
             className="w-full rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
           >

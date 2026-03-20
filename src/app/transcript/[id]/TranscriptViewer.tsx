@@ -267,6 +267,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
     return () => {
       ytPlayerRef.current = null;
+      pendingSeekRef.current = null;
     };
   }, [videoOpen, youtube_id]);
 
