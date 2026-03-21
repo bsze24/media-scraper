@@ -175,15 +175,18 @@ describe("extractTimestamps — pass 2 bracketed recovery", () => {
   it("recovers an unmatched turn at 3/6 overlap within bracket", () => {
     // 4 turns, 2400s video. Turn 1 has only 3/6 overlap — pass 1 skips it.
     // Pass 2 finds it within the bracket [10, 1200].
+    // turn 1 words: "alpha", "bravo", "charlie", "delta", "echo", "foxtrot"
+    // seg words:    "alpha", "bravo", "charlie", "golf", "hotel", "india"
+    // overlap: alpha, bravo, charlie = 3/6 (below pass 1 threshold of 4)
     const turns = [
       makeTurn(0, "Welcome to our show today everyone here"),
-      makeTurn(1, "Markets have been volatile recently indeed"),
+      makeTurn(1, "Alpha bravo charlie delta echo foxtrot"),
       makeTurn(2, "The infrastructure investment thesis remains strong today"),
       makeTurn(3, "Thank you very much for joining us today"),
     ];
     const segments = [
       makeSeg(10.0, "Welcome to our show today everyone here"),
-      makeSeg(400.0, "Markets have indeed been quite volatile"), // 3/6 overlap with turn 1
+      makeSeg(400.0, "Alpha bravo charlie golf hotel india"), // 3/6 overlap with turn 1
       makeSeg(1200.0, "The infrastructure investment thesis remains strong today"),
       makeSeg(2300.0, "Thank you very much for joining us today"),
     ];
@@ -276,6 +279,34 @@ describe("extractTimestamps — pass 2 bracketed recovery", () => {
     expect(result[0].timestamp_seconds).toBe(10.0);
     expect(result[1].timestamp_seconds).toBeUndefined(); // pass 2 didn't run
     expect(result[2].timestamp_seconds).toBe(1700.0);
+  });
+
+  it("enforces monotonicity across pass 2 recoveries", () => {
+    // 5 turns, 3000s video. Turns 1 and 2 are unmatched in pass 1 (3/6 overlap).
+    // Within their shared bracket [10, 2400], turn 1 best-matches at 300s and
+    // turn 2 best-matches at 200s — but 200 < 300 violates monotonicity.
+    // Pass 2 should accept turn 1 at 300s and skip turn 2.
+    const turns = [
+      makeTurn(0, "Welcome to the program today everyone here"),
+      makeTurn(1, "Alpha bravo charlie delta echo foxtrot"),
+      makeTurn(2, "Golf hotel india juliet kilo lima"),
+      makeTurn(3, "The infrastructure investment thesis remains strong today"),
+      makeTurn(4, "Thank you for watching the program today"),
+    ];
+    const segments = [
+      makeSeg(10.0, "Welcome to the program today everyone here"),
+      makeSeg(300.0, "Alpha bravo charlie xray yankee zulu"),  // 3/6 with turn 1
+      makeSeg(200.0, "Golf hotel india mike november oscar"),  // 3/6 with turn 2, but 200 < 300
+      makeSeg(2400.0, "The infrastructure investment thesis remains strong today"),
+      makeSeg(2900.0, "Thank you for watching the program today"),
+    ];
+
+    const result = extractTimestamps(turns, segments, 3000);
+    expect(result[0].timestamp_seconds).toBe(10.0);
+    expect(result[1].timestamp_seconds).toBe(300.0);       // pass 2 recovery
+    expect(result[2].timestamp_seconds).toBeUndefined();    // skipped — would violate monotonicity
+    expect(result[3].timestamp_seconds).toBe(2400.0);
+    expect(result[4].timestamp_seconds).toBe(2900.0);
   });
 });
 

@@ -111,9 +111,14 @@ export function extractTimestamps(
   // Requires videoDuration for deviation check and bracket_end on trailing turns.
   if (!hasDeviation) return pass1Results;
 
+  let lastPass2Timestamp = -1;
+
   return pass1Results.map((turn) => {
-    // Already matched in pass 1
-    if (turn.timestamp_seconds != null) return turn;
+    // Already matched in pass 1 — update monotonicity tracker
+    if (turn.timestamp_seconds != null) {
+      lastPass2Timestamp = turn.timestamp_seconds;
+      return turn;
+    }
 
     const turnWords = extractWords(turn.text, MATCH_WORD_COUNT);
     if (turnWords.length === 0) return turn;
@@ -153,12 +158,13 @@ export function extractTimestamps(
       }
     }
 
-    if (bestOverlap >= PASS2_MATCH_THRESHOLD && bestStart >= 0) {
+    if (bestOverlap >= PASS2_MATCH_THRESHOLD && bestStart >= 0 && bestStart > lastPass2Timestamp) {
       // Deviation check still applies — bad brackets from upstream false matches
       const expectedTime = (turn.turn_index / totalTurns) * videoDuration;
       const deviation = Math.abs(bestStart - expectedTime);
       if (deviation > MAX_DEVIATION_SECONDS) return turn;
 
+      lastPass2Timestamp = bestStart;
       return { ...turn, timestamp_seconds: bestStart };
     }
 
