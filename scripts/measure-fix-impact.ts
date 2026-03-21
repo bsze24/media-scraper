@@ -121,21 +121,21 @@ async function main() {
 
     if (turns.length === 0 || segments.length === 0) continue;
 
-    // No fix: original algorithm
-    const noFix = runOriginal(turns, segments);
+    // Strip existing timestamps so we measure the algorithm, not stale DB data
+    const cleanTurns = turns.map((t) => {
+      const { timestamp_seconds, ...rest } = t;
+      return rest as Turn;
+    });
 
-    // Pass 1 only: use extractTimestamps without videoDuration to skip pass 2,
-    // but we need deviation check... So we run with videoDuration and then
-    // count. Actually extractTimestamps now includes pass 2 when videoDuration
-    // is provided. We need pass 1 only. Run without videoDuration for pass 1
-    // behavior... but that also skips the deviation check.
-    //
-    // To get pass 1 only: we replicate the deviation-check pass 1 inline.
-    const pass1Turns = runPass1Only(turns, segments, videoDuration);
+    // No fix: original algorithm
+    const noFix = runOriginal(cleanTurns, segments);
+
+    // Pass 1 only: deviation check but no pass 2
+    const pass1Turns = runPass1Only(cleanTurns, segments, videoDuration);
     const pass1Only = pass1Turns.filter((t) => t.timestamp_seconds != null).length;
 
     // Pass 1 + 2: use the real extractTimestamps with videoDuration
-    const pass12Turns = extractTimestamps(turns, segments, videoDuration);
+    const pass12Turns = extractTimestamps(cleanTurns, segments, videoDuration);
     const pass1And2 = pass12Turns.filter((t) => t.timestamp_seconds != null).length;
 
     results.push({

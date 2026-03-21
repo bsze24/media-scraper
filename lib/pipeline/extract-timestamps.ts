@@ -113,7 +113,7 @@ export function extractTimestamps(
 
   let lastPass2Timestamp = -1;
 
-  return pass1Results.map((turn) => {
+  return pass1Results.map((turn, idx) => {
     // Already matched in pass 1 — update monotonicity tracker
     if (turn.timestamp_seconds != null) {
       lastPass2Timestamp = turn.timestamp_seconds;
@@ -125,7 +125,7 @@ export function extractTimestamps(
 
     // Find bracket_start: nearest matched turn before this one
     let bracketStart = 0;
-    for (let j = turn.turn_index - 1; j >= 0; j--) {
+    for (let j = idx - 1; j >= 0; j--) {
       if (pass1Results[j].timestamp_seconds != null) {
         bracketStart = pass1Results[j].timestamp_seconds!;
         break;
@@ -134,7 +134,7 @@ export function extractTimestamps(
 
     // Find bracket_end: nearest matched turn after this one
     let bracketEnd = videoDuration;
-    for (let j = turn.turn_index + 1; j < pass1Results.length; j++) {
+    for (let j = idx + 1; j < pass1Results.length; j++) {
       if (pass1Results[j].timestamp_seconds != null) {
         bracketEnd = pass1Results[j].timestamp_seconds!;
         break;
