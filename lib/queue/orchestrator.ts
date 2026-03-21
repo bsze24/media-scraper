@@ -375,7 +375,10 @@ export async function processAppearance(id: string): Promise<void> {
     // Done — warnings already appended via appendProcessingWarning;
     // updateProcessingStatus with status "complete" preserves them.
     const turnCount = currentTurns.length;
-    await updateProcessingDetail(id, `${bulletCount} bullets, ${turnCount} turns, ${entityCount} entities`);
+    const timestampedTurnCount = currentTurns.filter((t) => t.timestamp_seconds != null).length;
+    const tsPct = turnCount > 0 ? Math.round((timestampedTurnCount / turnCount) * 100) : 100;
+    const tsPrefix = isYouTubeSource(transcriptSource) ? `${tsPct}% timestamped, ` : "";
+    await updateProcessingDetail(id, `${tsPrefix}${bulletCount} bullets, ${turnCount} turns, ${entityCount} entities`);
     await updateProcessingStatus(id, "complete");
     console.log(`[pipeline] ✅ COMPLETE — ${title} (total: ${stepTime()})`);
 
@@ -561,11 +564,12 @@ export async function reprocessTimestamps(
   }
 
   // Recompute processing_detail summary from current row data
-  const bulletCount = (row.prep_bullets as Record<string, unknown> | null)?.bullets;
-  const bulletLen = Array.isArray(bulletCount) ? bulletCount.length : 0;
+  const bulletArr = (row.prep_bullets as Record<string, unknown> | null)?.bullets;
+  const bulletLen = Array.isArray(bulletArr) ? bulletArr.length : 0;
   const entityCount = (row.entity_tags?.fund_names?.length ?? 0) +
     (row.entity_tags?.key_people?.length ?? 0);
-  await updateProcessingDetail(id, `${bulletLen} bullets, ${turns.length} turns, ${entityCount} entities`);
+  const tsPct = turns.length > 0 ? Math.round((newCount / turns.length) * 100) : 100;
+  await updateProcessingDetail(id, `${tsPct}% timestamped, ${bulletLen} bullets, ${turns.length} turns, ${entityCount} entities`);
 
   console.log(`[reprocessTimestamps] complete: ${title} — ${oldCount} → ${newCount}/${turns.length} timestamps`);
   return { oldCount, newCount, totalTurns: turns.length };
