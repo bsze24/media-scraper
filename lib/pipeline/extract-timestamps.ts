@@ -5,8 +5,14 @@ import type { CaptionSegment } from "@lib/scrapers/youtube";
 /** Number of words to extract from turn/segment text for matching */
 const MATCH_WORD_COUNT = 6;
 
-/** Minimum word overlap required to consider a match */
+/** Minimum word overlap required to consider a match (pass 1) */
 const MATCH_THRESHOLD = 4;
+
+/** Relaxed threshold for pass 2 bracketed recovery */
+const PASS2_MATCH_THRESHOLD = 3;
+
+/** Max allowed deviation (seconds) between candidate timestamp and expected position */
+const MAX_DEVIATION_SECONDS = 900; // 15 minutes
 
 /**
  * Normalize text for matching: lowercase, strip punctuation, split into words.
@@ -42,16 +48,21 @@ function wordOverlap(a: string[], b: string[]): number {
  */
 export function extractTimestamps(
   turns: Turn[],
-  captionSegments: CaptionSegment[] | null
+  captionSegments: CaptionSegment[] | null,
+  videoDuration?: number
 ): Turn[] {
   if (!captionSegments || captionSegments.length === 0) {
     return turns;
   }
 
+  const totalTurns = turns.length;
+  const hasDeviation = videoDuration != null && videoDuration > 0;
+
+  // --- Pass 1: forward-only scan with deviation constraint ---
   let segScanPos = 0;
   let lastMatchedTimestamp = -1;
 
-  return turns.map((turn) => {
+  const pass1Results: Turn[] = turns.map((turn) => {
     const turnWords = extractWords(turn.text, MATCH_WORD_COUNT);
     if (turnWords.length === 0) return turn;
 
@@ -76,12 +87,81 @@ export function extractTimestamps(
     }
 
     if (bestOverlap >= MATCH_THRESHOLD && bestStart > lastMatchedTimestamp) {
+      // Expected-position proximity check: reject matches too far from where
+      // this turn should appear based on its position in the transcript.
+      if (hasDeviation) {
+        const expectedTime = (turn.turn_index / totalTurns) * videoDuration;
+        const deviation = Math.abs(bestStart - expectedTime);
+        if (deviation > MAX_DEVIATION_SECONDS) {
+          // False match — leave turn unmatched, do NOT advance segScanPos
+          return turn;
+        }
+      }
+
       lastMatchedTimestamp = bestStart;
       segScanPos = bestSegIdx + 1;
       return { ...turn, timestamp_seconds: bestStart };
     }
 
     // Monotonicity violation or no match — leave undefined
+    return turn;
+  });
+
+  // --- Pass 2: bracketed recovery at relaxed threshold ---
+  // Requires videoDuration for deviation check and bracket_end on trailing turns.
+  if (!hasDeviation) return pass1Results;
+
+  return pass1Results.map((turn) => {
+    // Already matched in pass 1
+    if (turn.timestamp_seconds != null) return turn;
+
+    const turnWords = extractWords(turn.text, MATCH_WORD_COUNT);
+    if (turnWords.length === 0) return turn;
+
+    // Find bracket_start: nearest matched turn before this one
+    let bracketStart = 0;
+    for (let j = turn.turn_index - 1; j >= 0; j--) {
+      if (pass1Results[j].timestamp_seconds != null) {
+        bracketStart = pass1Results[j].timestamp_seconds!;
+        break;
+      }
+    }
+
+    // Find bracket_end: nearest matched turn after this one
+    let bracketEnd = videoDuration;
+    for (let j = turn.turn_index + 1; j < pass1Results.length; j++) {
+      if (pass1Results[j].timestamp_seconds != null) {
+        bracketEnd = pass1Results[j].timestamp_seconds!;
+        break;
+      }
+    }
+
+    // Search all segments within the bracket window (not forward-only)
+    let bestOverlap = 0;
+    let bestStart = -1;
+
+    for (const seg of captionSegments) {
+      if (seg.start < bracketStart || seg.start > bracketEnd) continue;
+
+      const segText = seg.text.replace(/^>>\s*/, "");
+      const segWords = extractWords(segText, MATCH_WORD_COUNT);
+      const overlap = wordOverlap(turnWords, segWords);
+
+      if (overlap > bestOverlap) {
+        bestOverlap = overlap;
+        bestStart = seg.start;
+      }
+    }
+
+    if (bestOverlap >= PASS2_MATCH_THRESHOLD && bestStart >= 0) {
+      // Deviation check still applies — bad brackets from upstream false matches
+      const expectedTime = (turn.turn_index / totalTurns) * videoDuration;
+      const deviation = Math.abs(bestStart - expectedTime);
+      if (deviation > MAX_DEVIATION_SECONDS) return turn;
+
+      return { ...turn, timestamp_seconds: bestStart };
+    }
+
     return turn;
   });
 }

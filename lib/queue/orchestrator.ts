@@ -216,7 +216,8 @@ export async function processAppearance(id: string): Promise<void> {
         import("@lib/scrapers/youtube").CaptionSegment[] | undefined;
       if (captionSegments && captionSegments.length > 0) {
         await updateProcessingDetail(id, "extracting timestamps from captions");
-        currentTurns = extractTimestamps(currentTurns, captionSegments);
+        const videoDuration = (captionData as Record<string, unknown> | null)?.duration as number | undefined;
+        currentTurns = extractTimestamps(currentTurns, captionSegments, videoDuration);
         const timestampedCount = currentTurns.filter((t) => t.timestamp_seconds != null).length;
         console.log(`[pipeline]   ↳ Timestamped ${timestampedCount}/${currentTurns.length} turns`);
 

@@ -88,6 +88,195 @@ describe("extractTimestamps", () => {
     // Turn 2 would match segment at 10.0 which is < 50.0 — skipped
     expect(result[2].timestamp_seconds).toBeUndefined();
   });
+
+  it("rejects match that deviates too far from expected position", () => {
+    // 10 turns, 6000s video. Turn 1 expected at 600s.
+    // The false match is at 3500s (deviation 2900s > 900s threshold) — rejected.
+    // The correct match at 580s (deviation 20s) comes first in scan order — accepted.
+    // Without deviation check, both would match but the false one could cause cascades.
+    const turns: Turn[] = Array.from({ length: 10 }, (_, i) =>
+      makeTurn(i, `Unique text for turn number ${i} here today`)
+    );
+    // Override turn 1 with a common phrase that appears twice in segments
+    turns[1] = makeTurn(1, "I think that is really important here");
+
+    const segments = [
+      makeSeg(50.0, "Unique text for turn number 0 here today"),
+      makeSeg(580.0, "I think that is really important here"),   // correct — near expected
+      makeSeg(3500.0, "I think that is really important here"),  // false — far from expected
+      makeSeg(1200.0, "Unique text for turn number 2 here today"),
+      makeSeg(1800.0, "Unique text for turn number 3 here today"),
+    ];
+
+    const result = extractTimestamps(turns, segments, 6000);
+    expect(result[0].timestamp_seconds).toBe(50.0);
+    expect(result[1].timestamp_seconds).toBe(580.0); // correct nearby match accepted
+    expect(result[2].timestamp_seconds).toBe(1200.0); // subsequent turns still match
+  });
+
+  it("leaves turn unmatched when only a far-away match exists (no segScanPos advance)", () => {
+    // 4 turns, 2400s video. Turn 1 expected at 600s.
+    // Only match for turn 1 is at 2200s (deviation 1600s > 900s) — rejected.
+    // Turn 2 expected at 1200s, segment at 1200s — should still match because segScanPos didn't jump.
+    const turns = [
+      makeTurn(0, "First speaker opens the conversation here"),
+      makeTurn(1, "I think that is really important here"),
+      makeTurn(2, "The market outlook for next year looks"),
+      makeTurn(3, "Thank you very much for joining us"),
+    ];
+    const segments = [
+      makeSeg(10.0, "First speaker opens the conversation here"),
+      makeSeg(1200.0, "The market outlook for next year looks"),
+      makeSeg(2200.0, "I think that is really important here"), // only match, but too far
+      makeSeg(2350.0, "Thank you very much for joining us"),
+    ];
+
+    const result = extractTimestamps(turns, segments, 2400);
+    expect(result[0].timestamp_seconds).toBe(10.0);
+    expect(result[1].timestamp_seconds).toBeUndefined(); // rejected, too far
+    expect(result[2].timestamp_seconds).toBe(1200.0); // recovered because segScanPos didn't jump
+    expect(result[3].timestamp_seconds).toBe(2350.0);
+  });
+
+  it("accepts match within tolerance (10-min deviation under 15-min threshold)", () => {
+    // 2 turns, 3600s video. Turn 1 expected at 1800s. Segment at 2400s (deviation 600s < 900s).
+    const turns = [
+      makeTurn(0, "Welcome to our discussion about investing"),
+      makeTurn(1, "The portfolio allocation strategy requires careful"),
+    ];
+    const segments = [
+      makeSeg(100.0, "Welcome to our discussion about investing"),
+      makeSeg(2400.0, "The portfolio allocation strategy requires careful"),
+    ];
+
+    const result = extractTimestamps(turns, segments, 3600);
+    expect(result[0].timestamp_seconds).toBe(100.0);
+    expect(result[1].timestamp_seconds).toBe(2400.0); // 600s deviation, within tolerance
+  });
+
+  it("skips deviation check when videoDuration is undefined (backward compatible)", () => {
+    // Without videoDuration, even far-away matches should be accepted (old behavior)
+    const turns = [
+      makeTurn(0, "Welcome to the show today everyone"),
+      makeTurn(1, "I think that is really important here"),
+    ];
+    const segments = [
+      makeSeg(5.0, "Welcome to the show today everyone"),
+      makeSeg(3500.0, "I think that is really important here"), // very far, but no check
+    ];
+
+    const result = extractTimestamps(turns, segments); // no videoDuration
+    expect(result[0].timestamp_seconds).toBe(5.0);
+    expect(result[1].timestamp_seconds).toBe(3500.0); // accepted without deviation check
+  });
+});
+
+describe("extractTimestamps — pass 2 bracketed recovery", () => {
+  it("recovers an unmatched turn at 3/6 overlap within bracket", () => {
+    // 4 turns, 2400s video. Turn 1 has only 3/6 overlap — pass 1 skips it.
+    // Pass 2 finds it within the bracket [10, 1200].
+    const turns = [
+      makeTurn(0, "Welcome to our show today everyone here"),
+      makeTurn(1, "Markets have been volatile recently indeed"),
+      makeTurn(2, "The infrastructure investment thesis remains strong today"),
+      makeTurn(3, "Thank you very much for joining us today"),
+    ];
+    const segments = [
+      makeSeg(10.0, "Welcome to our show today everyone here"),
+      makeSeg(400.0, "Markets have indeed been quite volatile"), // 3/6 overlap with turn 1
+      makeSeg(1200.0, "The infrastructure investment thesis remains strong today"),
+      makeSeg(2300.0, "Thank you very much for joining us today"),
+    ];
+
+    const result = extractTimestamps(turns, segments, 2400);
+    expect(result[0].timestamp_seconds).toBe(10.0);    // pass 1
+    expect(result[1].timestamp_seconds).toBe(400.0);    // pass 2 recovery
+    expect(result[2].timestamp_seconds).toBe(1200.0);   // pass 1
+    expect(result[3].timestamp_seconds).toBe(2300.0);   // pass 1
+  });
+
+  it("rejects pass 2 match that deviates too far from expected position", () => {
+    // 4 turns, 2400s. Turn 1 expected at 600s.
+    // Bracket from pass 1 is [10, 2300] (wide because turn 2 is unmatched too).
+    // Segment at 2200s has 3/6 overlap but deviation = |2200-600| = 1600 > 900.
+    const turns = [
+      makeTurn(0, "Welcome to our show today everyone here"),
+      makeTurn(1, "Markets have been volatile recently indeed"),
+      makeTurn(2, "Completely unique text that matches nothing here"),
+      makeTurn(3, "Thank you very much for joining us today"),
+    ];
+    const segments = [
+      makeSeg(10.0, "Welcome to our show today everyone here"),
+      makeSeg(2200.0, "Markets have indeed been quite volatile"), // 3/6 but too far
+      makeSeg(2300.0, "Thank you very much for joining us today"),
+    ];
+
+    const result = extractTimestamps(turns, segments, 2400);
+    expect(result[0].timestamp_seconds).toBe(10.0);
+    expect(result[1].timestamp_seconds).toBeUndefined(); // deviation-rejected in pass 2
+    expect(result[2].timestamp_seconds).toBeUndefined(); // no match at all
+    expect(result[3].timestamp_seconds).toBe(2300.0);
+  });
+
+  it("takes the best overlap match when multiple segments pass threshold", () => {
+    // 3 turns, 1800s. Turn 1 unmatched in pass 1. Two segments in bracket
+    // both pass 3/6 but one has 4/6 — pass 2 should pick the 4/6.
+    const turns = [
+      makeTurn(0, "Welcome to the program today everyone here"),
+      makeTurn(1, "Private credit markets have grown substantially this year"),
+      makeTurn(2, "Thank you for watching the program today"),
+    ];
+    const segments = [
+      makeSeg(10.0, "Welcome to the program today everyone here"),
+      makeSeg(400.0, "Private markets have grown this decade"),        // 3/6 with turn 1
+      makeSeg(500.0, "Private credit markets have grown substantially"), // 4/6 with turn 1
+      makeSeg(1700.0, "Thank you for watching the program today"),
+    ];
+
+    const result = extractTimestamps(turns, segments, 1800);
+    expect(result[1].timestamp_seconds).toBe(500.0); // best overlap wins
+  });
+
+  it("handles all turns unmatched in pass 1 without crashing", () => {
+    // No segments match any turn — pass 1 produces no skeleton, pass 2 has no brackets.
+    const turns = [
+      makeTurn(0, "Alpha bravo charlie delta echo foxtrot"),
+      makeTurn(1, "Golf hotel india juliet kilo lima"),
+    ];
+    const segments = [
+      makeSeg(10.0, "Completely unrelated content here today now"),
+      makeSeg(500.0, "More unrelated content that does not match"),
+    ];
+
+    const result = extractTimestamps(turns, segments, 1000);
+    expect(result[0].timestamp_seconds).toBeUndefined();
+    expect(result[1].timestamp_seconds).toBeUndefined();
+  });
+
+  it("skips pass 2 when videoDuration is undefined", () => {
+    // Turn 1 has only 3/6 overlap — would be recovered by pass 2 if it ran.
+    // Without videoDuration, pass 2 is skipped entirely.
+    // turn words: "the", "credit", "market", "looks", "uncertain", "going"
+    // seg words: "the", "equity", "market", "looks", "quite", "uncertain" → overlap: the, market, looks, uncertain = 4... no
+    // Need exactly 3/6. Let's be precise:
+    // turn words: "alpha", "bravo", "charlie", "delta", "echo", "foxtrot"
+    // seg words: "alpha", "bravo", "charlie", "golf", "hotel", "india" → overlap: 3/6
+    const turns = [
+      makeTurn(0, "Welcome to our show today everyone here"),
+      makeTurn(1, "Alpha bravo charlie delta echo foxtrot"),
+      makeTurn(2, "Thank you very much for joining us today"),
+    ];
+    const segments = [
+      makeSeg(10.0, "Welcome to our show today everyone here"),
+      makeSeg(400.0, "Alpha bravo charlie golf hotel india"), // 3/6 overlap
+      makeSeg(1700.0, "Thank you very much for joining us today"),
+    ];
+
+    const result = extractTimestamps(turns, segments); // no videoDuration
+    expect(result[0].timestamp_seconds).toBe(10.0);
+    expect(result[1].timestamp_seconds).toBeUndefined(); // pass 2 didn't run
+    expect(result[2].timestamp_seconds).toBe(1700.0);
+  });
 });
 
 describe("mapSectionsToTurns", () => {
