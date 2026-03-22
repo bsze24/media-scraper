@@ -794,14 +794,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         style={dimmed ? { opacity: 0.3 } : undefined}
                       >
                         <div
-                          className={`mb-0.5 flex items-baseline justify-between font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] ${
+                          className={`mb-0.5 flex items-baseline gap-2 font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] ${
                             isHost ? "text-[#ccc]" : "text-[#c9a84c]"
                           }`}
                         >
                           <span>{turn.speaker}</span>
                           {turn.timestamp_seconds != null && (
                             <span
-                              className={`cursor-pointer font-normal normal-case tracking-normal hover:text-[#888] ${isHost ? "text-[#ddd]" : "text-[#bbb]"}`}
+                              className="cursor-pointer font-normal normal-case tracking-normal text-[#999] hover:text-[#666]"
                               onClick={() => seekToTime(turn.timestamp_seconds!)}
                               title={`Jump to ${formatTimestamp(turn.timestamp_seconds)}`}
                             >
@@ -914,11 +914,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                               }`}
                               style={dimmed ? { opacity: 0.3 } : undefined}
                             >
-                              <div className="mb-0.5 flex items-baseline justify-between font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#ccc]">
+                              <div className="mb-0.5 flex items-baseline gap-2 font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#ccc]">
                                 <span>{turn.speaker}</span>
                                 {turn.timestamp_seconds != null && (
                                   <span
-                                    className="cursor-pointer font-normal normal-case tracking-normal text-[#ddd] hover:text-[#999]"
+                                    className="cursor-pointer font-normal normal-case tracking-normal text-[#999] hover:text-[#666]"
                                     onClick={() => seekToTime(turn.timestamp_seconds!)}
                                     title={`Jump to ${formatTimestamp(turn.timestamp_seconds)}`}
                                   >
@@ -967,11 +967,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                             }`}
                             style={dimmed ? { opacity: 0.3 } : undefined}
                           >
-                            <div className="mb-1 flex items-baseline justify-between font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#c9a84c]">
+                            <div className="mb-1 flex items-baseline gap-2 font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#c9a84c]">
                               <span>{turn.speaker}</span>
                               {turn.timestamp_seconds != null && (
                                 <span
-                                  className="cursor-pointer font-normal normal-case tracking-normal text-[#bbb] hover:text-[#888]"
+                                  className="cursor-pointer font-normal normal-case tracking-normal text-[#999] hover:text-[#666]"
                                   onClick={() => seekToTime(turn.timestamp_seconds!)}
                                   title={`Jump to ${formatTimestamp(turn.timestamp_seconds)}`}
                                 >
