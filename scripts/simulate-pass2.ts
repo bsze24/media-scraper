@@ -135,9 +135,14 @@ function runPass2(
   videoDuration: number
 ): Pass2Match[] {
   const recoveries: Pass2Match[] = [];
+  const totalTurns = turns.length;
+  let lastTimestamp = -1;
 
   for (let i = 0; i < pass1.length; i++) {
-    if (pass1[i].matched) continue;
+    if (pass1[i].matched) {
+      lastTimestamp = pass1[i].timestamp;
+      continue;
+    }
 
     const turn = turns[i];
     const tw = extractWords(turn.text, MATCH_WORD_COUNT);
@@ -178,7 +183,13 @@ function runPass2(
       }
     }
 
-    if (bestOverlap >= PASS2_THRESHOLD && bestStart >= 0) {
+    if (bestOverlap >= PASS2_THRESHOLD && bestStart >= 0 && bestStart > lastTimestamp) {
+      // Deviation check — match production behavior
+      const expectedTime = (turn.turn_index / totalTurns) * videoDuration;
+      const deviation = Math.abs(bestStart - expectedTime);
+      if (deviation > MAX_DEVIATION_SECONDS) continue;
+
+      lastTimestamp = bestStart;
       recoveries.push({
         turnIndex: turn.turn_index,
         bracketStart,
