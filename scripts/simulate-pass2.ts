@@ -79,6 +79,8 @@ function runPass1(
       continue;
     }
 
+    const expectedTime = hasDev ? (turn.turn_index / totalTurns) * videoDuration : 0;
+
     let bestOverlap = 0;
     let bestStart = -1;
     let bestSegIdx = -1;
@@ -88,23 +90,20 @@ function runPass1(
       const segWords = extractWords(segText, MATCH_WORD_COUNT);
       const ov = wordOverlap(tw, segWords);
 
-      if (ov > bestOverlap) {
-        bestOverlap = ov;
-        bestStart = segments[i].start;
-        bestSegIdx = i;
+      if (ov >= MATCH_THRESHOLD && segments[i].start > lastTs) {
+        const withinDev = !hasDev ||
+          Math.abs(segments[i].start - expectedTime) <= MAX_DEVIATION_SECONDS;
+        if (withinDev && ov > bestOverlap) {
+          bestOverlap = ov;
+          bestStart = segments[i].start;
+          bestSegIdx = i;
+        }
       }
-      if (ov >= MATCH_WORD_COUNT) break;
+
+      if (bestOverlap >= MATCH_WORD_COUNT) break;
     }
 
     if (bestOverlap >= MATCH_THRESHOLD && bestStart > lastTs) {
-      if (hasDev) {
-        const expectedTime = (turn.turn_index / totalTurns) * videoDuration;
-        const deviation = Math.abs(bestStart - expectedTime);
-        if (deviation > MAX_DEVIATION_SECONDS) {
-          results.push({ turnIndex: turn.turn_index, matched: false, timestamp: -1 });
-          continue;
-        }
-      }
       lastTs = bestStart;
       segScanPos = bestSegIdx + 1;
       results.push({ turnIndex: turn.turn_index, matched: true, timestamp: bestStart });
@@ -167,28 +166,26 @@ function runPass2(
     }
 
     // Search ALL segments within the bracket window (not forward-only)
+    const expectedTime = (turn.turn_index / totalTurns) * videoDuration;
     let bestOverlap = 0;
     let bestStart = -1;
 
     for (const seg of segments) {
       if (seg.start < bracketStart || seg.start > bracketEnd) continue;
+      if (seg.start <= lastTimestamp) continue;
 
       const segText = seg.text.replace(/^>>\s*/, "");
       const segWords = extractWords(segText, MATCH_WORD_COUNT);
       const ov = wordOverlap(tw, segWords);
 
-      if (ov > bestOverlap) {
+      const withinDev = Math.abs(seg.start - expectedTime) <= MAX_DEVIATION_SECONDS;
+      if (ov >= PASS2_THRESHOLD && withinDev && ov > bestOverlap) {
         bestOverlap = ov;
         bestStart = seg.start;
       }
     }
 
-    if (bestOverlap >= PASS2_THRESHOLD && bestStart >= 0 && bestStart > lastTimestamp) {
-      // Deviation check — match production behavior
-      const expectedTime = (turn.turn_index / totalTurns) * videoDuration;
-      const deviation = Math.abs(bestStart - expectedTime);
-      if (deviation > MAX_DEVIATION_SECONDS) continue;
-
+    if (bestOverlap >= PASS2_THRESHOLD && bestStart >= 0) {
       lastTimestamp = bestStart;
       recoveries.push({
         turnIndex: turn.turn_index,
