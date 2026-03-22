@@ -544,8 +544,11 @@ export async function reprocessTimestamps(
   let updatedTurns = extractTimestamps(cleanTurns, captionSegments, videoDuration);
   const newCount = updatedTurns.filter((t) => t.timestamp_seconds != null).length;
 
-  // Remap sections to turns and re-stamp anchors
+  // Remap sections to turns and re-stamp anchors.
+  // Only strip turn_index from sections that have start_time (can be remapped).
+  // LLM-generated sections have turn_index but no start_time — preserve those.
   const cleanSections = sections.map((s) => {
+    if (s.start_time == null) return s; // keep turn_index on sections without start_time
     const { turn_index, ...rest } = s;
     return rest as import("@/types/scraper").SectionHeading;
   });
