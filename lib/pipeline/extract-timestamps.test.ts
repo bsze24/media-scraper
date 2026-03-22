@@ -222,22 +222,25 @@ describe("extractTimestamps — pass 2 bracketed recovery", () => {
   });
 
   it("takes the best overlap match when multiple segments pass threshold", () => {
-    // 3 turns, 1800s. Turn 1 unmatched in pass 1. Two segments in bracket
-    // both pass 3/6 but one has 4/6 — pass 2 should pick the 4/6.
+    // 3 turns, 1800s. Turn 1 unmatched in pass 1 (max overlap 3/6 < threshold 4).
+    // Two segments in bracket: 2/6 at 400s and 3/6 at 500s. Pass 2 picks 500s.
+    // turn 1 words: {alpha, bravo, charlie, delta, echo, foxtrot}
+    // seg 400 words: {alpha, bravo, yankee, zulu, omega, kappa} → overlap 2/6
+    // seg 500 words: {alpha, bravo, charlie, xray, yankee, zulu} → overlap 3/6
     const turns = [
       makeTurn(0, "Welcome to the program today everyone here"),
-      makeTurn(1, "Private credit markets have grown substantially this year"),
+      makeTurn(1, "Alpha bravo charlie delta echo foxtrot"),
       makeTurn(2, "Thank you for watching the program today"),
     ];
     const segments = [
       makeSeg(10.0, "Welcome to the program today everyone here"),
-      makeSeg(400.0, "Private markets have grown this decade"),        // 3/6 with turn 1
-      makeSeg(500.0, "Private credit markets have grown substantially"), // 4/6 with turn 1
+      makeSeg(400.0, "Alpha bravo yankee zulu omega kappa"),        // 2/6 with turn 1
+      makeSeg(500.0, "Alpha bravo charlie xray yankee zulu"),       // 3/6 with turn 1
       makeSeg(1700.0, "Thank you for watching the program today"),
     ];
 
     const result = extractTimestamps(turns, segments, 1800);
-    expect(result[1].timestamp_seconds).toBe(500.0); // best overlap wins
+    expect(result[1].timestamp_seconds).toBe(500.0); // best overlap (3/6 > 2/6)
   });
 
   it("handles all turns unmatched in pass 1 without crashing", () => {
