@@ -75,7 +75,7 @@ export function parseColossusHtml(html: string, sourceUrl: string): ScraperResul
     const anchor = h2.find("a[id]").attr("id") ?? "";
     const heading = h2.text().trim();
     if (heading) {
-      sections.push({ heading, anchor });
+      sections.push({ heading, anchor, source: "source" as const });
     }
   });
 
