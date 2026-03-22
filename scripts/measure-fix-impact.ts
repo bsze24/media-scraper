@@ -217,6 +217,8 @@ function runPass1Only(
     const tw = extractWords(turn.text, MATCH_WORD_COUNT);
     if (tw.length === 0) return turn;
 
+    const expectedTime = hasDev ? (turn.turn_index / totalTurns) * videoDuration : 0;
+
     let bestOverlap = 0;
     let bestStart = -1;
     let bestSegIdx = -1;
@@ -225,15 +227,21 @@ function runPass1Only(
       const segText = segments[i].text.replace(/^>>\s*/, "");
       const sw = extractWords(segText, MATCH_WORD_COUNT);
       const ov = wordOverlap(tw, sw);
-      if (ov > bestOverlap) { bestOverlap = ov; bestStart = segments[i].start; bestSegIdx = i; }
-      if (ov >= MATCH_WORD_COUNT) break;
+
+      if (ov >= MATCH_THRESHOLD && segments[i].start > lastTs) {
+        const withinDev = !hasDev ||
+          Math.abs(segments[i].start - expectedTime) <= MAX_DEVIATION_SECONDS;
+        if (withinDev && ov > bestOverlap) {
+          bestOverlap = ov;
+          bestStart = segments[i].start;
+          bestSegIdx = i;
+        }
+      }
+
+      if (bestOverlap >= MATCH_WORD_COUNT) break;
     }
 
     if (bestOverlap >= MATCH_THRESHOLD && bestStart > lastTs) {
-      if (hasDev) {
-        const expected = (turn.turn_index / totalTurns) * videoDuration;
-        if (Math.abs(bestStart - expected) > MAX_DEVIATION_SECONDS) return turn;
-      }
       lastTs = bestStart;
       segScanPos = bestSegIdx + 1;
       return { ...turn, timestamp_seconds: bestStart };
