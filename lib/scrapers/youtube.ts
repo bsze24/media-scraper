@@ -206,6 +206,7 @@ export function extractSpeakers(
     "Capital Allocators with Ted Seides": { name: "Ted Seides", affiliation: "Capital Allocators" },
     "Invest Like the Best with Patrick O'Shaughnessy": { name: "Patrick O'Shaughnessy", affiliation: "Colossus" },
     "The Acquired Podcast": { name: "Ben Gilbert", affiliation: "Acquired" },
+    "Alt Goes Mainstream (AGM)": { name: "Michael Sidgmore", affiliation: "Alt Goes Mainstream" },
   };
 
   const hostInfo = knownHosts[channel];
@@ -217,13 +218,16 @@ export function extractSpeakers(
     });
   }
 
-  // Try to extract guest name from title patterns:
-  // "Guest Name - Topic (EP.123)"
-  // "Guest Name: Topic"
-  // "Topic with Guest Name"
+  // Try to extract guest name from title patterns.
+  // Name = "Firstname Lastname" or "Firstname M. Lastname" (2-3 capitalized words, optional middle initial)
+  const NAME = `[A-Z][a-zA-Z]+(?:\\s[A-Z]\\.)?\\s[A-Z][a-zA-Z]+(?:\\s[A-Z][a-zA-Z]+)?`;
   const titlePatterns = [
-    /^([A-Z][a-zA-Z]+ [A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+)?)\s*[-–—:]/,  // "Name Name - ..."
-    /\bwith\s+([A-Z][a-zA-Z]+ [A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+)?)/i,    // "... with Name Name"
+    new RegExp(`^(${NAME})\\s*[-–—:]`),                              // "Name Name - ..." (Capital Allocators)
+    new RegExp(`^Live!\\s*(${NAME})`),                                // "Live! Name Name, ..." (AGM live events)
+    new RegExp(`(?:^|\\s)(?:CEO|Co-Founder|Founder|Chairman|Partner|Director|Managing)\\s+(?:and\\s+\\w+\\s+)?(?:of\\s+\\w+\\s+)?(${NAME})`, "i"),  // "...CEO Yann Magnan"
+    new RegExp(`(?:^[\\w\\s']+?)'s?\\s+(${NAME})\\s*[-–—]`),         // "Company's Name Name - ..." or "Partners' Name - ..." (AGM format)
+    new RegExp(`[,]\\s*(${NAME})\\s*$`),                              // "..., Sean Ward" (name at end after comma)
+    new RegExp(`\\bwith\\s+(${NAME})`, "i"),                          // "... with Name Name"
   ];
 
   for (const pattern of titlePatterns) {
