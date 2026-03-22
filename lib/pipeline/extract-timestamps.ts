@@ -5,8 +5,14 @@ import type { CaptionSegment } from "@lib/scrapers/youtube";
 /** Number of words to extract from turn/segment text for matching */
 const MATCH_WORD_COUNT = 6;
 
-/** Minimum word overlap required to consider a match */
+/** Minimum word overlap required to consider a match (pass 1) */
 const MATCH_THRESHOLD = 4;
+
+/** Relaxed threshold for pass 2 bracketed recovery */
+const PASS2_MATCH_THRESHOLD = 3;
+
+/** Max allowed deviation (seconds) between candidate timestamp and expected position */
+const MAX_DEVIATION_SECONDS = 900; // 15 minutes
 
 /**
  * Normalize text for matching: lowercase, strip punctuation, split into words.
@@ -42,18 +48,27 @@ function wordOverlap(a: string[], b: string[]): number {
  */
 export function extractTimestamps(
   turns: Turn[],
-  captionSegments: CaptionSegment[] | null
+  captionSegments: CaptionSegment[] | null,
+  videoDuration?: number
 ): Turn[] {
   if (!captionSegments || captionSegments.length === 0) {
     return turns;
   }
 
+  const totalTurns = turns.length;
+  const hasDeviation = videoDuration != null && videoDuration > 0;
+
+  // --- Pass 1: forward-only scan with deviation constraint ---
   let segScanPos = 0;
   let lastMatchedTimestamp = -1;
 
-  return turns.map((turn) => {
+  const pass1Results: Turn[] = turns.map((turn) => {
     const turnWords = extractWords(turn.text, MATCH_WORD_COUNT);
     if (turnWords.length === 0) return turn;
+
+    const expectedTime = hasDeviation
+      ? (turn.turn_index / totalTurns) * videoDuration
+      : 0;
 
     let bestOverlap = 0;
     let bestStart = -1;
@@ -65,14 +80,21 @@ export function extractTimestamps(
       const segWords = extractWords(segText, MATCH_WORD_COUNT);
       const overlap = wordOverlap(turnWords, segWords);
 
-      if (overlap > bestOverlap) {
-        bestOverlap = overlap;
-        bestStart = captionSegments[i].start;
-        bestSegIdx = i;
+      if (overlap >= MATCH_THRESHOLD && captionSegments[i].start > lastMatchedTimestamp) {
+        // Apply deviation check inline: only consider candidates within tolerance.
+        // This prevents a high-overlap far-away match from shadowing a valid nearby one.
+        const withinDeviation = !hasDeviation ||
+          Math.abs(captionSegments[i].start - expectedTime) <= MAX_DEVIATION_SECONDS;
+
+        if (withinDeviation && overlap > bestOverlap) {
+          bestOverlap = overlap;
+          bestStart = captionSegments[i].start;
+          bestSegIdx = i;
+        }
       }
 
-      // Perfect match — stop scanning
-      if (overlap >= MATCH_WORD_COUNT) break;
+      // Perfect match within deviation — stop scanning
+      if (bestOverlap >= MATCH_WORD_COUNT) break;
     }
 
     if (bestOverlap >= MATCH_THRESHOLD && bestStart > lastMatchedTimestamp) {
@@ -81,7 +103,70 @@ export function extractTimestamps(
       return { ...turn, timestamp_seconds: bestStart };
     }
 
-    // Monotonicity violation or no match — leave undefined
+    // No valid match — leave undefined, do NOT advance segScanPos
+    return turn;
+  });
+
+  // --- Pass 2: bracketed recovery at relaxed threshold ---
+  // Requires videoDuration for deviation check and bracket_end on trailing turns.
+  if (!hasDeviation) return pass1Results;
+
+  let lastPass2Timestamp = -1;
+
+  return pass1Results.map((turn, idx) => {
+    // Already matched in pass 1 — update monotonicity tracker
+    if (turn.timestamp_seconds != null) {
+      lastPass2Timestamp = turn.timestamp_seconds;
+      return turn;
+    }
+
+    const turnWords = extractWords(turn.text, MATCH_WORD_COUNT);
+    if (turnWords.length === 0) return turn;
+
+    // Find bracket_start: nearest matched turn before this one
+    let bracketStart = 0;
+    for (let j = idx - 1; j >= 0; j--) {
+      if (pass1Results[j].timestamp_seconds != null) {
+        bracketStart = pass1Results[j].timestamp_seconds!;
+        break;
+      }
+    }
+
+    // Find bracket_end: nearest matched turn after this one
+    let bracketEnd = videoDuration;
+    for (let j = idx + 1; j < pass1Results.length; j++) {
+      if (pass1Results[j].timestamp_seconds != null) {
+        bracketEnd = pass1Results[j].timestamp_seconds!;
+        break;
+      }
+    }
+
+    // Search all segments within the bracket window (not forward-only)
+    const expectedTime = (turn.turn_index / totalTurns) * videoDuration;
+    let bestOverlap = 0;
+    let bestStart = -1;
+
+    for (const seg of captionSegments) {
+      if (seg.start < bracketStart || seg.start > bracketEnd) continue;
+      if (seg.start <= lastPass2Timestamp) continue;
+
+      const segText = seg.text.replace(/^>>\s*/, "");
+      const segWords = extractWords(segText, MATCH_WORD_COUNT);
+      const overlap = wordOverlap(turnWords, segWords);
+
+      // Deviation check inline — prevents far match from shadowing valid nearby one
+      const withinDeviation = Math.abs(seg.start - expectedTime) <= MAX_DEVIATION_SECONDS;
+      if (overlap >= PASS2_MATCH_THRESHOLD && withinDeviation && overlap > bestOverlap) {
+        bestOverlap = overlap;
+        bestStart = seg.start;
+      }
+    }
+
+    if (bestOverlap >= PASS2_MATCH_THRESHOLD && bestStart >= 0) {
+      lastPass2Timestamp = bestStart;
+      return { ...turn, timestamp_seconds: bestStart };
+    }
+
     return turn;
   });
 }

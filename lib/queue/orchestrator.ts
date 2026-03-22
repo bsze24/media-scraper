@@ -216,7 +216,8 @@ export async function processAppearance(id: string): Promise<void> {
         import("@lib/scrapers/youtube").CaptionSegment[] | undefined;
       if (captionSegments && captionSegments.length > 0) {
         await updateProcessingDetail(id, "extracting timestamps from captions");
-        currentTurns = extractTimestamps(currentTurns, captionSegments);
+        const videoDuration = (captionData as Record<string, unknown> | null)?.duration as number | undefined;
+        currentTurns = extractTimestamps(currentTurns, captionSegments, videoDuration);
         const timestampedCount = currentTurns.filter((t) => t.timestamp_seconds != null).length;
         console.log(`[pipeline]   ↳ Timestamped ${timestampedCount}/${currentTurns.length} turns`);
 
@@ -374,7 +375,10 @@ export async function processAppearance(id: string): Promise<void> {
     // Done — warnings already appended via appendProcessingWarning;
     // updateProcessingStatus with status "complete" preserves them.
     const turnCount = currentTurns.length;
-    await updateProcessingDetail(id, `${bulletCount} bullets, ${turnCount} turns, ${entityCount} entities`);
+    const timestampedTurnCount = currentTurns.filter((t) => t.timestamp_seconds != null).length;
+    const tsPct = turnCount > 0 ? Math.round((timestampedTurnCount / turnCount) * 100) : 100;
+    const tsPrefix = isYouTubeSource(transcriptSource) ? `${tsPct}% timestamped, ` : "";
+    await updateProcessingDetail(id, `${tsPrefix}${bulletCount} bullets, ${turnCount} turns, ${entityCount} entities`);
     await updateProcessingStatus(id, "complete");
     console.log(`[pipeline] ✅ COMPLETE — ${title} (total: ${stepTime()})`);
 
@@ -494,6 +498,84 @@ export async function reprocessBullets(id: string): Promise<BulletsStepOutput> {
     );
     throw err;
   }
+}
+
+export interface ReprocessTimestampsResult {
+  oldCount: number;
+  newCount: number;
+  totalTurns: number;
+}
+
+export async function reprocessTimestamps(
+  id: string
+): Promise<ReprocessTimestampsResult> {
+  const row = await getAppearanceById(id);
+  if (!row) throw new Error(`Appearance not found: ${id}`);
+  if (row.processing_status !== "complete") {
+    throw new Error(
+      `Cannot reprocess: status is "${row.processing_status}", expected "complete"`
+    );
+  }
+
+  const title = row.title ?? id;
+  console.log(`[reprocessTimestamps] starting: ${title}`);
+
+  const turns = row.turns ?? [];
+  const meta = row.scraper_metadata as Record<string, unknown> | null;
+  const captionSegments = (meta?.segments as
+    import("@lib/scrapers/youtube").CaptionSegment[] | undefined) ?? [];
+  const videoDuration = (meta?.duration as number | undefined) ?? 0;
+  let sections = row.sections ?? [];
+
+  if (turns.length === 0 || captionSegments.length === 0) {
+    console.log(`[reprocessTimestamps] skipped (no turns or segments): ${title}`);
+    return { oldCount: 0, newCount: 0, totalTurns: turns.length };
+  }
+
+  const oldCount = turns.filter((t) => t.timestamp_seconds != null).length;
+
+  // Strip existing timestamps and section_anchors for clean reprocess
+  const cleanTurns = turns.map((t) => {
+    const { timestamp_seconds, section_anchor, ...rest } = t;
+    return rest as import("@/types/appearance").Turn;
+  });
+
+  // Re-run timestamp extraction (pass 1 + pass 2)
+  let updatedTurns = extractTimestamps(cleanTurns, captionSegments, videoDuration);
+  const newCount = updatedTurns.filter((t) => t.timestamp_seconds != null).length;
+
+  // Remap sections to turns and re-stamp anchors.
+  // Only strip turn_index from sections that have start_time (can be remapped).
+  // LLM-generated sections have turn_index but no start_time — preserve those.
+  const cleanSections = sections.map((s) => {
+    if (s.start_time == null) return s; // keep turn_index on sections without start_time
+    const { turn_index, ...rest } = s;
+    return rest as import("@/types/scraper").SectionHeading;
+  });
+  sections = mapSectionsToTurns(cleanSections, updatedTurns);
+  updatedTurns = stampSectionAnchors(updatedTurns, sections);
+
+  // Write results
+  await writeTurns(id, updatedTurns);
+  await writeSections(id, sections);
+
+  // Update timestamp_coverage_low warning: remove stale, re-add if still low
+  await removeProcessingWarning(id, "timestamp_coverage_low");
+  const coverage = turns.length > 0 ? newCount / turns.length : 1;
+  if (coverage < 0.8) {
+    await appendProcessingWarning(id, `timestamp_coverage_low:${Math.round(coverage * 100)}%`);
+  }
+
+  // Recompute processing_detail summary from current row data
+  const bulletArr = (row.prep_bullets as Record<string, unknown> | null)?.bullets;
+  const bulletLen = Array.isArray(bulletArr) ? bulletArr.length : 0;
+  const entityCount = (row.entity_tags?.fund_names?.length ?? 0) +
+    (row.entity_tags?.key_people?.length ?? 0);
+  const tsPct = turns.length > 0 ? Math.round((newCount / turns.length) * 100) : 100;
+  await updateProcessingDetail(id, `${tsPct}% timestamped, ${bulletLen} bullets, ${turns.length} turns, ${entityCount} entities`);
+
+  console.log(`[reprocessTimestamps] complete: ${title} — ${oldCount} → ${newCount}/${turns.length} timestamps`);
+  return { oldCount, newCount, totalTurns: turns.length };
 }
 
 export async function reprocessTurnSummaries(

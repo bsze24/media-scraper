@@ -374,6 +374,9 @@ export default function Home() {
               <thead>
                 <tr className="border-b border-zinc-200 bg-zinc-50 text-left dark:border-zinc-800 dark:bg-zinc-950">
                   <th className="px-4 py-2 font-medium text-zinc-600 dark:text-zinc-400">
+                    ID
+                  </th>
+                  <th className="px-4 py-2 font-medium text-zinc-600 dark:text-zinc-400">
                     URL
                   </th>
                   <th className="px-4 py-2 font-medium text-zinc-600 dark:text-zinc-400">
@@ -403,13 +406,28 @@ export default function Home() {
                       className="border-b border-zinc-100 dark:border-zinc-800"
                     >
                       <td
+                        className="max-w-[100px] truncate px-4 py-2 font-mono text-xs text-zinc-500 dark:text-zinc-400"
+                        title={a.id}
+                      >
+                        {a.id.slice(0, 8)}
+                      </td>
+                      <td
                         className="max-w-[200px] truncate px-4 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300"
                         title={a.source_url}
                       >
                         {truncateUrl(a.source_url)}
                       </td>
                       <td className="max-w-[200px] truncate px-4 py-2 text-zinc-700 dark:text-zinc-300">
-                        {a.title ?? "\u2014"}
+                        {isComplete ? (
+                          <a
+                            href={`/transcript/${a.id}`}
+                            className="text-blue-600 hover:underline dark:text-blue-400"
+                          >
+                            {a.title ?? "\u2014"}
+                          </a>
+                        ) : (
+                          a.title ?? "\u2014"
+                        )}
                       </td>
                       <td className="px-4 py-2">
                         <span
