@@ -644,17 +644,20 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           );
         })()}
 
-        {/* THREE-COLUMN: TOC | BODY | VIDEO */}
+        {/* THREE-COLUMN: TOC | BODY | VIDEO (stacks on mobile) */}
         <div
-          className="grid items-start gap-x-7"
-          style={{
-            gridTemplateColumns: videoOpen
-              ? "188px 1fr 280px"
-              : "188px 1fr 36px",
-          }}
+          className="grid items-start gap-x-7 max-md:flex max-md:flex-col max-md:gap-y-4"
+          style={
+            {
+              "--grid-cols": videoOpen
+                ? "188px 1fr 280px"
+                : "188px 1fr 36px",
+              gridTemplateColumns: "var(--grid-cols)",
+            } as React.CSSProperties
+          }
         >
           {/* TOC */}
-          <div className="sticky top-6">
+          <div className="sticky top-6 max-md:static max-md:order-first">
             {/* Search */}
             <div className="relative mb-4">
               <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-[#ccc]">
@@ -989,9 +992,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             })}
           </div>
 
-          {/* VIDEO PANEL */}
+          {/* VIDEO PANEL (hidden on mobile) */}
           <div
-            className={`sticky top-6 overflow-hidden rounded border-l border-[#e5e0d6] bg-[#faf9f7] transition-all ${
+            className={`sticky top-6 overflow-hidden rounded border-l border-[#e5e0d6] bg-[#faf9f7] transition-all max-md:hidden ${
               videoOpen ? "min-h-[120px]" : "min-h-[120px] cursor-pointer"
             }`}
             onClick={!videoOpen ? () => setVideoOpen(true) : undefined}
