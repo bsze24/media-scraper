@@ -92,6 +92,7 @@ describe("parseColossusHtml", () => {
     expect(result.sections[0]).toEqual({
       heading: "Introduction",
       anchor: "introduction",
+      source: "source",
     });
   });
 
