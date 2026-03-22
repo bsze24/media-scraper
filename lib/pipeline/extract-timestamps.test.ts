@@ -202,15 +202,17 @@ describe("extractTimestamps — pass 2 bracketed recovery", () => {
     // 4 turns, 2400s. Turn 1 expected at 600s.
     // Bracket from pass 1 is [10, 2300] (wide because turn 2 is unmatched too).
     // Segment at 2200s has 3/6 overlap but deviation = |2200-600| = 1600 > 900.
+    // turn 1 words: {alpha, bravo, charlie, delta, echo, foxtrot}
+    // seg words:    {alpha, bravo, charlie, xray, yankee, zulu} → 3/6
     const turns = [
       makeTurn(0, "Welcome to our show today everyone here"),
-      makeTurn(1, "Markets have been volatile recently indeed"),
+      makeTurn(1, "Alpha bravo charlie delta echo foxtrot"),
       makeTurn(2, "Completely unique text that matches nothing here"),
       makeTurn(3, "Thank you very much for joining us today"),
     ];
     const segments = [
       makeSeg(10.0, "Welcome to our show today everyone here"),
-      makeSeg(2200.0, "Markets have indeed been quite volatile"), // 3/6 but too far
+      makeSeg(2200.0, "Alpha bravo charlie xray yankee zulu"), // 3/6 but too far from expected
       makeSeg(2300.0, "Thank you very much for joining us today"),
     ];
 
@@ -262,11 +264,8 @@ describe("extractTimestamps — pass 2 bracketed recovery", () => {
   it("skips pass 2 when videoDuration is undefined", () => {
     // Turn 1 has only 3/6 overlap — would be recovered by pass 2 if it ran.
     // Without videoDuration, pass 2 is skipped entirely.
-    // turn words: "the", "credit", "market", "looks", "uncertain", "going"
-    // seg words: "the", "equity", "market", "looks", "quite", "uncertain" → overlap: the, market, looks, uncertain = 4... no
-    // Need exactly 3/6. Let's be precise:
-    // turn words: "alpha", "bravo", "charlie", "delta", "echo", "foxtrot"
-    // seg words: "alpha", "bravo", "charlie", "golf", "hotel", "india" → overlap: 3/6
+    // turn 1 words: {alpha, bravo, charlie, delta, echo, foxtrot}
+    // seg words:    {alpha, bravo, charlie, golf, hotel, india} → 3/6
     const turns = [
       makeTurn(0, "Welcome to our show today everyone here"),
       makeTurn(1, "Alpha bravo charlie delta echo foxtrot"),
