@@ -1,7 +1,7 @@
 # Meeting Prep Tool — Technical Implementation Plan
-**Last updated:** March 15, 2026
-**Branch:** phase1/transcript-ui (Phase 0: phase0/bootstrap-pipeline)
-**Status:** Phase 1D in progress — YouTube pipeline (extraction + speaker attribution) complete, trust layer (attribution flag, validation, UI disclaimer) complete. Schema cleanup (raw_caption_data → scraper_metadata) and entity relevance tagging in review.
+**Last updated:** March 22, 2026
+**Branch:** `main` (feature branches per PR)
+**Status:** Phase 1D in progress — YouTube pipeline complete. Timestamp extraction uses two-pass algorithm (deviation constraint + bracketed recovery) achieving 94.2% coverage across 12 appearances. Section generation, turn summaries, speaker attribution trust layer all complete. Search UI (1C) not started.
 
 ---
 
@@ -188,8 +188,13 @@ LLM returns `section` and `section_anchor` directly. Post-processing uses `sq.se
 
 ## YouTube Pipeline (Phase 1) — Deferred Items
 
-### Timestamps — ✅ Implemented (PR A)
-`turns[].timestamp_seconds` populated from caption segments via `extractTimestamps()` in `lib/pipeline/extract-timestamps.ts`. Uses word-overlap matching between turn opening words and caption segment text. Wired into orchestrator after YouTube turn re-parse. Coverage validation warns if <80% of turns are timestamped.
+### Timestamps — ✅ Implemented (PR A, improved PR #27)
+`turns[].timestamp_seconds` populated from caption segments via `extractTimestamps()` in `lib/pipeline/extract-timestamps.ts`. Two-pass algorithm:
+- **Pass 1:** Forward-only word-overlap scan (4/6 threshold) with expected-position deviation constraint (`MAX_DEVIATION_SECONDS = 900`). Rejects false matches >15 min from expected position, preventing cascade orphaning.
+- **Pass 2:** Bracketed recovery at relaxed 3/6 threshold. For each unmatched turn, finds nearest matched turns before/after as time brackets, searches only segments within that window. Safe because narrow brackets prevent false matches.
+- Coverage: 49.5% (original) → 82.1% (pass 1) → 94.2% (pass 1+2) across 12 YouTube appearances. Deviation check integrated inline (not post-filter) to preserve valid nearby lower-overlap matches.
+- `reprocessTimestamps()` orchestrator function + `scripts/reprocess-timestamps.ts` for reprocessing with proper warning/detail updates.
+- Coverage validation warns if <80% of turns are timestamped.
 
 ### Chapters → Sections — ✅ Implemented (PR A)
 YouTube chapters from yt-dlp metadata are mapped to `SectionHeading[]` with `start_time` and `source: "source"` in the scraper. Section-to-turn mapping (`mapSectionsToTurns()`) assigns `turn_index` from nearest timestamped turn. Videos without chapters get `sections: []`.
@@ -265,8 +270,14 @@ lib/
     bullets.ts                     LLM prep bullets (curated vs YouTube variants)
     splitter.ts                    Splits long transcripts for pipeline processing
     validate-speakers.ts           Post-clean speaker name validation (fuzzy match vs metadata)
-    sections.ts                    [Phase 1D] generateSections() for YouTube transcripts — ✅ IMPLEMENTED (PR B1)
-    turn-summaries.ts              [Phase 1D] One-sentence per-turn summaries — NOT YET BUILT
+    sections.ts                    [Phase 1D] generateSections() for YouTube transcripts — ✅ IMPLEMENTED
+    extract-timestamps.ts           Two-pass timestamp extraction (deviation constraint + bracketed recovery)
+    extract-timestamps.test.ts
+    parse-description-sections.ts    Regex parsing of description timestamps (tier 2 sections)
+    parse-description-sections.test.ts
+    sections.ts                      LLM section generation for YouTube (tier 3)
+    normalize-speakers.ts            Post-clean speaker name normalization
+    turn-summaries.ts                One-sentence per-turn summaries (parallel with entities)
     clean.test.ts
     entities.test.ts
     bullets.test.ts
@@ -276,7 +287,7 @@ lib/
     clean.ts                       Two variants: CLEAN_TRANSCRIPT_PROMPT (curated) + buildYouTubeCleanPrompt (speaker attribution)
     entities.ts                    Entity extraction prompt (with relevance tagging)
     bullets.ts                     GENERATE_BULLETS_PROMPT_CURATED / _YOUTUBE + ROWSPACE_BUSINESS_CONTEXT
-    turn-summaries.ts              [Phase 1D] — NOT YET BUILT
+    turn-summaries.ts              Turn summary generation prompt
     overview.ts                    [Phase 1 stretch / Phase 2] — NOT YET BUILT
   db/
     client.ts                      Supabase client (server only)
@@ -315,6 +326,8 @@ src/
         status/[id]/route.ts       GET — single appearance status
         bullets/route.ts           POST — single-appearance bullet regeneration
         bullets/bulk/route.ts      POST — bulk bullet regeneration
+        turn-summaries/route.ts    POST — single-appearance turn summary regeneration
+        turn-summaries/bulk/route.ts POST — bulk turn summary regeneration
         manual-ingest/route.ts     POST — manual transcript paste
       feedback/route.ts            [Phase 2] — NOT YET BUILT
       corrections/route.ts         [Phase 2] — NOT YET BUILT
@@ -331,6 +344,14 @@ supabase/
     007_prompt_snapshot.sql
     008_rename_raw_caption_data.sql
     003_embeddings.sql             [Phase 5] — NOT YET CREATED
+scripts/
+  reprocess-timestamps.ts          Re-run timestamp extraction on all YouTube appearances
+  reprocess-bullets.ts             Re-run bullet generation on all complete appearances
+  reprocess-entities.ts            Re-run entity extraction on all complete appearances
+  reprocess-turn-summaries.ts      Re-run turn summaries on all complete appearances
+  measure-fix-impact.ts            Before/after measurement for timestamp algorithm changes
+  simulate-pass2.ts                Pass 2 bracketed recovery simulation (diagnostic)
+  batch-process-youtube.ts         Batch YouTube URL processing via local yt-dlp
 ```
 
 ---
@@ -346,6 +367,7 @@ Every LLM-dependent pipeline step has a validation guard that checks output qual
 4. **turn_summaries_incomplete** — LLM returned fewer summaries than turns (retries once, then writes partial)
 5. **entities_no_funds** — 0 fund_names from > 10k char transcript
 6. **bullets_low_count** — < 3 bullets from > 10k char transcript
+7. **timestamp_coverage_low** — < 80% of turns timestamped (YouTube only)
 
 ---
 
@@ -404,8 +426,11 @@ Every LLM-dependent pipeline step has a validation guard that checks output qual
 - ✓ Entity relevance tagging: `fund_names[].relevance: "primary" | "mentioned"` — prompt, types, search sorting
 - ✓ `generateSections()` for YouTube transcripts — three-tier cascade: chapters (source), description timestamps (derived), LLM fallback (inferred). Also adds `parseDescriptionSections()` for tier 2.
 - ✓ `turn-summaries` pipeline step — `generateTurnSummaries()` runs parallel with entities, `[{speaker, summary, turn_index}]` stored to `turn_summaries`. Transcript viewer shows AI summaries for collapsed host turns with fallback to first sentence.
-- ✓ YouTube timestamp extraction — `extractTimestamps()` populates `turns[].timestamp_seconds` from caption segments via word-overlap matching
+- ✓ YouTube timestamp extraction — two-pass `extractTimestamps()` with deviation constraint + bracketed recovery (94.2% coverage). See "Timestamps" section above for details.
 - ✓ YouTube chapters → sections — yt-dlp chapters mapped to `SectionHeading[]` with `start_time`, `turn_index`, and `source: "source"`
+- ✓ `reprocessTimestamps()` orchestrator function — handles turns, sections, warnings, and processing_detail in one call. `scripts/reprocess-timestamps.ts` for bulk reprocessing.
+- ✓ Timestamp coverage % shown first in `processing_detail` summary (e.g., "97% timestamped, 10 bullets, 87 turns, 17 entities")
+- ✓ Admin table: appearance ID column (truncated, hover for full) + title links to `/transcript/[id]` for completed appearances
 
 **Fund overview (Phase 1 stretch / Phase 2):**
 - Write `lib/prompts/overview.ts` — synthesis prompt that receives `prep_bullets` + metadata from all matching appearances for a fund, produces a cross-appearance narrative (consistent themes, evolving views, key people)
