@@ -578,6 +578,145 @@ export async function reprocessTimestamps(
   return { oldCount, newCount, totalTurns: turns.length };
 }
 
+export interface ReprocessSpeakersResult {
+  oldSpeakers: string[];
+  newSpeakers: string[];
+  turnCount: number;
+  timestampedCount: number;
+}
+
+/**
+ * Re-extract speakers from existing metadata, re-clean the transcript with
+ * correct speaker names, and re-run turns/timestamps/sections downstream.
+ * Does NOT re-scrape — uses existing raw_transcript + scraper_metadata.
+ */
+export async function reprocessSpeakers(
+  id: string
+): Promise<ReprocessSpeakersResult> {
+  const row = await getAppearanceById(id);
+  if (!row) throw new Error(`Appearance not found: ${id}`);
+  if (row.processing_status !== "complete") {
+    throw new Error(
+      `Cannot reprocess: status is "${row.processing_status}", expected "complete"`
+    );
+  }
+  if (!row.raw_transcript) {
+    throw new Error(`No raw_transcript for appearance ${id}`);
+  }
+  if (!isYouTubeSource(row.transcript_source)) {
+    throw new Error(`reprocessSpeakers only supports YouTube sources, got "${row.transcript_source}"`);
+  }
+
+  const title = row.title ?? id;
+  const transcriptSource = row.transcript_source;
+  console.log(`[reprocessSpeakers] starting: ${title}`);
+
+  const oldSpeakers = (row.speakers ?? []).map((s: { name: string } | string) =>
+    typeof s === "string" ? s : s.name
+  );
+
+  // Re-extract speakers from existing metadata
+  const meta = row.scraper_metadata as Record<string, unknown> | null;
+  const description = (meta?.description as string | undefined) ?? "";
+  const sourceName = row.source_name ?? "";
+  const { extractSpeakers } = await import("@lib/scrapers/youtube");
+  const speakers = extractSpeakers(title, description, sourceName);
+
+  const newSpeakers = speakers.map((s) => s.name);
+  console.log(`[reprocessSpeakers]   speakers: [${oldSpeakers.join(", ")}] → [${newSpeakers.join(", ")}]`);
+
+  // Update speakers column
+  const { createServerClient } = await import("@lib/db/client");
+  const supabase = createServerClient();
+  const { error: speakersError } = await supabase
+    .from("appearances")
+    .update({ speakers })
+    .eq("id", id);
+  if (speakersError) throw speakersError;
+
+  // Re-clean transcript with correct speaker names
+  await updateProcessingDetail(id, "re-cleaning with correct speakers");
+  const rawTranscript = row.raw_transcript;
+  const cleanOpts = { transcriptSource, speakers };
+  const cleanOutput = await cleanTranscript(rawTranscript, cleanOpts);
+  let finalCleaned = cleanOutput.cleaned_transcript;
+
+  // Validate + normalize speaker names
+  const { corrected, replacements: speakerFixes } = validateSpeakerAttribution(finalCleaned, speakers);
+  if (speakerFixes.length > 0) {
+    finalCleaned = corrected;
+    console.log(`[reprocessSpeakers]   ↳ Fixed ${speakerFixes.length} hallucinated speaker name(s)`);
+  }
+
+  const { normalizedTranscript, replacements: nameReplacements } =
+    normalizeSpeakerNames(finalCleaned, speakers);
+  if (Object.keys(nameReplacements).length > 0) {
+    finalCleaned = normalizedTranscript;
+    const mapStr = Object.entries(nameReplacements)
+      .map(([from, to]) => `"${from}" → "${to}"`)
+      .join(", ");
+    console.log(`[reprocessSpeakers]   ↳ Speaker normalization: {${mapStr}}`);
+  }
+
+  await writeCleanResult(id, { cleaned_transcript: finalCleaned });
+
+  // Re-parse turns from cleaned transcript
+  let sections = row.sections ?? [];
+  let currentTurns = parseTurns(finalCleaned, sections, "inferred");
+  console.log(`[reprocessSpeakers]   ↳ Re-parsed ${currentTurns.length} turns`);
+
+  // Re-run timestamps
+  const captionSegments = (meta?.segments as
+    import("@lib/scrapers/youtube").CaptionSegment[] | undefined) ?? [];
+  const videoDuration = (meta?.duration as number | undefined) ?? 0;
+
+  if (captionSegments.length > 0) {
+    currentTurns = extractTimestamps(currentTurns, captionSegments, videoDuration);
+    const tsCount = currentTurns.filter((t) => t.timestamp_seconds != null).length;
+    console.log(`[reprocessSpeakers]   ↳ Timestamped ${tsCount}/${currentTurns.length} turns`);
+
+    // Update timestamp coverage warning
+    await removeProcessingWarning(id, "timestamp_coverage_low");
+    const coverage = currentTurns.length > 0 ? tsCount / currentTurns.length : 1;
+    if (coverage < 0.8) {
+      await appendProcessingWarning(id, `timestamp_coverage_low:${Math.round(coverage * 100)}%`);
+    }
+  }
+
+  // Remap sections and stamp anchors
+  const cleanSections = sections.map((s) => {
+    if (s.start_time == null) return s;
+    const { turn_index, ...rest } = s;
+    return rest as import("@/types/scraper").SectionHeading;
+  });
+  sections = mapSectionsToTurns(cleanSections, currentTurns);
+  currentTurns = stampSectionAnchors(currentTurns, sections);
+
+  await writeTurns(id, currentTurns);
+  await writeSections(id, sections);
+
+  // Re-generate turn summaries (parallel-safe, no dependency on entities/bullets)
+  await updateProcessingDetail(id, "regenerating turn summaries");
+  const turnSummariesResult = await generateTurnSummaries(currentTurns);
+  await writeTurnSummaries(id, turnSummariesResult.summaries);
+  if (turnSummariesResult.warning) {
+    await appendProcessingWarning(id, turnSummariesResult.warning);
+  }
+  console.log(`[reprocessSpeakers]   ↳ ${turnSummariesResult.summaries.length} turn summaries`);
+
+  // Update processing_detail summary
+  const timestampedCount = currentTurns.filter((t) => t.timestamp_seconds != null).length;
+  const tsPct = currentTurns.length > 0 ? Math.round((timestampedCount / currentTurns.length) * 100) : 100;
+  const bulletArr = (row.prep_bullets as Record<string, unknown> | null)?.bullets;
+  const bulletLen = Array.isArray(bulletArr) ? bulletArr.length : 0;
+  const entityCount = (row.entity_tags?.fund_names?.length ?? 0) +
+    (row.entity_tags?.key_people?.length ?? 0);
+  await updateProcessingDetail(id, `${tsPct}% timestamped, ${bulletLen} bullets, ${currentTurns.length} turns, ${entityCount} entities`);
+
+  console.log(`[reprocessSpeakers] complete: ${title}`);
+  return { oldSpeakers, newSpeakers, turnCount: currentTurns.length, timestampedCount };
+}
+
 export async function reprocessTurnSummaries(
   id: string
 ): Promise<Array<{ speaker: string; summary: string; turn_index: number }>> {
