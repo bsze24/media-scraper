@@ -149,6 +149,13 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   const allAnchors = useMemo(() => sections.map((s) => s.anchor), [sections]);
 
+  // Monologue detection: single turn or all turns from same speaker
+  const isMonologue = useMemo(() => {
+    if (turns.length <= 1) return true;
+    const speaker = turns[0]?.speaker;
+    return turns.every((t) => t.speaker === speaker);
+  }, [turns]);
+
   // Bullet anchors for gold TOC dots
   const bulletAnchors = useMemo(() => {
     const set = new Set<string>();
@@ -200,6 +207,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   const panelInputRef = useRef<HTMLInputElement>(null);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const monologueRef = useRef<HTMLDivElement | null>(null);
   const ytPlayerRef = useRef<YTPlayer | null>(null);
 
   const pendingSeekRef = useRef<number | null>(null);
@@ -536,7 +544,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         <div
                           className="mt-0.5 cursor-pointer font-[family-name:var(--font-source-sans)] text-[11.5px] italic leading-snug text-[#888] hover:text-[#555]"
                           onClick={() => {
-                            if (firstQuote.section_anchor) {
+                            if (isMonologue) {
+                              monologueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                            } else if (firstQuote.section_anchor) {
                               scrollToSection(firstQuote.section_anchor);
                             }
                           }}
@@ -685,8 +695,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             {/* Section heading + expand/collapse */}
             <div className="mb-2 flex items-center justify-between">
               <div className="font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#aaa]">
-                Sections
+                {isMonologue ? "Topics" : "Sections"}
               </div>
+              {!isMonologue && (
               <div className="flex items-center gap-0.5">
                 <button
                   className="rounded border border-[#ddd] px-[5px] font-[family-name:var(--font-source-sans)] text-[15px] font-normal leading-snug text-[#888] transition-colors hover:border-[#aaa] hover:bg-[#f0ece4] hover:text-[#333] disabled:cursor-default disabled:opacity-20 disabled:hover:border-[#ddd] disabled:hover:bg-transparent"
@@ -714,6 +725,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   −
                 </button>
               </div>
+              )}
             </div>
 
             {/* Section list */}
@@ -725,10 +737,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               return (
                 <div
                   key={s.anchor}
-                  className={`mb-px flex cursor-pointer items-start gap-[7px] rounded px-[7px] py-[5px] transition-colors ${
-                    expandedSections[s.anchor] ? "bg-[#edeae2]" : ""
-                  } ${dim ? "pointer-events-none opacity-[0.28]" : "hover:bg-[#edeae2]"}`}
-                  onClick={() => !dim && scrollToSection(s.anchor)}
+                  className={`mb-px flex items-start gap-[7px] rounded px-[7px] py-[5px] transition-colors ${
+                    isMonologue
+                      ? "cursor-default opacity-60"
+                      : `cursor-pointer ${expandedSections[s.anchor] ? "bg-[#edeae2]" : ""} ${dim ? "pointer-events-none opacity-[0.28]" : "hover:bg-[#edeae2]"}`
+                  }`}
+                  onClick={() => !isMonologue && !dim && scrollToSection(s.anchor)}
                 >
                   {hit ? (
                     <span className="mt-1.5 h-[5px] w-[5px] shrink-0 rounded-full bg-[#5b9bd5]" />
@@ -775,8 +789,54 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
           {/* TRANSCRIPT BODY */}
           <div>
+            {/* Monologue: render all turns as a single block, no section grouping */}
+            {isMonologue && turns.length > 0 && (
+              <div ref={monologueRef} className="mb-[5px] overflow-hidden rounded border border-[#e5e0d6]">
+                <div className="bg-[#f2ede5] px-3.5 py-2">
+                  <span className="font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#aaa]">
+                    Monologue
+                  </span>
+                </div>
+                <div className="bg-white px-4 py-1 pb-2.5">
+                  {turns.map((turn) => {
+                    // Build the same key format as searchResults: per-section index
+                    const bucket = turn.section_anchor && turnsBySection.has(turn.section_anchor)
+                      ? turn.section_anchor : INTRO_ANCHOR;
+                    const bucketTurns = turnsBySection.get(bucket) ?? [];
+                    const idxInBucket = bucketTurns.indexOf(turn);
+                    const turnKey = `${bucket}-${idxInBucket === -1 ? 0 : idxInBucket}`;
+                    const isTurnHit = hasSearch && searchResults.turnKeys.has(turnKey);
+                    return (
+                      <div
+                        key={turn.turn_index}
+                        className={`border-b border-[#f0ece5] py-2.5 last:border-b-0 ${
+                          isTurnHit ? "-mx-4 bg-[#eff6ff] px-4" : ""
+                        }`}
+                      >
+                        <div className="mb-1 flex items-baseline gap-2 font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#c9a84c]">
+                          <span>{turn.speaker}</span>
+                          {turn.timestamp_seconds != null && (
+                            <span
+                              className="cursor-pointer font-normal normal-case tracking-normal text-[#999] hover:text-[#666]"
+                              onClick={() => seekToTime(turn.timestamp_seconds!)}
+                              title={`Jump to ${formatTimestamp(turn.timestamp_seconds)}`}
+                            >
+                              {formatTimestamp(turn.timestamp_seconds)}
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-[family-name:var(--font-source-sans)] text-[13.5px] leading-[1.65] text-[#1a1a1a]">
+                          {highlightText(turn.text, debouncedQuery)}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Turns before the first section heading */}
-            {(turnsBySection.get(INTRO_ANCHOR)?.length ?? 0) > 0 && (
+            {!isMonologue && (turnsBySection.get(INTRO_ANCHOR)?.length ?? 0) > 0 && (
               <div className="mb-[5px] overflow-hidden rounded border border-[#e5e0d6]">
                 <div className="bg-white px-4 py-1 pb-2.5">
                   {turnsBySection.get(INTRO_ANCHOR)!.map((turn, ti) => {
@@ -825,7 +885,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               </div>
             )}
 
-            {sections.map((section) => {
+            {!isMonologue && sections.map((section) => {
               const sectionTurns = turnsBySection.get(section.anchor) ?? [];
               const isOpen = expandedSections[section.anchor];
               const isCited = bulletAnchors.has(section.anchor);
