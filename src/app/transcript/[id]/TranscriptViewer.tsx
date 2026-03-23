@@ -624,14 +624,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17L17 7M17 7H8M17 7v9" />
                     </svg>
                   </button>
-                  {/* Collapse to audio - vertical collapse */}
+                  {/* Collapse to audio - x */}
                   <button 
                     onClick={() => setVideoMode('collapsed')}
                     className="p-2 bg-black/50 text-white/80 hover:text-white hover:bg-black/70 transition-colors rounded"
                     title="Audio only"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 20v-16m0 16l-3-3m3 3l3-3m-3-13l-3 3m3-3l3 3" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
                 </div>
@@ -1100,14 +1100,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m0-16l-3 3m3-3l3 3m-3 13l-3-3m3 3l3-3" />
                     </svg>
                   </button>
-                  {/* Pop back to audio - arrow to top left (opposite of ↗) */}
+                  {/* Collapse to audio - x */}
                   <button 
                     onClick={() => setVideoMode('collapsed')}
                     className="p-1.5 bg-black/60 text-white/80 hover:text-white hover:bg-black/80 transition-colors rounded"
                     title="Audio only"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 7L7 17M7 17h9M7 17V8" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
                 </div>
