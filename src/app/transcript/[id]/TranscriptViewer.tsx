@@ -665,27 +665,25 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   return (
                     <div
                       key={turn.turn_index}
-                      className={`group relative p-4 transition-all hover:bg-[#faf9f7] border-l-2 border-transparent ${
+                      className={`group relative py-3 px-4 transition-all hover:bg-[#faf9f7] border-l-2 border-transparent ${
                         isTurnHit ? 'bg-[#eff6ff] border-l-[#5a8fc7]' : ''
                       }`}
                     >
-                      <div className="flex items-start gap-3 mb-2">
+                      <div className="flex items-baseline gap-3 mb-1">
                         {turn.timestamp_seconds != null && (
                           <button 
                             onClick={() => seekToTime(turn.timestamp_seconds!)}
-                            className="text-[10px] font-mono text-[#999] hover:text-[#b8860b] transition-colors mt-0.5"
+                            className="text-[10px] font-mono text-[#999] hover:text-[#b8860b] transition-colors flex-shrink-0"
                             title="Jump to timestamp"
                           >
                             {formatTimestamp(turn.timestamp_seconds)}
                           </button>
                         )}
-                        <div className="flex-1">
-                          <div className="text-[13px] font-medium text-[#b8860b]">
-                            {turn.speaker}
-                          </div>
-                        </div>
+                        <span className="text-[13px] font-medium text-[#b8860b]">
+                          {turn.speaker}
+                        </span>
                       </div>
-                      <p className="text-[14px] leading-[1.7] text-[#333] pl-[52px]">
+                      <p className="text-[14px] leading-[1.6] text-[#333]">
                         {highlightText(turn.text, debouncedQuery)}
                       </p>
                     </div>
@@ -702,38 +700,37 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   const dimmed = activeSpeaker && activeSpeaker !== turn.speaker;
                   const isTurnHit = hasSearch && searchResults.turnKeys.has(`${INTRO_ANCHOR}-${ti}`);
 
+                  const speakerInfo = speakers.find(s => s.name === turn.speaker);
                   return (
                     <div
                       key={ti}
-                      className={`group relative p-4 transition-all border-l-2 ${
+                      className={`group relative py-3 px-4 transition-all border-l-2 ${
                         isTurnHit
                           ? 'bg-[#eff6ff] border-l-[#5a8fc7]'
                           : 'hover:bg-[#faf9f7] border-transparent'
                       }`}
                       style={dimmed ? { opacity: 0.3 } : undefined}
                     >
-                      <div className="flex items-start gap-3 mb-2">
+                      <div className="flex items-baseline gap-3 mb-1">
                         {turn.timestamp_seconds != null && (
                           <button 
                             onClick={() => seekToTime(turn.timestamp_seconds!)}
-                            className="text-[10px] font-mono text-[#999] hover:text-[#b8860b] transition-colors mt-0.5"
+                            className="text-[10px] font-mono text-[#999] hover:text-[#b8860b] transition-colors flex-shrink-0"
                             title="Jump to timestamp"
                           >
                             {formatTimestamp(turn.timestamp_seconds)}
                           </button>
                         )}
-                        <div className="flex-1">
-                          <div className={`text-[13px] font-medium ${isHost ? 'text-[#666]' : 'text-[#b8860b]'}`}>
-                            {turn.speaker}
-                          </div>
-                          {speakers.find(s => s.name === turn.speaker) && (
-                            <div className="text-[10px] text-[#999]">
-                              {[speakers.find(s => s.name === turn.speaker)?.title, speakers.find(s => s.name === turn.speaker)?.affiliation].filter(Boolean).join(", ")}
-                            </div>
-                          )}
-                        </div>
+                        <span className={`text-[13px] font-medium ${isHost ? 'text-[#666]' : 'text-[#b8860b]'}`}>
+                          {turn.speaker}
+                        </span>
+                        {speakerInfo && (
+                          <span className="text-[10px] text-[#999]">
+                            {[speakerInfo.title, speakerInfo.affiliation].filter(Boolean).join(", ")}
+                          </span>
+                        )}
                       </div>
-                      <p className={`text-[14px] leading-[1.7] pl-[52px] ${isHost ? 'text-[#555] italic' : 'text-[#333]'}`}>
+                      <p className={`text-[14px] leading-[1.6] ${isHost ? 'text-[#555] italic' : 'text-[#333]'}`}>
                         {highlightText(turn.text, debouncedQuery)}
                       </p>
                     </div>
@@ -820,7 +817,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         return (
                           <div
                             key={ti}
-                            className={`group relative p-4 transition-all border-l-2 ${
+                            className={`group relative py-3 px-4 transition-all border-l-2 ${
                               isTurnHit
                                 ? 'bg-[#eff6ff] border-l-[#5a8fc7]'
                                 : isCitedTurn
@@ -829,39 +826,37 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                             }`}
                             style={dimmed ? { opacity: 0.3 } : undefined}
                           >
-                            <div className="flex items-start gap-3 mb-2">
+                            {/* Header: timestamp + name/title + cited badge */}
+                            <div className="flex items-baseline gap-3 mb-1">
                               {turn.timestamp_seconds != null && (
                                 <button 
                                   onClick={() => seekToTime(turn.timestamp_seconds!)}
-                                  className="text-[10px] font-mono text-[#999] hover:text-[#b8860b] transition-colors mt-0.5"
+                                  className="text-[10px] font-mono text-[#999] hover:text-[#b8860b] transition-colors flex-shrink-0"
                                   title="Jump to timestamp"
                                 >
                                   {formatTimestamp(turn.timestamp_seconds)}
                                 </button>
                               )}
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                  <span className={`text-[13px] font-medium ${isHost ? 'text-[#666]' : 'text-[#b8860b]'}`}>
-                                    {turn.speaker}
-                                  </span>
-                                  {isCitedTurn && (
-                                    <span className="flex items-center gap-1 text-[9px] text-[#b8860b]/70">
-                                      <span className="w-1 h-1 rounded-full bg-[#b8860b]" />
-                                      cited
-                                    </span>
-                                  )}
-                                </div>
-                                {speakerInfo && (
-                                  <div className="text-[10px] text-[#999]">
-                                    {[speakerInfo.title, speakerInfo.affiliation].filter(Boolean).join(", ")}
-                                  </div>
-                                )}
-                              </div>
+                              <span className={`text-[13px] font-medium ${isHost ? 'text-[#666]' : 'text-[#b8860b]'}`}>
+                                {turn.speaker}
+                              </span>
+                              {speakerInfo && (
+                                <span className="text-[10px] text-[#999]">
+                                  {[speakerInfo.title, speakerInfo.affiliation].filter(Boolean).join(", ")}
+                                </span>
+                              )}
+                              {isCitedTurn && (
+                                <span className="flex items-center gap-1 text-[9px] text-[#b8860b]/70">
+                                  <span className="w-1 h-1 rounded-full bg-[#b8860b]" />
+                                  cited
+                                </span>
+                              )}
                             </div>
 
+                            {/* Text content - aligned with header */}
                             {isHost ? (
-                              <>
-                                <p className="text-[14px] leading-[1.7] pl-[52px] text-[#555] italic">
+                              <div>
+                                <p className="text-[14px] leading-[1.6] text-[#555] italic">
                                   {hostExpanded || isTurnHit
                                     ? highlightText(turn.text, debouncedQuery)
                                     : summary
@@ -874,7 +869,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                                 {(hasMore || summary) && (
                                   <button
                                     onClick={() => setExpandedHostTurns((prev) => ({ ...prev, [key]: !prev[key] }))}
-                                    className="mt-1 pl-[52px] text-[10px] text-[#bbb] hover:text-[#777]"
+                                    className="mt-1 text-[10px] text-[#bbb] hover:text-[#777]"
                                   >
                                     {summary
                                       ? (hostExpanded ? "summary" : "full text")
@@ -882,9 +877,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                                     }
                                   </button>
                                 )}
-                              </>
+                              </div>
                             ) : (
-                              <p className="text-[14px] leading-[1.7] pl-[52px] text-[#333]">
+                              <p className="text-[14px] leading-[1.6] text-[#333]">
                                 {highlightText(turn.text, debouncedQuery)}
                               </p>
                             )}
