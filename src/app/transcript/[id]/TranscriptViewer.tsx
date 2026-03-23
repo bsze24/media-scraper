@@ -626,7 +626,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
           {/* Video Controls - Expanded */}
           {videoExpanded && youtube_id && (
-            <div className="sticky top-0 z-40 bg-[#0a0a0a]">
+            <div className="flex-shrink-0 bg-[#0a0a0a]">
               <div className="aspect-video max-h-[50vh] w-full bg-[#111] relative">
                 <div id="yt-player-container" className="h-full w-full" />
                 <button 
