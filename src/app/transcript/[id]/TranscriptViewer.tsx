@@ -992,18 +992,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               <span className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Rowspace Angles</span>
             </div>
             <div className="space-y-3">
-              {prep_bullets.filter(b => b.category === 'angle').length > 0 ? (
-                prep_bullets.filter(b => b.category === 'angle').map((b, i) => (
-                  <div key={i} className="text-[12px] text-[#555] leading-relaxed">
-                    <span className="text-[#b8860b] mr-2">•</span>
-                    {b.text}
-                  </div>
-                ))
-              ) : (
-                <div className="text-[11px] text-[#999] italic text-center py-2">
-                  No angles identified
-                </div>
-              )}
+              <div className="text-[11px] text-[#999] italic text-center py-2">
+                Coming soon
+              </div>
             </div>
           </div>
 
