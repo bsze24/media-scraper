@@ -108,8 +108,10 @@ function firstSentence(text: string): { first: string; hasMore: boolean } {
 
 function formatPlayerTime(seconds: number): string {
   if (!seconds || seconds < 0) return "0:00";
-  const m = Math.floor(seconds / 60);
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
@@ -273,7 +275,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           },
           onStateChange: (event: { data: number }) => {
             // YT.PlayerState: PLAYING=1, PAUSED=2, ENDED=0, BUFFERING=3
-            setIsPlaying(event.data === 1);
+            // Treat buffering as "playing" — user intent is to play
+            setIsPlaying(event.data === 1 || event.data === 3);
           },
         },
       });
@@ -703,16 +706,17 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         onClick={() => {
                           if (ytPlayerRef.current) {
                             const state = ytPlayerRef.current.getPlayerState();
-                            if (state === 1) {
+                            if (state === 1 || state === 3) {
+                              // Playing or buffering — pause
                               ytPlayerRef.current.pauseVideo();
                             } else {
                               ytPlayerRef.current.playVideo();
                             }
                             // isPlaying synced via onStateChange listener
                           } else {
-                            // Player not loaded yet — queue play for onReady
-                            pendingPlayRef.current = true;
-                            setIsPlaying(true); // optimistic UI update
+                            // Player not loaded yet — toggle pending play
+                            pendingPlayRef.current = !pendingPlayRef.current;
+                            setIsPlaying(pendingPlayRef.current);
                           }
                         }}
                         className="w-8 h-8 flex items-center justify-center text-[#666] hover:text-[#b8860b] transition-colors"
