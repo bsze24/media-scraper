@@ -365,19 +365,23 @@ export default function DesignOption3() {
 
         {/* Right Sidebar */}
         <aside className="h-full bg-[#faf9f7] flex flex-col border-l border-[#e5e3df] overflow-y-auto">
+          {/* Regenerate Button - applies to both Takeaways and Angles */}
+          <div className="px-4 pt-4 pb-2 border-b border-[#e5e3df]">
+            <button 
+              className="w-full flex items-center justify-center gap-1.5 text-[10px] text-[#888] hover:text-[#b8860b] transition-colors px-2 py-2 border border-[#e5e3df] hover:border-[#b8860b]/30 bg-white"
+              title="Regenerate takeaways and angles"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Regenerate Bullets
+            </button>
+          </div>
+
           {/* Key Takeaways */}
           <div className="p-4 border-b border-[#e5e3df]">
             <div className="flex items-center justify-between mb-4">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Key Takeaways</span>
-              <button 
-                className="flex items-center gap-1.5 text-[10px] text-[#888] hover:text-[#b8860b] transition-colors px-2 py-1 border border-[#e5e3df] hover:border-[#b8860b]/30"
-                title="Regenerate takeaways"
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Regenerate
-              </button>
             </div>
             <div className="space-y-3">
               {mockTakeaways.map((t, i) => (
@@ -398,15 +402,6 @@ export default function DesignOption3() {
           <div className="p-4 border-b border-[#e5e3df]">
             <div className="flex items-center justify-between mb-4">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Rowspace Angles</span>
-              <button 
-                className="flex items-center gap-1.5 text-[10px] text-[#888] hover:text-[#b8860b] transition-colors px-2 py-1 border border-[#e5e3df] hover:border-[#b8860b]/30"
-                title="Regenerate angles"
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Regenerate
-              </button>
             </div>
             <div className="space-y-3">
               {mockAngles.map((a, i) => (
