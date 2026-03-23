@@ -754,7 +754,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                 <div
                   key={section.anchor}
                   ref={(el) => { sectionRefs.current[section.anchor] = el; }}
-                  className={`mb-2 transition-opacity ${isMiss ? 'pointer-events-none opacity-25' : ''}`}
+                  className={`mb-2 scroll-mt-16 transition-opacity ${isMiss ? 'pointer-events-none opacity-25' : ''}`}
                 >
                   {/* Section Header */}
                   <button
@@ -866,13 +866,13 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                                   ? highlightText(first, debouncedQuery)
                                   : highlightText(turn.text, debouncedQuery)
                                 }
-                                {(hasMore || summary) && !hostExpanded && !isTurnHit && (
+                                {(hasMore || summary) && !isTurnHit && (
                                   <button
-                                    onClick={() => setExpandedHostTurns((prev) => ({ ...prev, [key]: true }))}
-                                    className="text-[#999] hover:text-[#b8860b] transition-colors ml-0.5"
-                                    title="Show full text"
+                                    onClick={() => setExpandedHostTurns((prev) => ({ ...prev, [key]: !prev[key] }))}
+                                    className="ml-1 text-[12px] text-[#b8860b] hover:underline transition-colors"
+                                    title={hostExpanded ? "Show summary" : "Show full text"}
                                   >
-                                    ...
+                                    {hostExpanded ? "[less]" : "[more]"}
                                   </button>
                                 )}
                               </p>
