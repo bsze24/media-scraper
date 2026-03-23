@@ -207,6 +207,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   const panelInputRef = useRef<HTMLInputElement>(null);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const monologueRef = useRef<HTMLDivElement | null>(null);
   const ytPlayerRef = useRef<YTPlayer | null>(null);
 
   const pendingSeekRef = useRef<number | null>(null);
@@ -543,7 +544,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         <div
                           className="mt-0.5 cursor-pointer font-[family-name:var(--font-source-sans)] text-[11.5px] italic leading-snug text-[#888] hover:text-[#555]"
                           onClick={() => {
-                            if (firstQuote.section_anchor) {
+                            if (isMonologue) {
+                              monologueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                            } else if (firstQuote.section_anchor) {
                               scrollToSection(firstQuote.section_anchor);
                             }
                           }}
@@ -785,19 +788,24 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           <div>
             {/* Monologue: render all turns as a single block, no section grouping */}
             {isMonologue && turns.length > 0 && (
-              <div className="mb-[5px] overflow-hidden rounded border border-[#e5e0d6]">
+              <div ref={monologueRef} className="mb-[5px] overflow-hidden rounded border border-[#e5e0d6]">
                 <div className="bg-[#f2ede5] px-3.5 py-2">
                   <span className="font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#aaa]">
                     Monologue
                   </span>
                 </div>
                 <div className="bg-white px-4 py-1 pb-2.5">
-                  {turns.map((turn, ti) => {
-                    const isTurnHit =
-                      hasSearch && searchResults.turnKeys.has(`${turn.section_anchor ?? INTRO_ANCHOR}-${ti}`);
+                  {turns.map((turn) => {
+                    // Build the same key format as searchResults: per-section index
+                    const bucket = turn.section_anchor && turnsBySection.has(turn.section_anchor)
+                      ? turn.section_anchor : INTRO_ANCHOR;
+                    const bucketTurns = turnsBySection.get(bucket) ?? [];
+                    const idxInBucket = bucketTurns.indexOf(turn);
+                    const turnKey = `${bucket}-${idxInBucket === -1 ? 0 : idxInBucket}`;
+                    const isTurnHit = hasSearch && searchResults.turnKeys.has(turnKey);
                     return (
                       <div
-                        key={ti}
+                        key={turn.turn_index}
                         className={`border-b border-[#f0ece5] py-2.5 last:border-b-0 ${
                           isTurnHit ? "-mx-4 bg-[#eff6ff] px-4" : ""
                         }`}
