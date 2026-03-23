@@ -598,20 +598,24 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
         {/* Center: Transcript */}
         <section className="h-full bg-white overflow-y-auto flex flex-col max-md:h-auto max-md:overflow-visible">
-          {/* Video Controls - Collapsed */}
+          {/* Audio Controls - Collapsed (default) */}
           {!videoExpanded && youtube_id && (
             <div className="sticky top-0 z-40 bg-[#faf9f7]/95 backdrop-blur p-3 flex items-center gap-4 border-b border-[#e5e3df]">
-              <div className="w-20 h-12 bg-[#f0efed] border border-[#e5e3df] flex items-center justify-center">
-                <svg className="w-6 h-6 text-[#999]" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </div>
               <div className="flex-1">
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => setVideoExpanded(true)}
+                    onClick={() => {
+                      if (playerRef.current) {
+                        const state = playerRef.current.getPlayerState();
+                        if (state === 1) {
+                          playerRef.current.pauseVideo();
+                        } else {
+                          playerRef.current.playVideo();
+                        }
+                      }
+                    }}
                     className="w-8 h-8 flex items-center justify-center text-[#666] hover:text-[#b8860b] transition-colors"
-                    title="Expand and play"
+                    title="Play/Pause audio"
                   >
                     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M8 5v14l11-7z" />
@@ -643,9 +647,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             </div>
           )}
 
-          {/* Video Controls - Expanded */}
+          {/* Video Controls - Expanded (sticky) */}
           {videoExpanded && youtube_id && (
-            <div className="flex-shrink-0 bg-[#0a0a0a]">
+            <div className="sticky top-0 z-40 bg-[#0a0a0a]">
               <div className="aspect-video max-h-[50vh] w-full bg-[#111] relative">
                 <div id="yt-player-container" className="h-full w-full" />
                 <button 
