@@ -228,7 +228,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   // Initialize YouTube IFrame API
   useEffect(() => {
-    if (!videoExpanded || !youtube_id) return;
+    if (!youtube_id) return;
     if (ytPlayerRef.current && document.getElementById("yt-player-container")?.querySelector("iframe")) {
       return;
     }
