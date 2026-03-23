@@ -106,6 +106,15 @@ function firstSentence(text: string): { first: string; hasMore: boolean } {
   return { first: text, hasMore: false };
 }
 
+function formatPlayerTime(seconds: number): string {
+  if (!seconds || seconds < 0) return "0:00";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -113,6 +122,10 @@ function firstSentence(text: string): { first: string; hasMore: boolean } {
 interface YTPlayer {
   seekTo(seconds: number, allowSeekAhead: boolean): void;
   playVideo(): void;
+  pauseVideo(): void;
+  getPlayerState(): number;
+  getCurrentTime(): number;
+  getDuration(): number;
 }
 
 interface BulletFeedback {
@@ -203,7 +216,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const [feedback, setFeedback] = useState<Record<number, BulletFeedback>>({});
   const [floatingPanel, setFloatingPanel] = useState<{ idx: number } | null>(null);
   const [panelDraft, setPanelDraft] = useState("");
-  const [videoExpanded, setVideoExpanded] = useState(false);
+  const [videoMode, setVideoMode] = useState<'collapsed' | 'pip' | 'full'>('collapsed');
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null);
   const [relatedExpanded, setRelatedExpanded] = useState(false);
 
@@ -212,6 +228,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const monologueRef = useRef<HTMLDivElement | null>(null);
   const ytPlayerRef = useRef<YTPlayer | null>(null);
   const pendingSeekRef = useRef<number | null>(null);
+  const pendingPlayRef = useRef<boolean>(false);
 
   const seekToTime = useCallback((seconds: number) => {
     const player = ytPlayerRef.current;
@@ -219,14 +236,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       player.seekTo(seconds, true);
       player.playVideo();
     } else {
+      // Player not ready yet — store seek and it will fire in onReady
       pendingSeekRef.current = seconds;
-      setVideoExpanded(true);
     }
   }, []);
 
   // Initialize YouTube IFrame API
   useEffect(() => {
-    if (!videoExpanded || !youtube_id) return;
+    if (!youtube_id) return;
     if (ytPlayerRef.current && document.getElementById("yt-player-container")?.querySelector("iframe")) {
       return;
     }
@@ -251,7 +268,15 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               event.target.seekTo(pendingSeekRef.current, true);
               event.target.playVideo();
               pendingSeekRef.current = null;
+            } else if (pendingPlayRef.current) {
+              event.target.playVideo();
             }
+            pendingPlayRef.current = false;
+          },
+          onStateChange: (event: { data: number }) => {
+            // YT.PlayerState: PLAYING=1, PAUSED=2, ENDED=0, BUFFERING=3
+            // Treat buffering as "playing" — user intent is to play
+            setIsPlaying(event.data === 1 || event.data === 3);
           },
         },
       });
@@ -273,8 +298,23 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     return () => {
       ytPlayerRef.current = null;
       pendingSeekRef.current = null;
+      pendingPlayRef.current = false;
     };
-  }, [videoExpanded, youtube_id]);
+  }, [youtube_id]);
+
+  // Poll player time/duration while playing
+  useEffect(() => {
+    if (!isPlaying) return;
+    const interval = setInterval(() => {
+      const player = ytPlayerRef.current;
+      if (player) {
+        setCurrentTime(player.getCurrentTime());
+        const d = player.getDuration();
+        if (d > 0) setDuration(d);
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [isPlaying]);
 
   // Debounce search
   useEffect(() => {
@@ -597,66 +637,133 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         </aside>
 
         {/* Center: Transcript */}
-        <section className="h-full bg-white overflow-y-auto flex flex-col max-md:h-auto max-md:overflow-visible">
-          {/* Video Controls - Collapsed */}
-          {!videoExpanded && youtube_id && (
-            <div className="sticky top-0 z-40 bg-[#faf9f7]/95 backdrop-blur p-3 flex items-center gap-4 border-b border-[#e5e3df]">
-              <div className="w-20 h-12 bg-[#f0efed] border border-[#e5e3df] flex items-center justify-center">
-                <svg className="w-6 h-6 text-[#999]" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => setVideoExpanded(true)}
-                    className="w-8 h-8 flex items-center justify-center text-[#666] hover:text-[#b8860b] transition-colors"
-                    title="Expand and play"
-                  >
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                  </button>
-                  <span className="text-[11px] font-mono text-[#b8860b]">0:00</span>
-                  <div className="flex-1 h-1 bg-[#e5e3df] relative rounded-full overflow-hidden">
-                    <div className="absolute top-0 left-0 h-full w-0 bg-[#b8860b]/40" />
+        <section className="relative h-full bg-white overflow-y-auto flex flex-col max-md:h-auto max-md:overflow-visible">
+          {/* Single always-mounted YouTube player container — CSS positions it per videoMode */}
+          {youtube_id && (
+            <div
+              className={
+                videoMode === 'full'
+                  ? "sticky top-0 z-40 bg-[#0a0a0a]"
+                  : videoMode === 'pip'
+                  ? `fixed z-50 w-[300px] shadow-2xl rounded overflow-hidden bg-[#0a0a0a] ${floatingPanel !== null ? "bottom-4 left-4" : "bottom-4 right-4"}`
+                  : "absolute -left-[9999px] w-1 h-1 overflow-hidden"
+              }
+            >
+              <div className={
+                videoMode === 'full'
+                  ? "aspect-video max-h-[50vh] w-full bg-[#111] relative"
+                  : videoMode === 'pip'
+                  ? "aspect-video w-full relative"
+                  : ""
+              }>
+                <div id="yt-player-container" className="h-full w-full" />
+                {/* Mode switch controls — visible in full and pip */}
+                {videoMode !== 'collapsed' && (
+                  <div className={`absolute flex items-center gap-1 ${videoMode === 'full' ? 'top-3 right-3 gap-2' : 'top-2 right-2'}`}>
+                    {videoMode === 'full' ? (
+                      <button
+                        onClick={() => setVideoMode('pip')}
+                        className="p-2 bg-black/50 text-white/80 hover:text-white hover:bg-black/70 transition-colors rounded"
+                        title="Mini player (podcast mode)"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17L17 7M17 7H8M17 7v9" />
+                        </svg>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setVideoMode('full')}
+                        className="p-1.5 bg-black/60 text-white/80 hover:text-white hover:bg-black/80 transition-colors rounded"
+                        title="Full video (interview mode)"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m0-16l-3 3m3-3l3 3m-3 13l-3-3m3 3l3-3" />
+                        </svg>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setVideoMode('collapsed')}
+                      className={`${videoMode === 'full' ? 'p-2 bg-black/50' : 'p-1.5 bg-black/60'} text-white/80 hover:text-white hover:bg-black/70 transition-colors rounded`}
+                      title="Audio only"
+                    >
+                      <svg className={videoMode === 'full' ? 'w-4 h-4' : 'w-3.5 h-3.5'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
                   </div>
-                  <span className="text-[11px] font-mono text-[#999]">--:--</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 text-[#888]">
-                <button
-                  onClick={() => setVideoExpanded(true)}
-                  className="text-[10px] font-mono hover:text-[#b8860b] transition-colors px-2 py-1 bg-white border border-[#e5e3df]"
-                  title="Expand video to change speed"
-                >1x</button>
-                <button 
-                  onClick={() => setVideoExpanded(true)}
-                  className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" 
-                  title="Expand video"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
-                  </svg>
-                </button>
+                )}
               </div>
             </div>
           )}
 
-          {/* Video Controls - Expanded */}
-          {videoExpanded && youtube_id && (
-            <div className="flex-shrink-0 bg-[#0a0a0a]">
-              <div className="aspect-video max-h-[50vh] w-full bg-[#111] relative">
-                <div id="yt-player-container" className="h-full w-full" />
-                <button 
-                  onClick={() => setVideoExpanded(false)}
-                  className="absolute top-3 right-3 p-2 bg-black/50 text-white/80 hover:text-white hover:bg-black/70 transition-colors rounded"
-                  title="Collapse video"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+          {/* Audio Controls Bar - shown when collapsed */}
+          {youtube_id && videoMode === 'collapsed' && (
+            <div className="sticky top-0 z-40 bg-[#faf9f7]/95 backdrop-blur border-b border-[#e5e3df]">
+              <div className="p-3 flex items-center gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3">
+<button
+                        onClick={() => {
+                          if (ytPlayerRef.current) {
+                            const state = ytPlayerRef.current.getPlayerState();
+                            if (state === 1 || state === 3) {
+                              // Playing or buffering — pause
+                              ytPlayerRef.current.pauseVideo();
+                            } else {
+                              ytPlayerRef.current.playVideo();
+                            }
+                            // isPlaying synced via onStateChange listener
+                          } else {
+                            // Player not loaded yet — toggle pending play
+                            pendingPlayRef.current = !pendingPlayRef.current;
+                            setIsPlaying(pendingPlayRef.current);
+                          }
+                        }}
+                        className="w-8 h-8 flex items-center justify-center text-[#666] hover:text-[#b8860b] transition-colors"
+                        title={isPlaying ? "Pause" : "Play"}
+                      >
+                        {isPlaying ? (
+                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        )}
+                      </button>
+                    <span className="text-[11px] font-mono text-[#b8860b]">{formatPlayerTime(currentTime)}</span>
+                    <div className="flex-1 h-1 bg-[#e5e3df] relative rounded-full overflow-hidden">
+                      <div
+                        className="absolute top-0 left-0 h-full bg-[#b8860b]/40 transition-all"
+                        style={{ width: duration > 0 ? `${(currentTime / duration) * 100}%` : "0%" }}
+                      />
+                    </div>
+                    <span className="text-[11px] font-mono text-[#999]">{duration > 0 ? formatPlayerTime(duration) : "--:--"}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-[#888]">
+                  {/* Mini PiP */}
+                  <button 
+                    onClick={() => setVideoMode('pip')}
+                    className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" 
+                    title="Mini player (podcast mode)"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17L17 7M17 7H8M17 7v9" />
+                    </svg>
+                  </button>
+                  {/* Full expand - vertical arrows */}
+                  <button 
+                    onClick={() => setVideoMode('full')}
+                    className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" 
+                    title="Full video (interview mode)"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m0-16l-3 3m3-3l3 3m-3 13l-3-3m3 3l3-3" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1035,6 +1142,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               </div>
             )}
           </div>
+
+          {/* PiP video is now rendered via the unified player container (position: fixed) */}
         </aside>
       </main>
 

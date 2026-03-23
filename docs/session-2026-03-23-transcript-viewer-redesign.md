@@ -240,8 +240,93 @@ Deleted all prototype files before PR:
 
 ### Final Design Characteristics
 - **Chosen Direction:** Option 3 (Dark Terminal) converted to light mode
-- **Layout:** 3-column grid (220px / 1fr / 300px)
+- **Layout:** 3-column grid (280px / 1fr / 280px)
 - **Background:** Warm cream (`#faf9f7`)
 - **Accent:** Amber/gold (`#b8860b`)
 - **Typography:** System sans-serif, uppercase labels, monospace timestamps
 - **Aesthetic:** Professional, information-dense, warm neutral palette
+
+---
+
+## Session Continuation (Morning)
+
+### Video Player Improvements
+
+User raised three issues:
+1. Two play buttons are duplicative
+2. Default play should just play audio, video only on expand
+3. Expanded video player should be sticky (audio bar was sticky, video got lost on scroll)
+
+**Initial Fixes:**
+- Removed duplicate thumbnail play button
+- Made play button control audio without expanding video
+- Added `sticky top-0 z-40` to expanded video
+
+**Issue:** Play button broke due to CORS errors in v0 sandbox (YouTube embed blocked). Works on localhost/production.
+
+### Left Sidebar Space Optimization
+
+User feedback:
+- Source Series and Episode are duplicative (already in header with ROWSPACE logo)
+- Want more section headings visible on initial load
+- Widen (not narrow) left column for section headings to breathe
+- Remove "Internal Search" title but keep search bar
+
+**Changes:**
+- Removed duplicate Source Series / Episode from left sidebar
+- Widened left column: 220px → 280px
+- Tightened padding: `py-4` → `py-3`, `py-3` → `py-2`, `px-4` → `px-3`
+- Removed "Internal Search" label, kept search input
+- Tightened section header margins: `mb-3` → `mb-2` → `mb-1`
+
+### Video Player UX Overhaul
+
+User feedback: Expanded video is huge, takes too much vertical space. Proposed two modes:
+1. **Podcast mode** - video is nice-to-have, small PiP
+2. **Interview mode** - want big vertical space to see reactions
+
+**Designed three-state system:**
+
+| State | Trigger | Behavior |
+|-------|---------|----------|
+| Collapsed | Default | Audio bar at top, sticky |
+| Mini PiP | Click `↗` | Small video docked bottom-right of sidebar |
+| Full | Click `↕` | Large sticky video at top of center column |
+
+**Icon Discussion:**
+
+| Button | Final Icon |
+|--------|------------|
+| Audio → Mini PiP | `↗` (pop out) |
+| Audio → Full | `↕` (vertical expand) |
+| Mini PiP → Full | `↕` |
+| Full → Mini PiP | `↗` |
+| Any → Collapsed | `✕` (close) |
+
+**Play/Pause Toggle:** Added `isPlaying` state so button shows play triangle or pause bars.
+
+### Workflow Discussion
+
+User noted v0 costs ($20/month credits burned quickly).
+
+**Recommended split:**
+- **v0:** Design exploration, visual iteration, initial scaffolding
+- **Claude Code:** Debugging, refactoring, bug fixes, non-visual work
+
+Play button debugging should have gone to Claude Code after first failed attempt.
+
+---
+
+## Updated Files (Morning Session)
+
+| File | Changes |
+|------|---------|
+| `TranscriptViewer.tsx` | Three-state video player, play/pause toggle, left sidebar optimization |
+
+## Final Icon Scheme
+
+```
+Collapsed ──↗──> Mini PiP ──↕──> Full
+    ^              │                │
+    └──────✕───────┴────────✕───────┘
+```
