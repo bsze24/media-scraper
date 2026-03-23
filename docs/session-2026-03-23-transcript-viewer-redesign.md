@@ -224,8 +224,24 @@ Deleted all prototype files before PR:
 
 ## Visual References
 
-*Note: Screenshots and HTML mockups were shared in chat but cannot be embedded in markdown.*
+### Reference Screenshot (Google Stitch / Archivist Intelligence)
+![Stitch Reference](./assets/stitch-reference-screenshot.png)
 
-- **Reference:** Google Stitch / "Archivist Intelligence" transcript viewer
+**Local Path:** `docs/assets/stitch-reference-screenshot.png`
+
+### Design Reference Files
+- **HTML Mockup:** `user_read_only_context/text_attachments/code-6QCq8.html`
+- **DESIGN.md Spec:** `user_read_only_context/text_attachments/DESIGN-mVwI6.md`
+
+### Preview URLs
+- **v0 Preview:** Available in v0 chat during session
+- **PR Preview:** Vercel preview deployment on PR #36
+- **Production:** Will deploy to `media-scraper-xi.vercel.app` after merge
+
+### Final Design Characteristics
 - **Chosen Direction:** Option 3 (Dark Terminal) converted to light mode
-- **Final Aesthetic:** Professional, information-dense, warm neutral palette with amber accents
+- **Layout:** 3-column grid (220px / 1fr / 300px)
+- **Background:** Warm cream (`#faf9f7`)
+- **Accent:** Amber/gold (`#b8860b`)
+- **Typography:** System sans-serif, uppercase labels, monospace timestamps
+- **Aesthetic:** Professional, information-dense, warm neutral palette
