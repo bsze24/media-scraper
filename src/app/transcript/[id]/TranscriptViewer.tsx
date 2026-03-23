@@ -113,6 +113,8 @@ function firstSentence(text: string): { first: string; hasMore: boolean } {
 interface YTPlayer {
   seekTo(seconds: number, allowSeekAhead: boolean): void;
   playVideo(): void;
+  pauseVideo(): void;
+  getPlayerState(): number;
 }
 
 interface BulletFeedback {
@@ -605,12 +607,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => {
-                      if (playerRef.current) {
-                        const state = playerRef.current.getPlayerState();
+                      if (ytPlayerRef.current) {
+                        const state = ytPlayerRef.current.getPlayerState();
                         if (state === 1) {
-                          playerRef.current.pauseVideo();
+                          ytPlayerRef.current.pauseVideo();
                         } else {
-                          playerRef.current.playVideo();
+                          ytPlayerRef.current.playVideo();
                         }
                       }
                     }}
