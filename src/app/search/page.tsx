@@ -14,11 +14,11 @@ function AppearanceTableRow({ row }: { row: AppearanceListRow }) {
   const bulletCount = row.prep_bullets?.bullets?.length ?? 0;
 
   return (
-    <tr className="border-b border-zinc-100 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50">
+    <tr className="border-b border-zinc-100 hover:bg-zinc-50">
       <td className="py-2 pr-3">
         <a
           href={`/transcript/${row.id}`}
-          className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+          className="text-sm font-medium text-blue-600 hover:underline"
         >
           {row.title ?? "Untitled"}
         </a>
@@ -59,7 +59,7 @@ export default async function SearchPage({
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
-      <h1 className="mb-1 text-2xl font-bold text-zinc-900 dark:text-zinc-100">
+      <h1 className="mb-1 text-2xl font-bold text-zinc-900">
         {query ? "Search Results" : "All Appearances"}
       </h1>
       <p className="mb-6 text-sm text-zinc-500">
@@ -71,7 +71,7 @@ export default async function SearchPage({
       <div className="mt-6 overflow-x-auto">
         <table className="w-full text-left">
           <thead>
-            <tr className="border-b border-zinc-200 text-xs font-medium uppercase tracking-wider text-zinc-400 dark:border-zinc-700">
+            <tr className="border-b border-zinc-200 text-xs font-medium uppercase tracking-wider text-zinc-400">
               <th className="pb-2 pr-3">Title</th>
               <th className="pb-2 pr-3">Source</th>
               <th className="pb-2 pr-3">Date</th>

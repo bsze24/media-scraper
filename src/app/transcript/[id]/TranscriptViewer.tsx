@@ -154,6 +154,27 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     return set;
   }, [prep_bullets]);
 
+  // Pre-compute cited turn indices for O(1) lookup in render loop
+  const citedTurnIndices = useMemo(() => {
+    const set = new Set<number>();
+    for (const b of prep_bullets) {
+      for (const sq of b.supporting_quotes) {
+        if (!sq.section_anchor || !sq.speaker) continue;
+        const quotePrefix = sq.quote.slice(0, 80);
+        for (const t of turns) {
+          if (
+            t.section_anchor === sq.section_anchor &&
+            t.speaker === sq.speaker &&
+            t.text.includes(quotePrefix)
+          ) {
+            set.add(t.turn_index);
+          }
+        }
+      }
+    }
+    return set;
+  }, [prep_bullets, turns]);
+
   const INTRO_ANCHOR = "__intro";
   const turnsBySection = useMemo(() => {
     const map = new Map<string, typeof turns>();
@@ -818,13 +839,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         const summary = turn_summaries?.[turn.turn_index];
                         const dimmed = activeSpeaker && activeSpeaker !== turn.speaker;
                         const speakerInfo = speakers.find(s => s.name === turn.speaker);
-                        const isCitedTurn = prep_bullets.some(b =>
-                          b.supporting_quotes.some(sq =>
-                            sq.section_anchor === section.anchor &&
-                            sq.speaker === turn.speaker &&
-                            turn.text.includes(sq.quote.slice(0, 80))
-                          )
-                        );
+                        const isCitedTurn = citedTurnIndices.has(turn.turn_index);
 
                         return (
                           <div

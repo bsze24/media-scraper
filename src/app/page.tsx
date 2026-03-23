@@ -30,29 +30,29 @@ const STATUS_BADGES: Record<
 > = {
   queued: {
     label: "queued",
-    className: "bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300",
+    className: "bg-zinc-200 text-zinc-700",
   },
   extracting: {
     label: "extracting",
-    className: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+    className: "bg-blue-100 text-blue-700",
   },
   cleaning: {
     label: "cleaning",
-    className: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+    className: "bg-blue-100 text-blue-700",
   },
   analyzing: {
     label: "analyzing",
     className:
-      "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300",
+      "bg-yellow-100 text-yellow-700",
   },
   complete: {
     label: "done",
     className:
-      "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+      "bg-green-100 text-green-700",
   },
   failed: {
     label: "failed",
-    className: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+    className: "bg-red-100 text-red-700",
   },
 };
 
@@ -231,9 +231,9 @@ export default function Home() {
 
   if (!authed) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-zinc-950">
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans">
         <div className="w-80 space-y-4">
-          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+          <h1 className="text-lg font-semibold text-zinc-900">
             Admin Login
           </h1>
           <input
@@ -256,7 +256,7 @@ export default function Home() {
                 }
               }
             }}
-            className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-blue-500"
           />
           <button
             onClick={async () => {
@@ -270,7 +270,7 @@ export default function Home() {
                 setAuthError(true);
               }
             }}
-            className="w-full rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            className="w-full rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
           >
             Sign in
           </button>
@@ -283,23 +283,23 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 p-8 font-sans dark:bg-zinc-950">
+    <div className="min-h-screen bg-zinc-50 p-8 font-sans">
       <div className="mx-auto max-w-5xl space-y-6">
-        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
+        <h1 className="text-2xl font-semibold text-zinc-900">
           Meeting Prep Tool — Admin
         </h1>
 
         {/* URL Submission */}
-        <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <section className="rounded-lg border border-zinc-200 bg-white p-4">
           <label
             htmlFor="url-input"
-            className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+            className="mb-2 block text-sm font-medium text-zinc-700"
           >
             Paste URLs (one per line)
           </label>
           <textarea
             id="url-input"
-            className="w-full rounded border border-zinc-300 bg-white p-3 font-mono text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            className="w-full rounded border border-zinc-300 bg-white p-3 font-mono text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none"
             rows={5}
             value={urlText}
             onChange={(e) => setUrlText(e.target.value)}
@@ -309,12 +309,12 @@ export default function Home() {
             <button
               onClick={handleSubmit}
               disabled={submitting || urlText.trim().length === 0}
-              className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+              className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
             >
               {submitting ? "Submitting\u2026" : "Submit URLs"}
             </button>
             {submitMessage && (
-              <span className="text-sm text-zinc-600 dark:text-zinc-400">
+              <span className="text-sm text-zinc-600">
                 {submitMessage}
               </span>
             )}
@@ -323,18 +323,18 @@ export default function Home() {
 
         {/* Status Bar */}
         {counts && (
-          <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <section className="rounded-lg border border-zinc-200 bg-white p-4">
             <div className="flex flex-wrap items-center gap-4 text-sm">
-              <span className="text-zinc-600 dark:text-zinc-400">
+              <span className="text-zinc-600">
                 Queued: <strong>{counts.queued}</strong>
               </span>
-              <span className="text-zinc-600 dark:text-zinc-400">
+              <span className="text-zinc-600">
                 Processing: <strong>{activeCount}</strong>
               </span>
-              <span className="text-zinc-600 dark:text-zinc-400">
+              <span className="text-zinc-600">
                 Done: <strong>{counts.complete}</strong>
               </span>
-              <span className="text-zinc-600 dark:text-zinc-400">
+              <span className="text-zinc-600">
                 Failed: <strong>{counts.failed}</strong>
               </span>
               <div className="ml-auto flex gap-2">
@@ -342,7 +342,7 @@ export default function Home() {
                   <button
                     onClick={handleRetryAllFailed}
                     disabled={retryingAll}
-                    className="rounded border border-amber-300 px-4 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950"
+                    className="rounded border border-amber-300 px-4 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50"
                   >
                     {retryingAll ? "Retrying\u2026" : "Retry All Failed"}
                   </button>
@@ -357,7 +357,7 @@ export default function Home() {
                 {processing && (
                   <button
                     onClick={handleStop}
-                    className="rounded border border-red-300 px-4 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950"
+                    className="rounded border border-red-300 px-4 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
                   >
                     Stop
                   </button>
@@ -369,26 +369,26 @@ export default function Home() {
 
         {/* Appearances Table */}
         {appearances.length > 0 && (
-          <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-200 bg-zinc-50 text-left dark:border-zinc-800 dark:bg-zinc-950">
-                  <th className="px-4 py-2 font-medium text-zinc-600 dark:text-zinc-400">
+                <tr className="border-b border-zinc-200 bg-zinc-50 text-left">
+                  <th className="px-4 py-2 font-medium text-zinc-600">
                     ID
                   </th>
-                  <th className="px-4 py-2 font-medium text-zinc-600 dark:text-zinc-400">
+                  <th className="px-4 py-2 font-medium text-zinc-600">
                     URL
                   </th>
-                  <th className="px-4 py-2 font-medium text-zinc-600 dark:text-zinc-400">
+                  <th className="px-4 py-2 font-medium text-zinc-600">
                     Title
                   </th>
-                  <th className="px-4 py-2 font-medium text-zinc-600 dark:text-zinc-400">
+                  <th className="px-4 py-2 font-medium text-zinc-600">
                     Status
                   </th>
-                  <th className="px-4 py-2 font-medium text-zinc-600 dark:text-zinc-400">
+                  <th className="px-4 py-2 font-medium text-zinc-600">
                     Detail
                   </th>
-                  <th className="px-4 py-2 font-medium text-zinc-600 dark:text-zinc-400">
+                  <th className="px-4 py-2 font-medium text-zinc-600">
                     Action
                   </th>
                 </tr>
@@ -403,25 +403,25 @@ export default function Home() {
                   return (
                     <tr
                       key={a.id}
-                      className="border-b border-zinc-100 dark:border-zinc-800"
+                      className="border-b border-zinc-100"
                     >
                       <td
-                        className="max-w-[100px] truncate px-4 py-2 font-mono text-xs text-zinc-500 dark:text-zinc-400"
+                        className="max-w-[100px] truncate px-4 py-2 font-mono text-xs text-zinc-500"
                         title={a.id}
                       >
                         {a.id.slice(0, 8)}
                       </td>
                       <td
-                        className="max-w-[200px] truncate px-4 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300"
+                        className="max-w-[200px] truncate px-4 py-2 font-mono text-xs text-zinc-700"
                         title={a.source_url}
                       >
                         {truncateUrl(a.source_url)}
                       </td>
-                      <td className="max-w-[200px] truncate px-4 py-2 text-zinc-700 dark:text-zinc-300">
+                      <td className="max-w-[200px] truncate px-4 py-2 text-zinc-700">
                         {isComplete ? (
                           <a
                             href={`/transcript/${a.id}`}
-                            className="text-blue-600 hover:underline dark:text-blue-400"
+                            className="text-blue-600 hover:underline"
                           >
                             {a.title ?? "\u2014"}
                           </a>
@@ -459,14 +459,14 @@ export default function Home() {
                           </span>
                         )}
                       </td>
-                      <td className="max-w-[200px] truncate px-4 py-2 text-xs text-zinc-500 dark:text-zinc-400">
+                      <td className="max-w-[200px] truncate px-4 py-2 text-xs text-zinc-500">
                         {a.processing_detail ?? "\u2014"}
                       </td>
                       <td className="px-4 py-2">
                         {canRetry && (
                           <button
                             onClick={() => handleRetry(a.id)}
-                            className="text-xs font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
+                            className="text-xs font-medium text-blue-600 hover:text-blue-500"
                           >
                             Retry
                           </button>
