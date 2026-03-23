@@ -106,6 +106,13 @@ function firstSentence(text: string): { first: string; hasMore: boolean } {
   return { first: text, hasMore: false };
 }
 
+function formatPlayerTime(seconds: number): string {
+  if (!seconds || seconds < 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -115,6 +122,8 @@ interface YTPlayer {
   playVideo(): void;
   pauseVideo(): void;
   getPlayerState(): number;
+  getCurrentTime(): number;
+  getDuration(): number;
 }
 
 interface BulletFeedback {
@@ -207,6 +216,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const [panelDraft, setPanelDraft] = useState("");
   const [videoMode, setVideoMode] = useState<'collapsed' | 'pip' | 'full'>('collapsed');
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null);
   const [relatedExpanded, setRelatedExpanded] = useState(false);
 
@@ -287,6 +298,20 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       pendingPlayRef.current = false;
     };
   }, [youtube_id]);
+
+  // Poll player time/duration while playing
+  useEffect(() => {
+    if (!isPlaying) return;
+    const interval = setInterval(() => {
+      const player = ytPlayerRef.current;
+      if (player) {
+        setCurrentTime(player.getCurrentTime());
+        const d = player.getDuration();
+        if (d > 0) setDuration(d);
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [isPlaying]);
 
   // Debounce search
   useEffect(() => {
@@ -703,11 +728,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                           </svg>
                         )}
                       </button>
-                    <span className="text-[11px] font-mono text-[#b8860b]">0:00</span>
+                    <span className="text-[11px] font-mono text-[#b8860b]">{formatPlayerTime(currentTime)}</span>
                     <div className="flex-1 h-1 bg-[#e5e3df] relative rounded-full overflow-hidden">
-                      <div className="absolute top-0 left-0 h-full w-0 bg-[#b8860b]/40" />
+                      <div
+                        className="absolute top-0 left-0 h-full bg-[#b8860b]/40 transition-all"
+                        style={{ width: duration > 0 ? `${(currentTime / duration) * 100}%` : "0%" }}
+                      />
                     </div>
-                    <span className="text-[11px] font-mono text-[#999]">--:--</span>
+                    <span className="text-[11px] font-mono text-[#999]">{duration > 0 ? formatPlayerTime(duration) : "--:--"}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 text-[#888]">
