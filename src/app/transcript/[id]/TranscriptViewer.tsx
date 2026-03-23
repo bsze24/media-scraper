@@ -93,8 +93,8 @@ function formatTimestamp(seconds: number): string {
 }
 
 function sectionSourceLabel(source?: string): string | null {
-  if (source === "derived") return "(parsed)";
-  if (source === "inferred") return "(AI)";
+  if (source === "derived") return "(auto)";
+  if (source === "inferred") return "(auto)";
   return null;
 }
 
@@ -394,8 +394,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             <div className="flex items-center gap-2 mb-3">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Speakers</span>
               {has_inferred_attribution && (
-                <span className="text-[9px] text-[#bbb] italic" title="Speaker labels were inferred from auto-captions and may not be accurate">
-                  (inferred)
+                <span className="text-[9px] text-[#bbb] italic" title="Speaker labels were auto-generated and may not be accurate">
+                  (auto)
                 </span>
               )}
             </div>
@@ -857,29 +857,25 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
                             {/* Text content - aligned with header */}
                             {isHost ? (
-                              <div>
-                                <p className="text-[14px] leading-[1.6] text-[#555] italic">
-                                  {hostExpanded || isTurnHit
-                                    ? highlightText(turn.text, debouncedQuery)
-                                    : summary
-                                    ? summary
-                                    : hasMore
-                                    ? highlightText(first, debouncedQuery)
-                                    : highlightText(turn.text, debouncedQuery)
-                                  }
-                                </p>
-                                {(hasMore || summary) && (
+                              <p className="text-[14px] leading-[1.6] text-[#555] italic">
+                                {hostExpanded || isTurnHit
+                                  ? highlightText(turn.text, debouncedQuery)
+                                  : summary
+                                  ? summary
+                                  : hasMore
+                                  ? highlightText(first, debouncedQuery)
+                                  : highlightText(turn.text, debouncedQuery)
+                                }
+                                {(hasMore || summary) && !hostExpanded && !isTurnHit && (
                                   <button
-                                    onClick={() => setExpandedHostTurns((prev) => ({ ...prev, [key]: !prev[key] }))}
-                                    className="mt-1 text-[10px] text-[#bbb] hover:text-[#777]"
+                                    onClick={() => setExpandedHostTurns((prev) => ({ ...prev, [key]: true }))}
+                                    className="text-[#999] hover:text-[#b8860b] transition-colors ml-0.5"
+                                    title="Show full text"
                                   >
-                                    {summary
-                                      ? (hostExpanded ? "summary" : "full text")
-                                      : (hostExpanded ? "less" : "more")
-                                    }
+                                    ...
                                   </button>
                                 )}
-                              </div>
+                              </p>
                             ) : (
                               <p className="text-[14px] leading-[1.6] text-[#333]">
                                 {highlightText(turn.text, debouncedQuery)}
