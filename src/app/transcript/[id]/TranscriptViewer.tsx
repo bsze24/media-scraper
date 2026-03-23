@@ -357,7 +357,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   // ---- Render ----
   return (
-    <div className="h-screen flex flex-col bg-[#faf9f7] text-[#1a1a1a] overflow-hidden">
+    <div className="h-screen flex flex-col bg-[#faf9f7] text-[#1a1a1a] overflow-hidden max-md:h-auto max-md:min-h-screen max-md:overflow-visible">
       {/* Header */}
       <header className="flex-shrink-0 h-12 px-4 flex items-center justify-between bg-white border-b border-[#e5e3df]">
         <div className="flex items-center gap-6">
@@ -376,10 +376,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       </header>
 
       {/* Main 3-Column Grid */}
-      <main className="flex-1 grid overflow-hidden max-md:flex max-md:flex-col" style={{ gridTemplateColumns: '220px 1fr 300px' }}>
+      <main className="flex-1 grid overflow-hidden max-md:flex max-md:flex-col max-md:overflow-visible" style={{ gridTemplateColumns: '220px 1fr 300px' }}>
         
         {/* Left Sidebar */}
-        <aside className="h-full bg-[#faf9f7] flex flex-col border-r border-[#e5e3df] overflow-y-auto max-md:order-first max-md:border-r-0 max-md:border-b">
+        <aside className="h-full bg-[#faf9f7] flex flex-col border-r border-[#e5e3df] overflow-y-auto max-md:h-auto max-md:overflow-visible max-md:order-first max-md:border-r-0 max-md:border-b">
           {/* Episode Meta */}
           <div className="px-4 py-4 border-b border-[#e5e3df]">
             <div className="text-[10px] font-medium uppercase tracking-wider text-[#999] mb-1">Source Series</div>
@@ -576,7 +576,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
           {/* Export */}
           <div className="px-4 py-3 border-t border-[#e5e3df]">
-            <button className="w-full flex items-center justify-center gap-2 py-2.5 bg-white border border-[#e5e3df] text-[11px] font-medium text-[#666] hover:text-[#b8860b] hover:border-[#b8860b]/30 transition-all">
+            <button className="w-full flex items-center justify-center gap-2 py-2.5 bg-white border border-[#e5e3df] text-[11px] font-medium text-[#ccc] cursor-default" title="Coming soon">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
@@ -586,7 +586,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         </aside>
 
         {/* Center: Transcript */}
-        <section className="h-full bg-white overflow-y-auto flex flex-col">
+        <section className="h-full bg-white overflow-y-auto flex flex-col max-md:h-auto max-md:overflow-visible">
           {/* Video Controls - Collapsed */}
           {!videoExpanded && youtube_id && (
             <div className="sticky top-0 z-40 bg-[#faf9f7]/95 backdrop-blur p-3 flex items-center gap-4 border-b border-[#e5e3df]">
@@ -597,7 +597,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-3">
-                  <button className="w-8 h-8 flex items-center justify-center text-[#666] hover:text-[#b8860b] transition-colors">
+                  <button
+                    onClick={() => setVideoExpanded(true)}
+                    className="w-8 h-8 flex items-center justify-center text-[#666] hover:text-[#b8860b] transition-colors"
+                    title="Expand and play"
+                  >
                     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M8 5v14l11-7z" />
                     </svg>
@@ -610,7 +614,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                 </div>
               </div>
               <div className="flex items-center gap-3 text-[#888]">
-                <button className="text-[10px] font-mono hover:text-[#b8860b] transition-colors px-2 py-1 bg-white border border-[#e5e3df]">1x</button>
+                <button
+                  onClick={() => setVideoExpanded(true)}
+                  className="text-[10px] font-mono hover:text-[#b8860b] transition-colors px-2 py-1 bg-white border border-[#e5e3df]"
+                  title="Expand video to change speed"
+                >1x</button>
                 <button 
                   onClick={() => setVideoExpanded(true)}
                   className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" 
@@ -810,9 +818,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         const summary = turn_summaries?.[turn.turn_index];
                         const dimmed = activeSpeaker && activeSpeaker !== turn.speaker;
                         const speakerInfo = speakers.find(s => s.name === turn.speaker);
-                        const isCitedTurn = prep_bullets.some(b => 
-                          b.supporting_quotes.some(sq => 
-                            sq.section_anchor === section.anchor && sq.speaker === turn.speaker
+                        const isCitedTurn = prep_bullets.some(b =>
+                          b.supporting_quotes.some(sq =>
+                            sq.section_anchor === section.anchor &&
+                            sq.speaker === turn.speaker &&
+                            turn.text.includes(sq.quote.slice(0, 80))
                           )
                         );
 
@@ -870,7 +880,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                                   <button
                                     onClick={() => setExpandedHostTurns((prev) => ({ ...prev, [key]: !prev[key] }))}
                                     className="ml-1 text-[12px] text-[#b8860b] hover:underline transition-colors"
-                                    title={hostExpanded ? "Show summary" : "Show full text"}
+                                    title={hostExpanded ? (summary ? "Show summary" : "Show less") : "Show full text"}
                                   >
                                     {hostExpanded ? "[less]" : "[more]"}
                                   </button>
@@ -893,7 +903,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         </section>
 
         {/* Right Sidebar */}
-        <aside className="h-full bg-[#faf9f7] flex flex-col border-l border-[#e5e3df] overflow-y-auto max-md:border-l-0 max-md:border-t">
+        <aside className="h-full bg-[#faf9f7] flex flex-col border-l border-[#e5e3df] overflow-y-auto max-md:h-auto max-md:overflow-visible max-md:border-l-0 max-md:border-t">
           {/* Regenerate Button */}
           <div className="px-4 pt-4 pb-2 border-b border-[#e5e3df]">
             <RegenerateBulletsButton
