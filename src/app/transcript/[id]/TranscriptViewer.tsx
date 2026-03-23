@@ -215,6 +215,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const monologueRef = useRef<HTMLDivElement | null>(null);
   const ytPlayerRef = useRef<YTPlayer | null>(null);
   const pendingSeekRef = useRef<number | null>(null);
+  const pendingPlayRef = useRef<boolean>(false);
 
   const seekToTime = useCallback((seconds: number) => {
     const player = ytPlayerRef.current;
@@ -254,7 +255,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               event.target.seekTo(pendingSeekRef.current, true);
               event.target.playVideo();
               pendingSeekRef.current = null;
+            } else if (pendingPlayRef.current) {
+              event.target.playVideo();
             }
+            pendingPlayRef.current = false;
           },
           onStateChange: (event: { data: number }) => {
             // YT.PlayerState: PLAYING=1, PAUSED=2, ENDED=0, BUFFERING=3
@@ -280,6 +284,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     return () => {
       ytPlayerRef.current = null;
       pendingSeekRef.current = null;
+      pendingPlayRef.current = false;
     };
   }, [youtube_id]);
 
@@ -604,7 +609,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         </aside>
 
         {/* Center: Transcript */}
-        <section className="h-full bg-white overflow-y-auto flex flex-col max-md:h-auto max-md:overflow-visible">
+        <section className="relative h-full bg-white overflow-y-auto flex flex-col max-md:h-auto max-md:overflow-visible">
           {/* Single always-mounted YouTube player container — CSS positions it per videoMode */}
           {youtube_id && (
             <div
@@ -679,6 +684,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                               ytPlayerRef.current.playVideo();
                             }
                             // isPlaying synced via onStateChange listener
+                          } else {
+                            // Player not loaded yet — queue play for onReady
+                            pendingPlayRef.current = true;
+                            setIsPlaying(true); // optimistic UI update
                           }
                         }}
                         className="w-8 h-8 flex items-center justify-center text-[#666] hover:text-[#b8860b] transition-colors"
