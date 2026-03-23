@@ -397,7 +397,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       </header>
 
       {/* Main 3-Column Grid */}
-      <main className="flex-1 grid overflow-hidden max-md:flex max-md:flex-col max-md:overflow-visible" style={{ gridTemplateColumns: '190px 1fr 280px' }}>
+      <main className="flex-1 grid overflow-hidden max-md:flex max-md:flex-col max-md:overflow-visible" style={{ gridTemplateColumns: '280px 1fr 280px' }}>
         
         {/* Left Sidebar */}
         <aside className="h-full bg-[#faf9f7] flex flex-col border-r border-[#e5e3df] overflow-y-auto max-md:h-auto max-md:overflow-visible max-md:order-first max-md:border-r-0 max-md:border-b">
