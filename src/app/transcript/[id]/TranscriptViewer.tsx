@@ -361,8 +361,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       {/* Header */}
       <header className="flex-shrink-0 h-12 px-4 flex items-center justify-between bg-white border-b border-[#e5e3df]">
         <div className="flex items-center gap-6">
-          <span className="text-sm font-semibold tracking-wide text-[#b8860b]">
-            ARCHIVIST
+          <span className="text-sm font-semibold tracking-wider text-[#333]">
+            ROWSPACE
           </span>
           <div className="flex items-center gap-2 text-[11px] text-[#888]">
             <span className="font-mono text-[#999]">{source_name}</span>
@@ -372,11 +372,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         </div>
         <div className="flex items-center gap-4 text-xs text-[#888]">
           <span>{date}</span>
-          {has_inferred_attribution && (
-            <span className="text-[10px] text-[#bbb]" title="Speaker labels inferred from auto-captions">
-              (inferred speakers)
-            </span>
-          )}
         </div>
       </header>
 
@@ -396,7 +391,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
           {/* Speakers */}
           <div className="px-4 py-4 border-b border-[#e5e3df]">
-            <div className="text-[10px] font-medium uppercase tracking-wider text-[#999] mb-3">Speakers</div>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Speakers</span>
+              {has_inferred_attribution && (
+                <span className="text-[9px] text-[#bbb] italic" title="Speaker labels were inferred from auto-captions and may not be accurate">
+                  (inferred)
+                </span>
+              )}
+            </div>
             <div className="space-y-2">
               {guests.map((g) => (
                 <button
