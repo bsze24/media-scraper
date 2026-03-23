@@ -38,6 +38,7 @@ const designs = [
   },
 ];
 
+// Design options for transcript viewer
 export default function DesignOptionsPage() {
   return (
     <div className="min-h-screen bg-[#fafafa] py-16 px-8">
