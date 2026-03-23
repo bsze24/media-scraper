@@ -276,7 +276,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       ytPlayerRef.current = null;
       pendingSeekRef.current = null;
     };
-  }, [videoExpanded, youtube_id]);
+  }, [youtube_id]);
 
   // Debounce search
   useEffect(() => {
@@ -600,6 +600,13 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
         {/* Center: Transcript */}
         <section className="h-full bg-white overflow-y-auto flex flex-col max-md:h-auto max-md:overflow-visible">
+          {/* Hidden YouTube player (always mounted for audio playback) */}
+          {youtube_id && (
+            <div className={videoExpanded ? "hidden" : "absolute -left-[9999px] w-1 h-1 overflow-hidden"}>
+              <div id="yt-player-container" />
+            </div>
+          )}
+
           {/* Audio Controls - Collapsed (default) */}
           {!videoExpanded && youtube_id && (
             <div className="sticky top-0 z-40 bg-[#faf9f7]/95 backdrop-blur p-3 flex items-center gap-4 border-b border-[#e5e3df]">
@@ -607,8 +614,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => {
+                      console.log("[v0] Play button clicked, ytPlayerRef:", ytPlayerRef.current);
                       if (ytPlayerRef.current) {
                         const state = ytPlayerRef.current.getPlayerState();
+                        console.log("[v0] Player state:", state);
                         if (state === 1) {
                           ytPlayerRef.current.pauseVideo();
                         } else {
@@ -653,7 +662,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           {videoExpanded && youtube_id && (
             <div className="sticky top-0 z-40 bg-[#0a0a0a]">
               <div className="aspect-video max-h-[50vh] w-full bg-[#111] relative">
-                <div id="yt-player-container" className="h-full w-full" />
+                <div id="yt-player-expanded" className="h-full w-full" />
                 <button 
                   onClick={() => setVideoExpanded(false)}
                   className="absolute top-3 right-3 p-2 bg-black/50 text-white/80 hover:text-white hover:bg-black/70 transition-colors rounded"
