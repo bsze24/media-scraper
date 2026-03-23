@@ -1,7 +1,7 @@
 # Meeting Prep Tool — Technical Implementation Plan
-**Last updated:** March 22, 2026
+**Last updated:** March 23, 2026
 **Branch:** `main` (feature branches per PR)
-**Status:** Phase 1D in progress — YouTube pipeline complete. Timestamp extraction uses two-pass algorithm (deviation constraint + bracketed recovery) achieving 94.2% coverage across 12 appearances. Section generation, turn summaries, speaker attribution trust layer all complete. Search UI (1C) not started.
+**Status:** Phase 1D complete. Phase 1A transcript viewer redesigned (3-column app layout, YouTube player modes, mobile responsive). Phase 1C search/list page live (basic — no card/triage UI yet). Prod synced: 41 appearances (29 Colossus + 12 YouTube). PR #37 (YouTube player modes) in review.
 
 ---
 
@@ -18,7 +18,9 @@
 | `005_corrections.sql` | Created (Phase 1 prep) | `corrections` audit table for human edits to turns |
 | `006_turns_corrected_flag.sql` | Created (Phase 1 prep) | Documents Turn.corrected boolean intent (no DDL) |
 | `007_prompt_snapshot.sql` | Deployed (Phase 1B) | `prompt_context_snapshot TEXT` + `bullets_generated_at TIMESTAMPTZ` on appearances |
-| `008_rename_raw_caption_data.sql` | Created (Phase 1D) | Renames `raw_caption_data` → `scraper_metadata` |
+| `008_rename_raw_caption_data.sql` | Deployed (Phase 1D) | Renames `raw_caption_data` → `scraper_metadata` |
+| `009_atomic_processing_warning.sql` | Deployed | Postgres RPC for atomic `append_processing_warning` / `remove_processing_warning` |
+| `010_processing_detail.sql` | Deployed | `processing_detail TEXT` column on appearances |
 | `003_embeddings.sql` | Not created — Phase 5 | `transcript_chunks` table + pgvector extension + HNSW index |
 
 ---
@@ -39,13 +41,14 @@ scraper_metadata (JSONB)                         — general-purpose scraper out
 cleaned_transcript (TEXT)
 turns (JSONB: [{speaker, text, turn_index}])     — parsed from speaker-labeled transcript at ingest
 turn_summaries (JSONB: [{speaker, summary, turn_index}]) — LLM-generated, one per turn, under 20 words each
-sections (JSONB: [{heading, anchor}])            — scraped for Colossus; synthetic for YouTube (Phase 1)
+sections (JSONB: [{heading, anchor, turn_index?, start_time?, source?}]) — Colossus: scraped from HTML (source: "source"); YouTube: chapters (source), description (derived), or LLM (inferred)
 entity_tags (JSONB)
 prep_bullets (JSONB)
 prompt_context_snapshot (TEXT)                    — Rowspace business context at bullet generation time
 bullets_generated_at (TIMESTAMPTZ)                — when bullets were last generated
 processing_status (TEXT: queued/extracting/cleaning/analyzing/complete/failed)
 processing_error (TEXT)                              — can contain warnings (pipe-separated) on complete appearances, not just fatal errors
+processing_detail (TEXT)                             — human-readable summary of pipeline output (e.g., "97% timestamped, 10 bullets, 87 turns")
 created_at, updated_at
 transcript_search_vector (tsvector GENERATED from cleaned_transcript)
 ```
@@ -270,13 +273,13 @@ lib/
     bullets.ts                     LLM prep bullets (curated vs YouTube variants)
     splitter.ts                    Splits long transcripts for pipeline processing
     validate-speakers.ts           Post-clean speaker name validation (fuzzy match vs metadata)
-    sections.ts                    [Phase 1D] generateSections() for YouTube transcripts — ✅ IMPLEMENTED
-    extract-timestamps.ts           Two-pass timestamp extraction (deviation constraint + bracketed recovery)
+    sections.ts                    LLM section generation for YouTube (tier 3) — ✅ IMPLEMENTED
+    extract-timestamps.ts           Two-pass timestamp extraction + mapSectionsToTurns + stampSectionAnchors
     extract-timestamps.test.ts
     parse-description-sections.ts    Regex parsing of description timestamps (tier 2 sections)
     parse-description-sections.test.ts
-    sections.ts                      LLM section generation for YouTube (tier 3)
-    normalize-speakers.ts            Post-clean speaker name normalization
+    normalize-speakers.ts            Post-clean speaker name normalization (subset matching, no LLM)
+    normalize-speakers.test.ts
     turn-summaries.ts                One-sentence per-turn summaries (parallel with entities)
     clean.test.ts
     entities.test.ts
@@ -343,6 +346,8 @@ supabase/
     006_turns_corrected_flag.sql   [Phase 2 prep]
     007_prompt_snapshot.sql
     008_rename_raw_caption_data.sql
+    009_atomic_processing_warning.sql
+    010_processing_detail.sql
     003_embeddings.sql             [Phase 5] — NOT YET CREATED
 scripts/
   reprocess-timestamps.ts          Re-run timestamp extraction on all YouTube appearances
@@ -352,6 +357,10 @@ scripts/
   measure-fix-impact.ts            Before/after measurement for timestamp algorithm changes
   simulate-pass2.ts                Pass 2 bracketed recovery simulation (diagnostic)
   batch-process-youtube.ts         Batch YouTube URL processing via local yt-dlp
+  reprocess-speakers.ts            Re-extract speakers for YouTube appearances with generic names
+  backfill-colossus-source.ts      One-time: add source: "source" to Colossus sections
+  backfill-section-anchors.ts      One-time: regenerate turn_index + stamp section_anchor for orphan sections
+  backfill-sections.ts             Re-scrape Colossus pages to populate sections + stamp section_anchor
 ```
 
 ---
@@ -385,18 +394,17 @@ Every LLM-dependent pipeline step has a validation guard that checks output qual
 
 **Branch:** `phase1/transcript-ui`
 
-**Phase 1A — Transcript Viewer ✓ COMPLETE:**
-- `/transcript/[id]` live on Vercel — three-column layout: TOC (sticky left) | transcript body | video panel (sticky right)
-- Header: title, date, source, clickable guest names (filter by speaker), host de-emphasized
-- Guest metadata: name + title (if available) + affiliation displayed inline
-- Key Takeaways section above transcript: bullet text + supporting quote (click to jump) + × to flag
-  - Flagging collapses bullet to slim row; floating feedback panel bottom-right for optional comment
-  - 8–10 bullets generated at ingestion (bullets.ts prompt updated)
-- TOC: search input (debounced 150ms), + / − expand/collapse all, gold dots (cited in bullets), blue dots (search hits)
-- Sections: expand/collapse individually or all; match counts on search hits
-- Speaker turns: guest turns fully expanded; host turns truncated to first sentence (▼ more)
-- Video panel: slim collapsed strip (▶ Watch Episode), expands to 280px with YouTube embed or placeholder
-- Feedback: UI-only for now (local state, [×] flag); replaced with thumbs up/down + POST /api/feedback in Phase 2
+**Phase 1A — Transcript Viewer ✓ COMPLETE (redesigned March 23):**
+- `/transcript/[id]` live on Vercel — 3-column app layout: sidebar (speakers, search, sections) | transcript body | prep panel (bullets, related)
+- Header: ROWSPACE logo, source/title breadcrumb (hidden on mobile), date
+- Sidebar: speaker cards with role/affiliation, transcript search (debounced 150ms), sections list with gold dots (cited) and blue dots (search hits), +/− expand/collapse all
+- Transcript body: sections expand/collapse individually, guest turns fully expanded, host turns show AI summary or first sentence with `[more]`/`[less]` toggle in amber
+- Timestamps: inline next to speaker names (not right-aligned), `#999` contrast, clickable to seek video
+- YouTube player: 3 modes — collapsed (audio bar with play/pause, timer, progress bar), PiP (fixed bottom-right), full (sticky header). Single always-mounted container, CSS-positioned per mode. `onStateChange` syncs `isPlaying` including buffering state.
+- Monologue handling: single-speaker transcripts skip section grouping, show "Monologue" header, sidebar shows "Topics" (non-interactive)
+- Prep panel (right): Key Takeaways with supporting quotes (click to jump), bullet flagging with floating feedback panel
+- Mobile responsive: `max-md` breakpoints switch to flex-col, natural document scroll, breadcrumb hidden, video panel hidden
+- Cited turn badges: match by `section_anchor + speaker + quote text substring` (memoized via `citedTurnIndices` Set)
 - Status routing: null → 404, processing → status page with refresh prompt, failed → error page with back link
 - `section_anchor` stamped on Turn at parse time (parseTurns accepts sections[])
 
@@ -410,11 +418,11 @@ Every LLM-dependent pipeline step has a validation guard that checks output qual
 - `ROWSPACE_BUSINESS_CONTEXT` extracted as separate constant for snapshotting
 - "Regenerate Bullets" button on `/transcript/[id]` — calls `reprocessBullets` via Server Action, refreshes page data on completion
 
-**Phase 1C — Search UI (NOT STARTED):**
-- `/search` page — server component calling `searchByFundName` directly, `SearchBar` client component
-- `AppearanceCard` — title, source, date, speakers, bullets list, generated-at date
-- `BulletItem` + `CitationTooltip` — bullets as triage layer, each links to `/transcript/[id]#section-anchor` (future)
-- `AgeFlag` (future)
+**Phase 1C — Search UI (BASIC — live on prod):**
+- `/search` page live — server component with `SearchBar` client component, paginated list of all appearances (41 total)
+- Table view: title (linked to transcript), source, date, speakers, bullet count
+- Fund name search works via tsvector full-text search on `cleaned_transcript`
+- **Not yet built:** `AppearanceCard` with bullet triage, `BulletItem` + `CitationTooltip`, `AgeFlag`, search-to-transcript deep linking with pre-loaded search
 
 **Phase 1D — YouTube Pipeline (IN PROGRESS):**
 - ✓ YouTube scraper — yt-dlp for metadata + captions, speaker detection from title/description/channel, caption segments stored in `scraper_metadata`
@@ -431,6 +439,12 @@ Every LLM-dependent pipeline step has a validation guard that checks output qual
 - ✓ `reprocessTimestamps()` orchestrator function — handles turns, sections, warnings, and processing_detail in one call. `scripts/reprocess-timestamps.ts` for bulk reprocessing.
 - ✓ Timestamp coverage % shown first in `processing_detail` summary (e.g., "97% timestamped, 10 bullets, 87 turns, 17 entities")
 - ✓ Admin table: appearance ID column (truncated, hover for full) + title links to `/transcript/[id]` for completed appearances
+- ✓ Colossus section `source` field — backfilled `source: "source"` on all Colossus sections (PR #32, `scripts/backfill-colossus-source.ts`)
+- ✓ Orphan inferred sections — backfilled `turn_index` and `section_anchor` for 7 YouTube appearances where `stampSectionAnchors` was missing at ingest time (PR #32, `scripts/backfill-section-anchors.ts`)
+- ✓ Building Sixth Street sections — extracted 16 section headings from raw transcript (scraper had missed them due to HTML structure difference)
+- ✓ Speaker name normalization verified — all 29 Colossus rows checked, no normalization needed
+- ✓ Prod sync: 12 YouTube appearances copied dev → prod, section source backfilled on prod, migrations 009+010 confirmed on prod
+- ✓ Stripped all `dark:` Tailwind variants from non-transcript pages (48 instances) — app is light-only
 
 **Fund overview (Phase 1 stretch / Phase 2):**
 - Write `lib/prompts/overview.ts` — synthesis prompt that receives `prep_bullets` + metadata from all matching appearances for a fund, produces a cross-appearance narrative (consistent themes, evolving views, key people)
@@ -527,9 +541,9 @@ Trigger: double-click, or E shortcut when turn is focused.
 | 6 | Multi-speaker scraper test coverage | P3 | Low priority — DOM selectors change anyway |
 | 7 | Bullet feedback writes to local state only. Current [×] flag is negative-only. **Phase 2 plan:** Replace [×] with thumbs up / thumbs down, both with optional text feedback overlay. Wire to `POST /api/feedback` with backend storage. Accumulated positive ratings become candidates for few-shot prompt examples (Phase 4+). | P2 | Wire POST /api/feedback in Phase 2 |
 | 8 | Turn.corrected flag not yet populated | P2 | Corrections UI in Phase 2 |
-| 9 | Speaker name drift ("Marc" vs "Marc Rowan") | P2 | Add speaker_aliases map per appearance at ingest |
+| 9 | ~~Speaker name drift ("Marc" vs "Marc Rowan")~~ | ~~P2~~ | Done — `normalizeSpeakerNames()` in `lib/pipeline/normalize-speakers.ts` handles variant forms at ingest via subset matching. All 29 Colossus rows verified clean. Runs for all sources. |
 | 10 | Migration naming — switch to timestamp-prefixed filenames | P2 | All new migrations from Phase 2 onward |
-| 11 | Responsive layout — TOC collapses to drawer, video panel hides | P2 | At <1024px breakpoint |
+| 11 | Responsive layout — partially done | P3 | Mobile `max-md` breakpoints implemented: flex-col stacking, video panel hidden, natural scroll, header breadcrumb hidden. TOC doesn't collapse to drawer yet — stacks above transcript. Refinement deferred. |
 | 12 | Bullet tag field — add category tags to bullets prompt | P2 | After prompt quality review |
 | 13 | `prompt_context_version` (INT) column — surface stale bullet indicator on AppearanceCard when prompt version changes | P2 | Phase 2/3 |
 | 14 | ~~Proper job queue for bulk operations~~ | ~~P3~~ | Superseded by #20 — YouTube extraction requires local execution, which sidesteps Vercel timeout. Job queue only needed when extraction moves server-side or other users trigger batch processing via browser (Phase 4). |
@@ -558,6 +572,17 @@ These are ideas worth capturing but not worth building yet. Unlike tech debt (so
 | **Controlled sector taxonomy** | Fixed enum alongside free-text `sectors_themes` for reliable filtering and aggregation ("show me all private credit appearances"). | Free-text is sufficient for display and fuzzy search at current scale. Build when filtered views or dashboards are needed (Phase 3+). |
 | **Entity confidence scores** | Flag low-confidence entity extractions for human review. | Review after seeing extraction quality on 50+ real transcripts. Don't add scoring complexity before you know where extraction fails. |
 | **Audio-based speaker diarization (pyannote.audio)** | Reliable speaker attribution for conference panels where text-based attribution fails. | Only relevant for YouTube/audio sources with multiple unknown speakers. Colossus transcripts already have speaker labels. Evaluate when YouTube pipeline is active. |
+
+---
+
+## Deployment State
+
+**Prod URL:** `https://media-scraper-xi.vercel.app`
+**Prod database:** 41 appearances (29 Colossus + 12 YouTube), all `processing_status: complete`
+**Last prod sync:** March 23, 2026 — YouTube rows copied from dev, Colossus sections backfilled, migrations 009+010 confirmed
+**Dev database:** 17 appearances (4 Colossus + 12 YouTube + 1 failed)
+
+Prod sync cadence: every 3-5 PRs or at the end of a feature block, not every PR. Check for unapplied migrations and pipeline changes before syncing.
 
 ---
 
