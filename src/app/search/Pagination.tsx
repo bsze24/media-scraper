@@ -14,12 +14,12 @@ export function Pagination({
       {currentPage > 1 ? (
         <Link
           href={`/search?page=${currentPage - 1}`}
-          className="text-blue-600 hover:underline dark:text-blue-400"
+          className="text-blue-600 hover:underline"
         >
           &larr; Previous
         </Link>
       ) : (
-        <span className="text-zinc-300 dark:text-zinc-600">&larr; Previous</span>
+        <span className="text-zinc-300">&larr; Previous</span>
       )}
 
       <span className="text-zinc-500">
@@ -29,12 +29,12 @@ export function Pagination({
       {currentPage < totalPages ? (
         <Link
           href={`/search?page=${currentPage + 1}`}
-          className="text-blue-600 hover:underline dark:text-blue-400"
+          className="text-blue-600 hover:underline"
         >
           Next &rarr;
         </Link>
       ) : (
-        <span className="text-zinc-300 dark:text-zinc-600">Next &rarr;</span>
+        <span className="text-zinc-300">Next &rarr;</span>
       )}
     </div>
   );

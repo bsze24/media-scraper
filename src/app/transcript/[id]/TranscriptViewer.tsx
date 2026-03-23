@@ -15,14 +15,6 @@ import { RegenerateBulletsButton } from "./RegenerateBulletsButton";
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Parse a search query into terms.
- *   - "exact phrase" → exact substring match
- *   - -term → exclude turns containing term (word-boundary)
- *   - term → word-boundary match (default)
- *
- * Multiple terms are ANDed together.
- */
 interface SearchTerm {
   text: string;
   type: "word" | "exact" | "exclude";
@@ -52,7 +44,6 @@ function buildTermRegex(term: SearchTerm): RegExp {
   if (term.type === "exact") {
     return new RegExp(escaped, "gi");
   }
-  // Word-boundary: \b works for most cases
   return new RegExp(`\\b${escaped}`, "gi");
 }
 
@@ -66,7 +57,6 @@ function matchesTurn(text: string, terms: SearchTerm[]): boolean {
   return true;
 }
 
-/** Build a combined regex for all positive terms (for highlighting). */
 function buildHighlightRegex(terms: SearchTerm[]): RegExp | null {
   const positive = terms.filter((t) => t.type !== "exclude");
   if (positive.length === 0) return null;
@@ -82,7 +72,6 @@ function highlightText(text: string, query: string): ReactNode {
   const terms = parseSearchQuery(query);
   const re = buildHighlightRegex(terms);
   if (!re) return text;
-  // split with capturing group: odd indices are matches, even are gaps
   const parts = text.split(re);
   return parts.map((p, i) =>
     i % 2 === 1 ? (
@@ -104,8 +93,8 @@ function formatTimestamp(seconds: number): string {
 }
 
 function sectionSourceLabel(source?: string): string | null {
-  if (source === "derived") return "(parsed)";
-  if (source === "inferred") return "(AI)";
+  if (source === "derived") return "(auto)";
+  if (source === "inferred") return "(auto)";
   return null;
 }
 
@@ -149,14 +138,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   const allAnchors = useMemo(() => sections.map((s) => s.anchor), [sections]);
 
-  // Monologue detection: single turn or all turns from same speaker
   const isMonologue = useMemo(() => {
     if (turns.length <= 1) return true;
     const speaker = turns[0]?.speaker;
     return turns.every((t) => t.speaker === speaker);
   }, [turns]);
 
-  // Bullet anchors for gold TOC dots
   const bulletAnchors = useMemo(() => {
     const set = new Set<string>();
     for (const b of prep_bullets) {
@@ -167,7 +154,27 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     return set;
   }, [prep_bullets]);
 
-  // Group turns by section_anchor; turns before the first heading go into "__intro"
+  // Pre-compute cited turn indices for O(1) lookup in render loop
+  const citedTurnIndices = useMemo(() => {
+    const set = new Set<number>();
+    for (const b of prep_bullets) {
+      for (const sq of b.supporting_quotes) {
+        if (!sq.section_anchor || !sq.speaker) continue;
+        const quotePrefix = sq.quote.slice(0, 80);
+        for (const t of turns) {
+          if (
+            t.section_anchor === sq.section_anchor &&
+            t.speaker === sq.speaker &&
+            t.text.includes(quotePrefix)
+          ) {
+            set.add(t.turn_index);
+          }
+        }
+      }
+    }
+    return set;
+  }, [prep_bullets, turns]);
+
   const INTRO_ANCHOR = "__intro";
   const turnsBySection = useMemo(() => {
     const map = new Map<string, typeof turns>();
@@ -185,31 +192,25 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   }, [turns, allAnchors]);
 
   // ---- State ----
-  const [expandedSections, setExpandedSections] = useState<
-    Record<string, boolean>
-  >(() => {
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
     const m: Record<string, boolean> = {};
     allAnchors.forEach((a) => (m[a] = true));
     return m;
   });
-  const [expandedHostTurns, setExpandedHostTurns] = useState<
-    Record<string, boolean>
-  >({});
+  const [expandedHostTurns, setExpandedHostTurns] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [feedback, setFeedback] = useState<Record<number, BulletFeedback>>({});
-  const [floatingPanel, setFloatingPanel] = useState<{
-    idx: number;
-  } | null>(null);
+  const [floatingPanel, setFloatingPanel] = useState<{ idx: number } | null>(null);
   const [panelDraft, setPanelDraft] = useState("");
-  const [videoOpen, setVideoOpen] = useState(false);
+  const [videoExpanded, setVideoExpanded] = useState(false);
   const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null);
+  const [relatedExpanded, setRelatedExpanded] = useState(false);
 
   const panelInputRef = useRef<HTMLInputElement>(null);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const monologueRef = useRef<HTMLDivElement | null>(null);
   const ytPlayerRef = useRef<YTPlayer | null>(null);
-
   const pendingSeekRef = useRef<number | null>(null);
 
   const seekToTime = useCallback((seconds: number) => {
@@ -218,17 +219,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       player.seekTo(seconds, true);
       player.playVideo();
     } else {
-      // Panel not open — open it and queue the seek for when the player is ready
       pendingSeekRef.current = seconds;
-      setVideoOpen(true);
+      setVideoExpanded(true);
     }
   }, []);
 
-  // Initialize YouTube IFrame API when video panel opens
+  // Initialize YouTube IFrame API
   useEffect(() => {
-    if (!videoOpen || !youtube_id) return;
-    // If player already exists from a previous open, skip re-init —
-    // but only if the container div still has the iframe (not unmounted)
+    if (!videoExpanded || !youtube_id) return;
     if (ytPlayerRef.current && document.getElementById("yt-player-container")?.querySelector("iframe")) {
       return;
     }
@@ -249,7 +247,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         events: {
           onReady: (event: { target: YTPlayer }) => {
             ytPlayerRef.current = event.target;
-            // If a timestamp click opened the panel, seek now that the player is ready
             if (pendingSeekRef.current != null) {
               event.target.seekTo(pendingSeekRef.current, true);
               event.target.playVideo();
@@ -277,7 +274,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       ytPlayerRef.current = null;
       pendingSeekRef.current = null;
     };
-  }, [videoOpen, youtube_id]);
+  }, [videoExpanded, youtube_id]);
 
   // Debounce search
   useEffect(() => {
@@ -285,7 +282,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Focus panel input on open
+  // Focus panel input
   useEffect(() => {
     if (floatingPanel !== null) {
       setTimeout(() => panelInputRef.current?.focus(), 0);
@@ -301,11 +298,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // ---- Search matches (memoized per section) ----
-  const searchTerms = useMemo(
-    () => parseSearchQuery(debouncedQuery),
-    [debouncedQuery]
-  );
+  // ---- Search ----
+  const searchTerms = useMemo(() => parseSearchQuery(debouncedQuery), [debouncedQuery]);
 
   const searchResults = useMemo(() => {
     if (searchTerms.length === 0)
@@ -315,7 +309,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     const turnKeys = new Set<string>();
     const countBySection = new Map<string, number>();
 
-    // Include intro turns in search
     const allKeys = [INTRO_ANCHOR, ...sections.map((s) => s.anchor)];
     for (const anchor of allKeys) {
       const sectionTurns = turnsBySection.get(anchor) ?? [];
@@ -335,16 +328,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   const hasSearch = searchTerms.length > 0;
 
-  // Update expanded sections when search changes
   useEffect(() => {
     if (hasSearch) {
       const m: Record<string, boolean> = {};
-      allAnchors.forEach(
-        (a) => (m[a] = searchResults.anchors.has(a))
-      );
+      allAnchors.forEach((a) => (m[a] = searchResults.anchors.has(a)));
       setExpandedSections(m);
     } else if (debouncedQuery === "" && !activeSpeaker) {
-      // Restore all expanded when search cleared (and no speaker filter)
       const m: Record<string, boolean> = {};
       allAnchors.forEach((a) => (m[a] = true));
       setExpandedSections(m);
@@ -363,9 +352,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         setActiveSpeaker(name);
         const m: Record<string, boolean> = {};
         allAnchors.forEach((a) => {
-          m[a] = (turnsBySection.get(a) ?? []).some(
-            (t) => t.speaker === name
-          );
+          m[a] = (turnsBySection.get(a) ?? []).some((t) => t.speaker === name);
         });
         setExpandedSections(m);
       }
@@ -373,18 +360,15 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     [activeSpeaker, allAnchors, turnsBySection]
   );
 
-  const scrollToSection = useCallback(
-    (anchor: string) => {
-      setExpandedSections((prev) => ({ ...prev, [anchor]: true }));
-      setTimeout(() => {
-        sectionRefs.current[anchor]?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }, 60);
-    },
-    []
-  );
+  const scrollToSection = useCallback((anchor: string) => {
+    setExpandedSections((prev) => ({ ...prev, [anchor]: true }));
+    setTimeout(() => {
+      sectionRefs.current[anchor]?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 60);
+  }, []);
 
   const allExpanded = allAnchors.every((a) => expandedSections[a]);
   const allCollapsed = allAnchors.every((a) => !expandedSections[a]);
@@ -394,654 +378,524 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   // ---- Render ----
   return (
-    <div className="min-h-screen bg-[#f9f8f5] text-[#1a1a1a]">
-      <div className="mx-auto max-w-[1200px] px-6 pt-9 pb-20">
-        {/* HEADER */}
-        <div className="mb-7 border-b-2 border-[#1a1a1a] pb-[18px]">
-          <div className="mb-2 font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#aaa]">
-            {source_name}
-          </div>
-          <h1 className="mb-2 font-[family-name:var(--font-playfair)] text-[26px] font-semibold leading-tight tracking-tight">
-            {title}
-          </h1>
-          <div className="flex flex-wrap items-center gap-4">
-            {guests.map((g, i) => (
-              <span
-                key={g.name}
-                className="flex cursor-pointer items-baseline gap-[5px] pb-px font-[family-name:var(--font-source-sans)] transition-colors"
-                onClick={() => handleSpeakerClick(g.name)}
-                title={
-                  activeSpeaker === g.name
-                    ? "Clear filter"
-                    : `Filter to ${g.name}`
-                }
-                style={{
-                  borderBottom:
-                    activeSpeaker === g.name
-                      ? "2px solid #c9a84c"
-                      : "2px solid transparent",
-                  color:
-                    activeSpeaker && activeSpeaker !== g.name
-                      ? "#bbb"
-                      : "#1a1a1a",
-                }}
-              >
-                <span className="text-[13.5px] font-medium">{g.name}</span>
-                {(g.title || g.affiliation) && (
-                  <span
-                    className="text-[11px] font-normal"
-                    style={{
-                      color:
-                        activeSpeaker && activeSpeaker !== g.name
-                          ? "#ddd"
-                          : "#aaa",
-                    }}
-                  >
-                    {[g.title, g.affiliation].filter(Boolean).join(", ")}
-                  </span>
-                )}
-                {i < guests.length - 1 && (
-                  <span className="ml-1.5 text-[#ddd]">·</span>
-                )}
-              </span>
-            ))}
-            {host && (
-              <span
-                className="cursor-pointer pb-px font-[family-name:var(--font-source-sans)] text-xs italic transition-colors"
-                onClick={() => handleSpeakerClick(host.name)}
-                title={
-                  activeSpeaker === host.name
-                    ? "Clear filter"
-                    : `Filter to ${host.name}`
-                }
-                style={{
-                  color:
-                    activeSpeaker && activeSpeaker !== host.name
-                      ? "#ddd"
-                      : "#bbb",
-                  borderBottom:
-                    activeSpeaker === host.name
-                      ? "2px solid #ccc"
-                      : "2px solid transparent",
-                }}
-              >
-                with {host.name}
-              </span>
-            )}
-            <span className="ml-auto font-[family-name:var(--font-source-sans)] text-xs text-[#bbb]">
-              {date}
-            </span>
+    <div className="h-screen flex flex-col bg-[#faf9f7] text-[#1a1a1a] overflow-hidden max-md:h-auto max-md:min-h-screen max-md:overflow-visible">
+      {/* Header */}
+      <header className="flex-shrink-0 h-12 px-4 flex items-center justify-between bg-white border-b border-[#e5e3df]">
+        <div className="flex items-center gap-6">
+          <span className="text-sm font-semibold tracking-wider text-[#333]">
+            ROWSPACE
+          </span>
+          <div className="flex items-center gap-2 text-[11px] text-[#888]">
+            <span className="font-mono text-[#999]">{source_name}</span>
+            <span className="text-[#ccc]">/</span>
+            <span className="text-[#555] truncate max-w-[300px]">{title}</span>
           </div>
         </div>
+        <div className="flex items-center gap-4 text-xs text-[#888]">
+          <span>{date}</span>
+        </div>
+      </header>
 
-        {/* INFERRED ATTRIBUTION DISCLAIMER */}
-        {has_inferred_attribution && (
-          <p className="mb-5 font-[family-name:var(--font-source-sans)] text-[11px] text-[#aaa]">
-            Speaker labels inferred from auto-captions — may contain errors
-          </p>
-        )}
-
-        {/* KEY TAKEAWAYS */}
-        {prep_bullets.length > 0 && (
-          <div className="mb-8">
-            <div className="mb-2.5 flex items-center justify-between">
-              <span className="font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#aaa]">
-                Key Takeaways
-              </span>
-              <RegenerateBulletsButton
-                appearanceId={appearance.id}
-                bulletsGeneratedAt={bullets_generated_at}
-                transcriptCharCount={transcript_char_count}
-              />
+      {/* Main 3-Column Grid */}
+      <main className="flex-1 grid overflow-hidden max-md:flex max-md:flex-col max-md:overflow-visible" style={{ gridTemplateColumns: '280px 1fr 280px' }}>
+        
+        {/* Left Sidebar */}
+        <aside className="h-full bg-[#faf9f7] flex flex-col border-r border-[#e5e3df] overflow-y-auto max-md:h-auto max-md:overflow-visible max-md:order-first max-md:border-r-0 max-md:border-b">
+          {/* Speakers */}
+          <div className="px-3 py-3 border-b border-[#e5e3df]">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Speakers</span>
+              {has_inferred_attribution && (
+                <span className="text-[9px] text-[#bbb] italic" title="Speaker labels were auto-generated and may not be accurate">
+                  (auto)
+                </span>
+              )}
             </div>
-            <div className="overflow-hidden rounded border border-[#e8e3da] bg-white">
-              {prep_bullets.map((b, i) => {
-                const fb = feedback[i];
-                const flagged = !!fb?.flagged;
-                const preview =
-                  b.text.split(" ").slice(0, 7).join(" ") + "…";
-                const firstQuote = b.supporting_quotes[0];
-
-                // Flagged — slim collapsed row
-                if (flagged) {
-                  return (
-                    <div
-                      key={i}
-                      className="flex items-center gap-2.5 border-b border-[#eee] bg-[#fdfcfb] px-3.5 py-1.5 last:border-b-0"
-                    >
-                      <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-[family-name:var(--font-source-sans)] text-xs italic text-[#ccc]">
-                        {preview}
-                      </span>
-                      <span className="font-[family-name:var(--font-source-sans)] text-[10.5px] tracking-wide text-[#ccc]">
-                        flagged
-                      </span>
-                      <button
-                        onClick={() =>
-                          setFeedback((prev) => ({
-                            ...prev,
-                            [i]: { flagged: false },
-                          }))
-                        }
-                        className="rounded border border-[#e0dbd2] px-[7px] py-px font-[family-name:var(--font-source-sans)] text-[11px] text-[#bbb] transition-colors hover:border-[#bbb] hover:text-[#555]"
-                      >
-                        undo
-                      </button>
+            <div className="space-y-2">
+              {guests.map((g) => (
+                <button
+                  key={g.name}
+                  onClick={() => handleSpeakerClick(g.name)}
+                  className={`w-full flex items-center justify-between p-2 border transition-colors ${
+                    activeSpeaker === g.name
+                      ? 'bg-white border-[#b8860b]/30'
+                      : 'bg-white border-[#e5e3df] hover:border-[#b8860b]/30'
+                  }`}
+                >
+                  <div className="text-left">
+                    <div className={`text-[12px] font-medium ${activeSpeaker === g.name ? 'text-[#b8860b]' : 'text-[#555]'}`}>
+                      {g.name}
                     </div>
-                  );
-                }
-
-                // Normal expanded row
-                return (
-                  <div
-                    key={i}
-                    className="grid grid-cols-[1fr_auto] items-start gap-x-2.5 border-b border-[#eee] px-3.5 py-2 last:border-b-0"
-                  >
-                    <div className="min-w-0">
-                      <div className="font-[family-name:var(--font-source-sans)] text-[13px] leading-relaxed text-[#1a1a1a]">
-                        {b.text}
-                      </div>
-                      {firstQuote && (
-                        <div
-                          className="mt-0.5 cursor-pointer font-[family-name:var(--font-source-sans)] text-[11.5px] italic leading-snug text-[#888] hover:text-[#555]"
-                          onClick={() => {
-                            if (isMonologue) {
-                              monologueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                            } else if (firstQuote.section_anchor) {
-                              scrollToSection(firstQuote.section_anchor);
-                            }
-                          }}
-                          title="Jump to section"
-                        >
-                          <span className="mr-0.5 not-italic text-[13px] text-[#c9a84c]">
-                            &ldquo;
-                          </span>
-                          {firstQuote.quote}
-                          <span className="ml-1 not-italic text-[#bbb]">
-                            — {firstQuote.speaker} ↓
-                          </span>
-                        </div>
-                      )}
-                      {fb?.comment && (
-                        <div className="mt-0.5 font-[family-name:var(--font-source-sans)] text-[10.5px] italic text-[#bbb]">
-                          &ldquo;{fb.comment}&rdquo;
-                        </div>
-                      )}
-                    </div>
-                    <div className="shrink-0 pl-2.5 pt-0.5">
-                      <button
-                        title="Flag as unhelpful"
-                        onClick={() => {
-                          setPanelDraft("");
-                          setFloatingPanel({ idx: i });
-                          setFeedback((prev) => ({
-                            ...prev,
-                            [i]: { ...prev[i], flagged: true },
-                          }));
-                        }}
-                        className="rounded border border-[#e0dbd2] px-1.5 py-px font-[family-name:var(--font-source-sans)] text-xs leading-snug text-[#ccc] transition-colors hover:border-[#bbb] hover:text-[#999]"
-                      >
-                        ×
-                      </button>
+                    <div className="text-[10px] text-[#888]">
+                      {[g.title, g.affiliation].filter(Boolean).join(", ")}
                     </div>
                   </div>
-                );
-              })}
+                  <svg className="w-3.5 h-3.5 text-[#999]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              ))}
+              {host && (
+                <button
+                  onClick={() => handleSpeakerClick(host.name)}
+                  className={`w-full flex items-center justify-between p-2 border transition-colors ${
+                    activeSpeaker === host.name
+                      ? 'bg-[#f5f4f2] border-[#ccc]'
+                      : 'bg-[#f5f4f2] border-[#e5e3df] hover:border-[#ccc]'
+                  }`}
+                >
+                  <div className="text-left">
+                    <div className="text-[12px] text-[#555]">{host.name}</div>
+                    <div className="text-[10px] text-[#999]">
+                      {[host.title, host.affiliation].filter(Boolean).join(", ") || "Host"}
+                    </div>
+                  </div>
+                  <svg className="w-3.5 h-3.5 text-[#bbb]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
-        )}
 
-        {/* FLOATING FEEDBACK PANEL */}
-        {floatingPanel !== null && (() => {
-          const b = prep_bullets[floatingPanel.idx];
-          const quoteText = b?.supporting_quotes[0]?.quote ?? b?.text ?? "";
-          return (
-            <div className="fixed right-7 bottom-7 z-50 w-80 rounded-md border border-[#e0dbd2] bg-white p-3.5 shadow-lg font-[family-name:var(--font-source-sans)]">
-              <div className="mb-2.5 flex items-start justify-between gap-2.5">
-                <div className="text-[11.5px] italic leading-snug text-[#888]">
-                  &ldquo;{quoteText.slice(0, 80)}
-                  {quoteText.length > 80 ? "…" : ""}&rdquo;
-                </div>
-                <button
-                  onClick={() => setFloatingPanel(null)}
-                  className="shrink-0 p-0 text-base leading-none text-[#bbb] hover:text-[#666]"
-                >
-                  ×
-                </button>
-              </div>
-              <input
-                ref={panelInputRef}
-                value={panelDraft}
-                onChange={(e) => setPanelDraft(e.target.value)}
-                placeholder="What's off about this bullet? (optional)"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    setFeedback((prev) => ({
-                      ...prev,
-                      [floatingPanel.idx]: {
-                        flagged: true,
-                        comment: panelDraft || undefined,
-                      },
-                    }));
-                    setFloatingPanel(null);
-                  }
-                  if (e.key === "Escape") {
-                    setFloatingPanel(null);
-                  }
-                }}
-                className="w-full rounded border border-[#e0dbd2] bg-[#fafaf8] px-2 py-1.5 text-xs text-[#333] outline-none focus:border-[#c9a84c]"
-              />
-              <div className="mt-[7px] flex items-center justify-between">
-                <span className="text-[10px] text-[#ccc]">
-                  ↵ save · esc dismiss
-                </span>
-                <button
-                  onClick={() => {
-                    setFeedback((prev) => ({
-                      ...prev,
-                      [floatingPanel.idx]: {
-                        flagged: true,
-                        comment: panelDraft || undefined,
-                      },
-                    }));
-                    setFloatingPanel(null);
-                  }}
-                  className="rounded bg-[#1a1a1a] px-2.5 py-[3px] text-[11px] text-white"
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* THREE-COLUMN: TOC | BODY | VIDEO (stacks on mobile) */}
-        <div
-          className="grid items-start gap-x-7 max-md:flex max-md:flex-col max-md:gap-y-4"
-          style={
-            {
-              "--grid-cols": videoOpen
-                ? "188px 1fr 280px"
-                : "188px 1fr 36px",
-              gridTemplateColumns: "var(--grid-cols)",
-            } as React.CSSProperties
-          }
-        >
-          {/* TOC */}
-          <div className="sticky top-6 max-md:static max-md:order-first">
-            {/* Search */}
-            <div className="relative mb-4">
-              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-[#ccc]">
-                ⌕
-              </span>
-              <input
-                className="w-full rounded border border-[#ddd] bg-white py-1.5 pr-6 pl-7 font-[family-name:var(--font-source-sans)] text-xs text-[#1a1a1a] outline-none transition-colors focus:border-[#c9a84c]"
-                placeholder="Search transcript…"
+          {/* Search */}
+          <div className="px-3 py-2 border-b border-[#e5e3df]">
+            <div className="relative">
+              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#bbb]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input 
+                type="text"
+                placeholder="Find in transcript..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-white border border-[#e5e3df] text-[12px] text-[#333] placeholder:text-[#bbb] py-2 pl-8 pr-8 focus:outline-none focus:border-[#b8860b]/50"
               />
               {searchQuery && (
                 <button
-                  className="absolute right-[7px] top-1/2 -translate-y-1/2 p-0 text-sm leading-none text-[#bbb] hover:text-[#666]"
                   onClick={() => {
                     setSearchQuery("");
                     setDebouncedQuery("");
                   }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#bbb] hover:text-[#666]"
                 >
-                  ×
+                  <span className="text-sm">&times;</span>
                 </button>
-              )}
-            </div>
-
-            {/* Section heading + expand/collapse */}
-            <div className="mb-2 flex items-center justify-between">
-              <div className="font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#aaa]">
-                {isMonologue ? "Topics" : "Sections"}
-              </div>
-              {!isMonologue && (
-              <div className="flex items-center gap-0.5">
-                <button
-                  className="rounded border border-[#ddd] px-[5px] font-[family-name:var(--font-source-sans)] text-[15px] font-normal leading-snug text-[#888] transition-colors hover:border-[#aaa] hover:bg-[#f0ece4] hover:text-[#333] disabled:cursor-default disabled:opacity-20 disabled:hover:border-[#ddd] disabled:hover:bg-transparent"
-                  onClick={() => {
-                    const m: Record<string, boolean> = {};
-                    allAnchors.forEach((a) => (m[a] = true));
-                    setExpandedSections(m);
-                  }}
-                  disabled={allExpanded}
-                  title="Expand all"
-                >
-                  +
-                </button>
-                <span className="text-[11px] text-[#ddd]">·</span>
-                <button
-                  className="rounded border border-[#ddd] px-[5px] font-[family-name:var(--font-source-sans)] text-[15px] font-normal leading-snug text-[#888] transition-colors hover:border-[#aaa] hover:bg-[#f0ece4] hover:text-[#333] disabled:cursor-default disabled:opacity-20 disabled:hover:border-[#ddd] disabled:hover:bg-transparent"
-                  onClick={() => {
-                    const m: Record<string, boolean> = {};
-                    allAnchors.forEach((a) => (m[a] = false));
-                    setExpandedSections(m);
-                  }}
-                  disabled={allCollapsed}
-                  title="Collapse all"
-                >
-                  −
-                </button>
-              </div>
-              )}
-            </div>
-
-            {/* Section list */}
-            {sections.map((s) => {
-              const cited = bulletAnchors.has(s.anchor);
-              const hit = hasSearch && searchResults.anchors.has(s.anchor);
-              const dim = hasSearch && !hit;
-
-              return (
-                <div
-                  key={s.anchor}
-                  className={`mb-px flex items-start gap-[7px] rounded px-[7px] py-[5px] transition-colors ${
-                    isMonologue
-                      ? "cursor-default opacity-60"
-                      : `cursor-pointer ${expandedSections[s.anchor] ? "bg-[#edeae2]" : ""} ${dim ? "pointer-events-none opacity-[0.28]" : "hover:bg-[#edeae2]"}`
-                  }`}
-                  onClick={() => !isMonologue && !dim && scrollToSection(s.anchor)}
-                >
-                  {hit ? (
-                    <span className="mt-1.5 h-[5px] w-[5px] shrink-0 rounded-full bg-[#5b9bd5]" />
-                  ) : cited ? (
-                    <span className="mt-1.5 h-[5px] w-[5px] shrink-0 rounded-full bg-[#c9a84c]" />
-                  ) : (
-                    <span className="w-[5px] shrink-0" />
-                  )}
-                  <span
-                    className="font-[family-name:var(--font-source-sans)] text-xs leading-snug"
-                    style={{
-                      color: cited || hit ? "#333" : "#999",
-                    }}
-                  >
-                    {s.heading}
-                    {sectionSourceLabel(s.source) && (
-                      <span className="ml-1 text-[10px] text-[#ccc]">
-                        {sectionSourceLabel(s.source)}
-                      </span>
-                    )}
-                  </span>
-                </div>
-              );
-            })}
-
-            {/* Legend */}
-            <div className="mt-4 flex flex-col gap-1.5 border-t border-[#e5e0d6] pt-3">
-              <div className="flex items-center gap-[5px]">
-                <span className="h-[5px] w-[5px] rounded-full bg-[#c9a84c]" />
-                <span className="font-[family-name:var(--font-source-sans)] text-[10.5px] text-[#bbb]">
-                  cited in takeaways
-                </span>
-              </div>
-              {hasSearch && (
-                <div className="flex items-center gap-[5px]">
-                  <span className="h-[5px] w-[5px] rounded-full bg-[#5b9bd5]" />
-                  <span className="font-[family-name:var(--font-source-sans)] text-[10.5px] text-[#5b9bd5]">
-                    search match
-                  </span>
-                </div>
               )}
             </div>
           </div>
 
-          {/* TRANSCRIPT BODY */}
-          <div>
-            {/* Monologue: render all turns as a single block, no section grouping */}
+          {/* Sections */}
+          <div className="px-3 py-1 flex-1">
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-[10px] font-medium uppercase tracking-wider text-[#999]">
+                {isMonologue ? "Topics" : "Sections"}
+              </div>
+              {!isMonologue && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      const m: Record<string, boolean> = {};
+                      allAnchors.forEach((a) => (m[a] = true));
+                      setExpandedSections(m);
+                    }}
+                    disabled={allExpanded}
+                    className="w-5 h-5 flex items-center justify-center text-[#999] hover:text-[#555] hover:bg-[#f0efed] transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[#999]"
+                    title="Expand all"
+                  >
+                    <span className="text-sm">+</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const m: Record<string, boolean> = {};
+                      allAnchors.forEach((a) => (m[a] = false));
+                      setExpandedSections(m);
+                    }}
+                    disabled={allCollapsed}
+                    className="w-5 h-5 flex items-center justify-center text-[#999] hover:text-[#555] hover:bg-[#f0efed] transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[#999]"
+                    title="Collapse all"
+                  >
+                    <span className="text-sm">-</span>
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="space-y-0.5">
+              {sections.map((s) => {
+                const cited = bulletAnchors.has(s.anchor);
+                const hit = hasSearch && searchResults.anchors.has(s.anchor);
+                const dim = hasSearch && !hit;
+                const hitCount = searchResults.countBySection.get(s.anchor) ?? 0;
+
+                return (
+                  <button
+                    key={s.anchor}
+                    onClick={() => !isMonologue && !dim && scrollToSection(s.anchor)}
+                    className={`w-full text-left p-2.5 transition-all ${
+                      isMonologue
+                        ? 'cursor-default opacity-60'
+                        : dim
+                        ? 'pointer-events-none opacity-30'
+                        : expandedSections[s.anchor]
+                        ? 'bg-white border-l-2 border-[#b8860b]'
+                        : 'hover:bg-[#f5f4f2] border-l-2 border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      {hit ? (
+                        <span className="mt-1.5 h-[5px] w-[5px] shrink-0 rounded-full bg-[#5a8fc7]" />
+                      ) : cited ? (
+                        <span className="mt-1.5 h-[5px] w-[5px] shrink-0 rounded-full bg-[#b8860b]" />
+                      ) : (
+                        <span className="w-[5px] shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <span className={`text-[12px] leading-snug ${cited || hit ? 'text-[#333]' : 'text-[#666]'}`}>
+                          {s.heading}
+                        </span>
+                        {sectionSourceLabel(s.source) && (
+                          <span className="ml-1 text-[10px] text-[#ccc]">
+                            {sectionSourceLabel(s.source)}
+                          </span>
+                        )}
+                        {hit && hitCount > 0 && (
+                          <span className="ml-1 text-[10px] text-[#5a8fc7]">
+                            ({hitCount})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Legend */}
+          <div className="px-4 py-3 border-t border-[#e5e3df]">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#b8860b]" />
+              <span className="text-[10px] text-[#999]">Cited in Takeaways</span>
+            </div>
+            {hasSearch && (
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#5a8fc7]" />
+                <span className="text-[10px] text-[#5a8fc7]">Search Match</span>
+              </div>
+            )}
+          </div>
+
+          {/* Export */}
+          <div className="px-4 py-3 border-t border-[#e5e3df]">
+            <button className="w-full flex items-center justify-center gap-2 py-2.5 bg-white border border-[#e5e3df] text-[11px] font-medium text-[#ccc] cursor-default" title="Coming soon">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Export Archive
+            </button>
+          </div>
+        </aside>
+
+        {/* Center: Transcript */}
+        <section className="h-full bg-white overflow-y-auto flex flex-col max-md:h-auto max-md:overflow-visible">
+          {/* Video Controls - Collapsed */}
+          {!videoExpanded && youtube_id && (
+            <div className="sticky top-0 z-40 bg-[#faf9f7]/95 backdrop-blur p-3 flex items-center gap-4 border-b border-[#e5e3df]">
+              <div className="w-20 h-12 bg-[#f0efed] border border-[#e5e3df] flex items-center justify-center">
+                <svg className="w-6 h-6 text-[#999]" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setVideoExpanded(true)}
+                    className="w-8 h-8 flex items-center justify-center text-[#666] hover:text-[#b8860b] transition-colors"
+                    title="Expand and play"
+                  >
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </button>
+                  <span className="text-[11px] font-mono text-[#b8860b]">0:00</span>
+                  <div className="flex-1 h-1 bg-[#e5e3df] relative rounded-full overflow-hidden">
+                    <div className="absolute top-0 left-0 h-full w-0 bg-[#b8860b]/40" />
+                  </div>
+                  <span className="text-[11px] font-mono text-[#999]">--:--</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 text-[#888]">
+                <button
+                  onClick={() => setVideoExpanded(true)}
+                  className="text-[10px] font-mono hover:text-[#b8860b] transition-colors px-2 py-1 bg-white border border-[#e5e3df]"
+                  title="Expand video to change speed"
+                >1x</button>
+                <button 
+                  onClick={() => setVideoExpanded(true)}
+                  className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" 
+                  title="Expand video"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Video Controls - Expanded */}
+          {videoExpanded && youtube_id && (
+            <div className="flex-shrink-0 bg-[#0a0a0a]">
+              <div className="aspect-video max-h-[50vh] w-full bg-[#111] relative">
+                <div id="yt-player-container" className="h-full w-full" />
+                <button 
+                  onClick={() => setVideoExpanded(false)}
+                  className="absolute top-3 right-3 p-2 bg-black/50 text-white/80 hover:text-white hover:bg-black/70 transition-colors rounded"
+                  title="Collapse video"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* No video message */}
+          {!youtube_id && (
+            <div className="sticky top-0 z-40 bg-[#faf9f7]/95 backdrop-blur p-3 border-b border-[#e5e3df]">
+              <div className="text-center text-[11px] text-[#888]">
+                No video available for this episode
+              </div>
+            </div>
+          )}
+
+          {/* Transcript Content */}
+          <div className="flex-1 px-6 py-5 space-y-1">
+            {/* Monologue mode */}
             {isMonologue && turns.length > 0 && (
-              <div ref={monologueRef} className="mb-[5px] overflow-hidden rounded border border-[#e5e0d6]">
-                <div className="bg-[#f2ede5] px-3.5 py-2">
-                  <span className="font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#aaa]">
-                    Monologue
-                  </span>
-                </div>
-                <div className="bg-white px-4 py-1 pb-2.5">
-                  {turns.map((turn) => {
-                    // Build the same key format as searchResults: per-section index
-                    const bucket = turn.section_anchor && turnsBySection.has(turn.section_anchor)
-                      ? turn.section_anchor : INTRO_ANCHOR;
-                    const bucketTurns = turnsBySection.get(bucket) ?? [];
-                    const idxInBucket = bucketTurns.indexOf(turn);
-                    const turnKey = `${bucket}-${idxInBucket === -1 ? 0 : idxInBucket}`;
-                    const isTurnHit = hasSearch && searchResults.turnKeys.has(turnKey);
-                    return (
-                      <div
-                        key={turn.turn_index}
-                        className={`border-b border-[#f0ece5] py-2.5 last:border-b-0 ${
-                          isTurnHit ? "-mx-4 bg-[#eff6ff] px-4" : ""
-                        }`}
-                      >
-                        <div className="mb-1 flex items-baseline gap-2 font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#c9a84c]">
-                          <span>{turn.speaker}</span>
-                          {turn.timestamp_seconds != null && (
-                            <span
-                              className="cursor-pointer font-normal normal-case tracking-normal text-[#999] hover:text-[#666]"
-                              onClick={() => seekToTime(turn.timestamp_seconds!)}
-                              title={`Jump to ${formatTimestamp(turn.timestamp_seconds)}`}
-                            >
-                              {formatTimestamp(turn.timestamp_seconds)}
-                            </span>
-                          )}
-                        </div>
-                        <p className="font-[family-name:var(--font-source-sans)] text-[13.5px] leading-[1.65] text-[#1a1a1a]">
-                          {highlightText(turn.text, debouncedQuery)}
-                        </p>
+              <div ref={monologueRef}>
+                {turns.map((turn) => {
+                  const bucket = turn.section_anchor && turnsBySection.has(turn.section_anchor)
+                    ? turn.section_anchor : INTRO_ANCHOR;
+                  const bucketTurns = turnsBySection.get(bucket) ?? [];
+                  const idxInBucket = bucketTurns.indexOf(turn);
+                  const turnKey = `${bucket}-${idxInBucket === -1 ? 0 : idxInBucket}`;
+                  const isTurnHit = hasSearch && searchResults.turnKeys.has(turnKey);
+                  
+                  return (
+                    <div
+                      key={turn.turn_index}
+                      className={`group relative py-3 px-4 transition-all hover:bg-[#faf9f7] border-l-2 border-transparent ${
+                        isTurnHit ? 'bg-[#eff6ff] border-l-[#5a8fc7]' : ''
+                      }`}
+                    >
+                      <div className="flex items-baseline gap-3 mb-1">
+                        {turn.timestamp_seconds != null && (
+                          <button 
+                            onClick={() => seekToTime(turn.timestamp_seconds!)}
+                            className="text-[10px] font-mono text-[#999] hover:text-[#b8860b] transition-colors flex-shrink-0"
+                            title="Jump to timestamp"
+                          >
+                            {formatTimestamp(turn.timestamp_seconds)}
+                          </button>
+                        )}
+                        <span className="text-[13px] font-medium text-[#b8860b]">
+                          {turn.speaker}
+                        </span>
                       </div>
-                    );
-                  })}
-                </div>
+                      <p className="text-[14px] leading-[1.6] text-[#333]">
+                        {highlightText(turn.text, debouncedQuery)}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
-            {/* Turns before the first section heading */}
+            {/* Multi-speaker mode: Intro turns */}
             {!isMonologue && (turnsBySection.get(INTRO_ANCHOR)?.length ?? 0) > 0 && (
-              <div className="mb-[5px] overflow-hidden rounded border border-[#e5e0d6]">
-                <div className="bg-white px-4 py-1 pb-2.5">
-                  {turnsBySection.get(INTRO_ANCHOR)!.map((turn, ti) => {
-                    const isHost = turn.role === "host";
-                    const dimmed =
-                      activeSpeaker && activeSpeaker !== turn.speaker;
-                    const isTurnHit =
-                      hasSearch && searchResults.turnKeys.has(`${INTRO_ANCHOR}-${ti}`);
-                    return (
-                      <div
-                        key={ti}
-                        className={`border-b border-[#f0ece5] py-2 last:border-b-0 ${
-                          isTurnHit ? "-mx-4 bg-[#eff6ff] px-4" : ""
-                        }`}
-                        style={dimmed ? { opacity: 0.3 } : undefined}
-                      >
-                        <div
-                          className={`mb-0.5 flex items-baseline gap-2 font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] ${
-                            isHost ? "text-[#ccc]" : "text-[#c9a84c]"
-                          }`}
-                        >
-                          <span>{turn.speaker}</span>
-                          {turn.timestamp_seconds != null && (
-                            <span
-                              className="cursor-pointer font-normal normal-case tracking-normal text-[#999] hover:text-[#666]"
-                              onClick={() => seekToTime(turn.timestamp_seconds!)}
-                              title={`Jump to ${formatTimestamp(turn.timestamp_seconds)}`}
-                            >
-                              {formatTimestamp(turn.timestamp_seconds)}
-                            </span>
-                          )}
-                        </div>
-                        <p
-                          className={`font-[family-name:var(--font-source-sans)] leading-relaxed ${
-                            isHost
-                              ? "text-[12.5px] italic text-[#bbb]"
-                              : "text-[13.5px] leading-[1.65] text-[#1a1a1a]"
-                          }`}
-                        >
-                          {highlightText(turn.text, debouncedQuery)}
-                        </p>
+              <div className="mb-4">
+                {turnsBySection.get(INTRO_ANCHOR)!.map((turn, ti) => {
+                  const isHost = turn.role === "host";
+                  const dimmed = activeSpeaker && activeSpeaker !== turn.speaker;
+                  const isTurnHit = hasSearch && searchResults.turnKeys.has(`${INTRO_ANCHOR}-${ti}`);
+
+                  const speakerInfo = speakers.find(s => s.name === turn.speaker);
+                  return (
+                    <div
+                      key={ti}
+                      className={`group relative py-3 px-4 transition-all border-l-2 ${
+                        isTurnHit
+                          ? 'bg-[#eff6ff] border-l-[#5a8fc7]'
+                          : 'hover:bg-[#faf9f7] border-transparent'
+                      }`}
+                      style={dimmed ? { opacity: 0.3 } : undefined}
+                    >
+                      <div className="flex items-baseline gap-3 mb-1">
+                        {turn.timestamp_seconds != null && (
+                          <button 
+                            onClick={() => seekToTime(turn.timestamp_seconds!)}
+                            className="text-[10px] font-mono text-[#999] hover:text-[#b8860b] transition-colors flex-shrink-0"
+                            title="Jump to timestamp"
+                          >
+                            {formatTimestamp(turn.timestamp_seconds)}
+                          </button>
+                        )}
+                        <span className={`text-[13px] font-medium ${isHost ? 'text-[#666]' : 'text-[#b8860b]'}`}>
+                          {turn.speaker}
+                        </span>
+                        {speakerInfo && (
+                          <span className="text-[10px] text-[#999]">
+                            {[speakerInfo.title, speakerInfo.affiliation].filter(Boolean).join(", ")}
+                          </span>
+                        )}
                       </div>
-                    );
-                  })}
-                </div>
+                      <p className={`text-[14px] leading-[1.6] ${isHost ? 'text-[#555] italic' : 'text-[#333]'}`}>
+                        {highlightText(turn.text, debouncedQuery)}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
+            {/* Multi-speaker mode: Sections */}
             {!isMonologue && sections.map((section) => {
               const sectionTurns = turnsBySection.get(section.anchor) ?? [];
               const isOpen = expandedSections[section.anchor];
               const isCited = bulletAnchors.has(section.anchor);
-              const isHit =
-                hasSearch && searchResults.anchors.has(section.anchor);
+              const isHit = hasSearch && searchResults.anchors.has(section.anchor);
               const isMiss = hasSearch && !isHit;
-              const hitCount =
-                searchResults.countBySection.get(section.anchor) ?? 0;
+              const hitCount = searchResults.countBySection.get(section.anchor) ?? 0;
 
               return (
                 <div
                   key={section.anchor}
-                  ref={(el) => {
-                    sectionRefs.current[section.anchor] = el;
-                  }}
-                  className={`mb-[5px] overflow-hidden rounded border transition-opacity ${
-                    isHit
-                      ? "border-l-[3px] border-l-[#5b9bd5] border-t-[#e5e0d6] border-r-[#e5e0d6] border-b-[#e5e0d6]"
-                      : "border-[#e5e0d6]"
-                  } ${isMiss ? "pointer-events-none opacity-25" : ""}`}
+                  ref={(el) => { sectionRefs.current[section.anchor] = el; }}
+                  className={`mb-2 scroll-mt-16 transition-opacity ${isMiss ? 'pointer-events-none opacity-25' : ''}`}
                 >
-                  {/* Section header */}
-                  <div
-                    className="flex cursor-pointer select-none items-center justify-between bg-[#f2ede5] px-3.5 py-2 transition-colors hover:bg-[#ebe5d8]"
-                    onClick={() =>
-                      !isMiss &&
-                      setExpandedSections((prev) => ({
-                        ...prev,
-                        [section.anchor]: !prev[section.anchor],
-                      }))
-                    }
+                  {/* Section Header */}
+                  <button
+                    onClick={() => !isMiss && setExpandedSections((prev) => ({
+                      ...prev,
+                      [section.anchor]: !prev[section.anchor],
+                    }))}
+                    className={`w-full flex items-center justify-between p-3 transition-colors ${
+                      isHit
+                        ? 'bg-[#eff6ff] border-l-2 border-[#5a8fc7]'
+                        : isCited
+                        ? 'bg-[#faf9f7] border-l-2 border-[#b8860b]/40'
+                        : 'bg-[#faf9f7] hover:bg-[#f5f4f2] border-l-2 border-transparent'
+                    }`}
                   >
                     <div className="flex items-center gap-2">
                       {isHit ? (
-                        <span className="h-[5px] w-[5px] rounded-full bg-[#5b9bd5]" />
+                        <span className="h-[5px] w-[5px] rounded-full bg-[#5a8fc7]" />
                       ) : isCited ? (
-                        <span className="h-[5px] w-[5px] rounded-full bg-[#c9a84c]" />
+                        <span className="h-[5px] w-[5px] rounded-full bg-[#b8860b]" />
                       ) : null}
-                      <span className="font-[family-name:var(--font-playfair)] text-[13.5px] font-semibold">
+                      <span className="text-[14px] font-medium text-[#333]">
                         {section.heading}
                       </span>
                       {sectionSourceLabel(section.source) && (
-                        <span className="font-[family-name:var(--font-source-sans)] text-[10px] text-[#ccc]">
+                        <span className="text-[10px] text-[#ccc]">
                           {sectionSourceLabel(section.source)}
                         </span>
                       )}
                       {isHit && hitCount > 0 && (
-                        <span className="font-[family-name:var(--font-source-sans)] text-[10.5px] font-semibold text-[#5b9bd5]">
+                        <span className="text-[10px] font-medium text-[#5a8fc7]">
                           {hitCount} match{hitCount !== 1 ? "es" : ""}
                         </span>
                       )}
                     </div>
                     <span
-                      className="inline-block text-[9px] text-[#bbb] transition-transform"
-                      style={{
-                        transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
-                      }}
+                      className="text-[9px] text-[#bbb] transition-transform"
+                      style={{ transform: isOpen ? "rotate(90deg)" : "rotate(0deg)" }}
                     >
                       ▶
                     </span>
-                  </div>
+                  </button>
 
-                  {/* Section body */}
+                  {/* Section Turns */}
                   {isOpen && (
-                    <div className="bg-white px-4 py-1 pb-2.5">
+                    <div className="border-l border-[#e5e3df] ml-1">
                       {sectionTurns.map((turn, ti) => {
                         const isHost = turn.role === "host";
                         const key = `${section.anchor}-${ti}`;
                         const hostExpanded = expandedHostTurns[key];
-                        const isTurnHit =
-                          hasSearch && searchResults.turnKeys.has(key);
+                        const isTurnHit = hasSearch && searchResults.turnKeys.has(key);
                         const { first, hasMore } = firstSentence(turn.text);
                         const summary = turn_summaries?.[turn.turn_index];
-                        const dimmed =
-                          activeSpeaker &&
-                          activeSpeaker !== turn.speaker;
+                        const dimmed = activeSpeaker && activeSpeaker !== turn.speaker;
+                        const speakerInfo = speakers.find(s => s.name === turn.speaker);
+                        const isCitedTurn = citedTurnIndices.has(turn.turn_index);
 
-                        if (isHost) {
-                          return (
-                            <div
-                              key={ti}
-                              className={`border-b border-[#f0ece5] py-1.5 last:border-b-0 ${
-                                isTurnHit
-                                  ? "-mx-4 bg-[#eff6ff] px-4"
-                                  : ""
-                              }`}
-                              style={dimmed ? { opacity: 0.3 } : undefined}
-                            >
-                              <div className="mb-0.5 flex items-baseline gap-2 font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#ccc]">
-                                <span>{turn.speaker}</span>
-                                {turn.timestamp_seconds != null && (
-                                  <span
-                                    className="cursor-pointer font-normal normal-case tracking-normal text-[#999] hover:text-[#666]"
-                                    onClick={() => seekToTime(turn.timestamp_seconds!)}
-                                    title={`Jump to ${formatTimestamp(turn.timestamp_seconds)}`}
-                                  >
-                                    {formatTimestamp(turn.timestamp_seconds)}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="font-[family-name:var(--font-source-sans)] text-[12.5px] italic leading-relaxed text-[#bbb]">
-                                {hostExpanded || isTurnHit
-                                  ? highlightText(turn.text, debouncedQuery)
-                                  : summary
-                                    ? summary
-                                    : hasMore
-                                      ? highlightText(first, debouncedQuery)
-                                      : highlightText(turn.text, debouncedQuery)
-                                }
-                              </p>
-                              {(hasMore || summary) && (
-                                <span
-                                  className="mt-0.5 inline-block cursor-pointer font-[family-name:var(--font-source-sans)] text-[10.5px] text-[#bbb] hover:text-[#777]"
-                                  onClick={() =>
-                                    setExpandedHostTurns((prev) => ({
-                                      ...prev,
-                                      [key]: !prev[key],
-                                    }))
-                                  }
-                                >
-                                  {summary
-                                    ? (hostExpanded ? "summary" : "full text")
-                                    : (hostExpanded ? "▲ less" : "▼ more")
-                                  }
-                                </span>
-                              )}
-                            </div>
-                          );
-                        }
-
-                        // Guest turn
                         return (
                           <div
                             key={ti}
-                            className={`border-b border-[#f0ece5] py-2.5 last:border-b-0 ${
+                            className={`group relative py-3 px-4 transition-all border-l-2 ${
                               isTurnHit
-                                ? "-mx-4 bg-[#eff6ff] px-4"
-                                : ""
+                                ? 'bg-[#eff6ff] border-l-[#5a8fc7]'
+                                : isCitedTurn
+                                ? 'bg-[#b8860b]/5 border-l-[#b8860b]/40'
+                                : 'hover:bg-[#faf9f7] border-transparent'
                             }`}
                             style={dimmed ? { opacity: 0.3 } : undefined}
                           >
-                            <div className="mb-1 flex items-baseline gap-2 font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#c9a84c]">
-                              <span>{turn.speaker}</span>
+                            {/* Header: timestamp + name/title + cited badge */}
+                            <div className="flex items-baseline gap-3 mb-1">
                               {turn.timestamp_seconds != null && (
-                                <span
-                                  className="cursor-pointer font-normal normal-case tracking-normal text-[#999] hover:text-[#666]"
+                                <button 
                                   onClick={() => seekToTime(turn.timestamp_seconds!)}
-                                  title={`Jump to ${formatTimestamp(turn.timestamp_seconds)}`}
+                                  className="text-[10px] font-mono text-[#999] hover:text-[#b8860b] transition-colors flex-shrink-0"
+                                  title="Jump to timestamp"
                                 >
                                   {formatTimestamp(turn.timestamp_seconds)}
+                                </button>
+                              )}
+                              <span className={`text-[13px] font-medium ${isHost ? 'text-[#666]' : 'text-[#b8860b]'}`}>
+                                {turn.speaker}
+                              </span>
+                              {speakerInfo && (
+                                <span className="text-[10px] text-[#999]">
+                                  {[speakerInfo.title, speakerInfo.affiliation].filter(Boolean).join(", ")}
+                                </span>
+                              )}
+                              {isCitedTurn && (
+                                <span className="flex items-center gap-1 text-[9px] text-[#b8860b]/70">
+                                  <span className="w-1 h-1 rounded-full bg-[#b8860b]" />
+                                  cited
                                 </span>
                               )}
                             </div>
-                            <p className="font-[family-name:var(--font-source-sans)] text-[13.5px] leading-[1.65] text-[#1a1a1a]">
-                              {highlightText(turn.text, debouncedQuery)}
-                            </p>
+
+                            {/* Text content - aligned with header */}
+                            {isHost ? (
+                              <p className="text-[14px] leading-[1.6] text-[#555] italic">
+                                {hostExpanded || isTurnHit
+                                  ? highlightText(turn.text, debouncedQuery)
+                                  : summary
+                                  ? summary
+                                  : hasMore
+                                  ? highlightText(first, debouncedQuery)
+                                  : highlightText(turn.text, debouncedQuery)
+                                }
+                                {(hasMore || summary) && !isTurnHit && (
+                                  <button
+                                    onClick={() => setExpandedHostTurns((prev) => ({ ...prev, [key]: !prev[key] }))}
+                                    className="ml-1 text-[12px] text-[#b8860b] hover:underline transition-colors"
+                                    title={hostExpanded ? (summary ? "Show summary" : "Show less") : "Show full text"}
+                                  >
+                                    {hostExpanded ? "[less]" : "[more]"}
+                                  </button>
+                                )}
+                              </p>
+                            ) : (
+                              <p className="text-[14px] leading-[1.6] text-[#333]">
+                                {highlightText(turn.text, debouncedQuery)}
+                              </p>
+                            )}
                           </div>
                         );
                       })}
@@ -1051,54 +905,195 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               );
             })}
           </div>
+        </section>
 
-          {/* VIDEO PANEL (hidden on mobile) */}
-          <div
-            className={`sticky top-6 overflow-hidden rounded border-l border-[#e5e0d6] bg-[#faf9f7] transition-all max-md:hidden ${
-              videoOpen ? "min-h-[120px]" : "min-h-[120px] cursor-pointer"
-            }`}
-            onClick={!videoOpen ? () => setVideoOpen(true) : undefined}
-          >
-            {!videoOpen ? (
-              <div
-                className="cursor-pointer select-none py-4 font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#bbb] hover:text-[#888]"
-                style={{
-                  writingMode: "vertical-rl",
-                  transform: "rotate(180deg)",
-                }}
-              >
-                ▶ Watch Episode
-              </div>
-            ) : (
-              <div className="w-full p-3">
-                <div className="mb-2.5 flex items-center justify-between">
-                  <span className="font-[family-name:var(--font-source-sans)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#aaa]">
-                    Episode
-                  </span>
-                  <button
-                    onClick={() => setVideoOpen(false)}
-                    className="p-0 text-sm leading-none text-[#bbb] hover:text-[#666]"
-                  >
-                    ×
-                  </button>
+        {/* Right Sidebar */}
+        <aside className="h-full bg-[#faf9f7] flex flex-col border-l border-[#e5e3df] overflow-y-auto max-md:h-auto max-md:overflow-visible max-md:border-l-0 max-md:border-t">
+          {/* Regenerate Button */}
+          <div className="px-4 pt-4 pb-2 border-b border-[#e5e3df]">
+            <RegenerateBulletsButton
+              appearanceId={appearance.id}
+              bulletsGeneratedAt={bullets_generated_at}
+              transcriptCharCount={transcript_char_count}
+            />
+          </div>
+
+          {/* Key Takeaways */}
+          <div className="p-4 border-b border-[#e5e3df]">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Key Takeaways</span>
+            </div>
+            <div className="space-y-3">
+              {prep_bullets.map((b, i) => {
+                const fb = feedback[i];
+                const flagged = !!fb?.flagged;
+                const firstQuote = b.supporting_quotes[0];
+
+                if (flagged) {
+                  return (
+                    <div
+                      key={i}
+                      className="p-2 bg-[#f5f4f2] border border-[#e5e3df] opacity-50"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-[#999] italic truncate flex-1">
+                          {b.text.split(" ").slice(0, 5).join(" ")}...
+                        </span>
+                        <button
+                          onClick={() => setFeedback((prev) => ({ ...prev, [i]: { flagged: false } }))}
+                          className="text-[10px] text-[#999] hover:text-[#555] ml-2"
+                        >
+                          undo
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={i} className="p-3 bg-white border border-[#e5e3df] hover:border-[#b8860b]/30 transition-colors group">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] leading-relaxed text-[#333] mb-2">
+                          {b.text}
+                        </div>
+                        {firstQuote && (
+                          <button
+                            onClick={() => {
+                              if (isMonologue) {
+                                monologueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                              } else if (firstQuote.section_anchor) {
+                                scrollToSection(firstQuote.section_anchor);
+                              }
+                            }}
+                            className="text-left w-full"
+                          >
+                            <div className="text-[11px] italic text-[#888] hover:text-[#555] leading-snug">
+                              <span className="not-italic text-[#b8860b]">&ldquo;</span>
+                              {firstQuote.quote}
+                              <span className="not-italic text-[#bbb] ml-1">
+                                — {firstQuote.speaker}
+                              </span>
+                            </div>
+                          </button>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => {
+                          setPanelDraft("");
+                          setFloatingPanel({ idx: i });
+                          setFeedback((prev) => ({ ...prev, [i]: { ...prev[i], flagged: true } }));
+                        }}
+                        className="opacity-0 group-hover:opacity-100 text-[#ccc] hover:text-[#999] transition-opacity p-1"
+                        title="Flag as unhelpful"
+                      >
+                        <span className="text-sm">&times;</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+              {prep_bullets.length === 0 && (
+                <div className="text-[11px] text-[#999] italic text-center py-4">
+                  No takeaways generated yet
                 </div>
-                {youtube_id ? (
-                  <div className="aspect-video w-full overflow-hidden rounded bg-[#111]">
-                    <div id="yt-player-container" className="h-full w-full" />
-                  </div>
-                ) : (
-                  <div className="px-3 py-5 text-center font-[family-name:var(--font-source-sans)] text-[11px] leading-relaxed text-[#bbb]">
-                    No video available for this episode.
-                    <br />
-                    <span className="text-[#c9a84c]">Timestamps</span> will
-                    link here when YouTube source is available.
-                  </div>
-                )}
+              )}
+            </div>
+          </div>
+
+          {/* Rowspace Angles */}
+          <div className="p-4 border-b border-[#e5e3df]">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Rowspace Angles</span>
+            </div>
+            <div className="space-y-3">
+              <div className="text-[11px] text-[#999] italic text-center py-2">
+                Coming soon
+              </div>
+            </div>
+          </div>
+
+          {/* Related Content - Collapsible */}
+          <div className="p-4">
+            <button
+              onClick={() => setRelatedExpanded(!relatedExpanded)}
+              className="w-full flex items-center justify-between mb-3"
+            >
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Related Content</span>
+              <span
+                className="text-[9px] text-[#bbb] transition-transform"
+                style={{ transform: relatedExpanded ? "rotate(90deg)" : "rotate(0deg)" }}
+              >
+                ▶
+              </span>
+            </button>
+            {relatedExpanded && (
+              <div className="space-y-2">
+                <div className="text-[11px] text-[#999] italic text-center py-4">
+                  No related content available
+                </div>
               </div>
             )}
           </div>
-        </div>
-      </div>
+        </aside>
+      </main>
+
+      {/* Floating Feedback Panel */}
+      {floatingPanel !== null && (() => {
+        const b = prep_bullets[floatingPanel.idx];
+        const quoteText = b?.supporting_quotes[0]?.quote ?? b?.text ?? "";
+        return (
+          <div className="fixed right-7 bottom-7 z-50 w-80 rounded border border-[#e5e3df] bg-white p-3.5 shadow-lg">
+            <div className="mb-2.5 flex items-start justify-between gap-2.5">
+              <div className="text-[11px] italic leading-snug text-[#888]">
+                &ldquo;{quoteText.slice(0, 80)}{quoteText.length > 80 ? "..." : ""}&rdquo;
+              </div>
+              <button
+                onClick={() => setFloatingPanel(null)}
+                className="shrink-0 p-0 text-base leading-none text-[#bbb] hover:text-[#666]"
+              >
+                &times;
+              </button>
+            </div>
+            <input
+              ref={panelInputRef}
+              value={panelDraft}
+              onChange={(e) => setPanelDraft(e.target.value)}
+              placeholder="What's off about this bullet? (optional)"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  setFeedback((prev) => ({
+                    ...prev,
+                    [floatingPanel.idx]: { flagged: true, comment: panelDraft || undefined },
+                  }));
+                  setFloatingPanel(null);
+                }
+                if (e.key === "Escape") {
+                  setFloatingPanel(null);
+                }
+              }}
+              className="w-full rounded border border-[#e5e3df] bg-[#faf9f7] px-2 py-1.5 text-xs text-[#333] outline-none focus:border-[#b8860b]"
+            />
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-[10px] text-[#ccc]">
+                Enter to save, Esc to dismiss
+              </span>
+              <button
+                onClick={() => {
+                  setFeedback((prev) => ({
+                    ...prev,
+                    [floatingPanel.idx]: { flagged: true, comment: panelDraft || undefined },
+                  }));
+                  setFloatingPanel(null);
+                }}
+                className="rounded bg-[#1a1a1a] px-2.5 py-1 text-[11px] text-white"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
