@@ -458,6 +458,33 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             </div>
           </div>
 
+          {/* Search */}
+          <div className="px-3 py-2 border-b border-[#e5e3df]">
+            <div className="relative">
+              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#bbb]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input 
+                type="text"
+                placeholder="Find in transcript..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-white border border-[#e5e3df] text-[12px] text-[#333] placeholder:text-[#bbb] py-2 pl-8 pr-8 focus:outline-none focus:border-[#b8860b]/50"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setDebouncedQuery("");
+                  }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#bbb] hover:text-[#666]"
+                >
+                  <span className="text-sm">&times;</span>
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Sections */}
           <div className="px-3 py-1 flex-1">
             <div className="flex items-center justify-between mb-1">
