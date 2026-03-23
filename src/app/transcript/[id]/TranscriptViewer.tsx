@@ -222,8 +222,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       player.seekTo(seconds, true);
       player.playVideo();
     } else {
+      // Player not ready yet — store seek and it will fire in onReady
       pendingSeekRef.current = seconds;
-      setVideoMode('pip');
     }
   }, []);
 
@@ -255,6 +255,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               event.target.playVideo();
               pendingSeekRef.current = null;
             }
+          },
+          onStateChange: (event: { data: number }) => {
+            // YT.PlayerState: PLAYING=1, PAUSED=2, ENDED=0, BUFFERING=3
+            setIsPlaying(event.data === 1);
           },
         },
       });
@@ -601,40 +605,60 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
         {/* Center: Transcript */}
         <section className="h-full bg-white overflow-y-auto flex flex-col max-md:h-auto max-md:overflow-visible">
-          {/* Hidden YouTube player container - always mounted for audio */}
-          {youtube_id && videoMode !== 'full' && (
-            <div className="absolute -left-[9999px] w-1 h-1 overflow-hidden">
-              <div id="yt-player-container" />
-            </div>
-          )}
-
-          {/* Full Video Mode - sticky at top of center column */}
-          {youtube_id && videoMode === 'full' && (
-            <div className="sticky top-0 z-40 bg-[#0a0a0a]">
-              <div className="aspect-video max-h-[50vh] w-full bg-[#111] relative">
+          {/* Single always-mounted YouTube player container — CSS positions it per videoMode */}
+          {youtube_id && (
+            <div
+              className={
+                videoMode === 'full'
+                  ? "sticky top-0 z-40 bg-[#0a0a0a]"
+                  : videoMode === 'pip'
+                  ? "fixed bottom-4 right-4 z-50 w-[300px] shadow-2xl rounded overflow-hidden bg-[#0a0a0a]"
+                  : "absolute -left-[9999px] w-1 h-1 overflow-hidden"
+              }
+            >
+              <div className={
+                videoMode === 'full'
+                  ? "aspect-video max-h-[50vh] w-full bg-[#111] relative"
+                  : videoMode === 'pip'
+                  ? "aspect-video w-full relative"
+                  : ""
+              }>
                 <div id="yt-player-container" className="h-full w-full" />
-                <div className="absolute top-3 right-3 flex items-center gap-2">
-                  {/* Pop to mini PiP - arrow to bottom right */}
-                  <button 
-                    onClick={() => setVideoMode('pip')}
-                    className="p-2 bg-black/50 text-white/80 hover:text-white hover:bg-black/70 transition-colors rounded"
-                    title="Mini player (podcast mode)"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17L17 7M17 7H8M17 7v9" />
-                    </svg>
-                  </button>
-                  {/* Collapse to audio - x */}
-                  <button 
-                    onClick={() => setVideoMode('collapsed')}
-                    className="p-2 bg-black/50 text-white/80 hover:text-white hover:bg-black/70 transition-colors rounded"
-                    title="Audio only"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
+                {/* Mode switch controls — visible in full and pip */}
+                {videoMode !== 'collapsed' && (
+                  <div className={`absolute flex items-center gap-1 ${videoMode === 'full' ? 'top-3 right-3 gap-2' : 'top-2 right-2'}`}>
+                    {videoMode === 'full' ? (
+                      <button
+                        onClick={() => setVideoMode('pip')}
+                        className="p-2 bg-black/50 text-white/80 hover:text-white hover:bg-black/70 transition-colors rounded"
+                        title="Mini player (podcast mode)"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17L17 7M17 7H8M17 7v9" />
+                        </svg>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setVideoMode('full')}
+                        className="p-1.5 bg-black/60 text-white/80 hover:text-white hover:bg-black/80 transition-colors rounded"
+                        title="Full video (interview mode)"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m0-16l-3 3m3-3l3 3m-3 13l-3-3m3 3l3-3" />
+                        </svg>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setVideoMode('collapsed')}
+                      className={`${videoMode === 'full' ? 'p-2 bg-black/50' : 'p-1.5 bg-black/60'} text-white/80 hover:text-white hover:bg-black/70 transition-colors rounded`}
+                      title="Audio only"
+                    >
+                      <svg className={videoMode === 'full' ? 'w-4 h-4' : 'w-3.5 h-3.5'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -651,11 +675,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                             const state = ytPlayerRef.current.getPlayerState();
                             if (state === 1) {
                               ytPlayerRef.current.pauseVideo();
-                              setIsPlaying(false);
                             } else {
                               ytPlayerRef.current.playVideo();
-                              setIsPlaying(true);
                             }
+                            // isPlaying synced via onStateChange listener
                           }
                         }}
                         className="w-8 h-8 flex items-center justify-center text-[#666] hover:text-[#b8860b] transition-colors"
@@ -1079,41 +1102,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             )}
           </div>
 
-          {/* Mini PiP Video - docked at bottom of sidebar */}
-          {youtube_id && videoMode === 'pip' && (
-            <div className="sticky bottom-0 mt-auto border-t border-[#e5e3df] bg-[#0a0a0a]">
-              <div className="relative aspect-video w-full">
-                <iframe
-                  src={`https://www.youtube.com/embed/${youtube_id}?autoplay=1&rel=0&enablejsapi=1`}
-                  className="w-full h-full"
-                  allow="autoplay; encrypted-media"
-                  allowFullScreen
-                />
-                <div className="absolute top-2 right-2 flex items-center gap-1">
-                  {/* Expand to Full - vertical arrows */}
-                  <button 
-                    onClick={() => setVideoMode('full')}
-                    className="p-1.5 bg-black/60 text-white/80 hover:text-white hover:bg-black/80 transition-colors rounded"
-                    title="Full video (interview mode)"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m0-16l-3 3m3-3l3 3m-3 13l-3-3m3 3l3-3" />
-                    </svg>
-                  </button>
-                  {/* Collapse to audio - x */}
-                  <button 
-                    onClick={() => setVideoMode('collapsed')}
-                    className="p-1.5 bg-black/60 text-white/80 hover:text-white hover:bg-black/80 transition-colors rounded"
-                    title="Audio only"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* PiP video is now rendered via the unified player container (position: fixed) */}
         </aside>
       </main>
 
