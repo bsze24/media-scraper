@@ -65,7 +65,7 @@ export default function DesignOptionsPage() {
           {designs.map((d) => (
             <Link
               key={d.id}
-              href={`/transcript/designs/${d.id}`}
+              href={`/design-options/${d.id}`}
               className="block bg-white border border-[#eee] p-6 hover:border-[#ccc] hover:shadow-lg transition-all group"
             >
               <div className="flex items-start gap-6">

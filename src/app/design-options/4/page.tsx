@@ -76,7 +76,7 @@ export default function DesignOption4() {
       {/* Navigation */}
       <nav className="fixed top-5 left-6 z-50">
         <Link
-          href="/transcript/designs"
+          href="/design-options"
           className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#eae8e3] text-xs font-semibold text-[#666] hover:text-[#1a1a1a] transition-colors"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

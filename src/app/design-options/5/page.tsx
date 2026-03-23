@@ -81,7 +81,7 @@ export default function DesignOption5() {
       {/* Navigation */}
       <nav className="fixed top-4 left-4 z-50">
         <Link
-          href="/transcript/designs"
+          href="/design-options"
           className="inline-flex items-center gap-1.5 px-3 py-2 bg-white rounded-full shadow-sm text-sm font-medium text-[#64748b] hover:text-[#334155] transition-colors"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

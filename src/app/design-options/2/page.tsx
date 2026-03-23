@@ -63,7 +63,7 @@ export default function DesignOption2() {
       {/* Navigation */}
       <nav className="fixed top-6 left-6 z-50">
         <Link
-          href="/transcript/designs"
+          href="/design-options"
           className="inline-flex items-center gap-1.5 text-xs font-medium text-[#666] hover:text-[#111] transition-colors"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
