@@ -397,22 +397,13 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       </header>
 
       {/* Main 3-Column Grid */}
-      <main className="flex-1 grid overflow-hidden max-md:flex max-md:flex-col max-md:overflow-visible" style={{ gridTemplateColumns: '220px 1fr 300px' }}>
+      <main className="flex-1 grid overflow-hidden max-md:flex max-md:flex-col max-md:overflow-visible" style={{ gridTemplateColumns: '190px 1fr 280px' }}>
         
         {/* Left Sidebar */}
         <aside className="h-full bg-[#faf9f7] flex flex-col border-r border-[#e5e3df] overflow-y-auto max-md:h-auto max-md:overflow-visible max-md:order-first max-md:border-r-0 max-md:border-b">
-          {/* Episode Meta */}
-          <div className="px-4 py-4 border-b border-[#e5e3df]">
-            <div className="text-[10px] font-medium uppercase tracking-wider text-[#999] mb-1">Source Series</div>
-            <div className="text-[13px] font-medium text-[#333] mb-3">{source_name}</div>
-            
-            <div className="text-[10px] font-medium uppercase tracking-wider text-[#999] mb-1">Episode</div>
-            <div className="text-[13px] font-medium text-[#333]">{title}</div>
-          </div>
-
           {/* Speakers */}
-          <div className="px-4 py-4 border-b border-[#e5e3df]">
-            <div className="flex items-center gap-2 mb-3">
+          <div className="px-3 py-3 border-b border-[#e5e3df]">
+            <div className="flex items-center gap-2 mb-2">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Speakers</span>
               {has_inferred_attribution && (
                 <span className="text-[9px] text-[#bbb] italic" title="Speaker labels were auto-generated and may not be accurate">
@@ -468,7 +459,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           </div>
 
           {/* Internal Search */}
-          <div className="px-4 py-3 border-b border-[#e5e3df]">
+          <div className="px-3 py-2 border-b border-[#e5e3df]">
             <div className="text-[10px] font-medium uppercase tracking-wider text-[#999] mb-2">Internal Search</div>
             <div className="relative">
               <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#bbb]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -496,8 +487,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           </div>
 
           {/* Sections */}
-          <div className="px-4 py-3 flex-1">
-            <div className="flex items-center justify-between mb-3">
+          <div className="px-3 py-2 flex-1">
+            <div className="flex items-center justify-between mb-2">
               <div className="text-[10px] font-medium uppercase tracking-wider text-[#999]">
                 {isMonologue ? "Topics" : "Sections"}
               </div>
