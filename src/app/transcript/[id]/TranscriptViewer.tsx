@@ -306,6 +306,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null);
   const [relatedExpanded, setRelatedExpanded] = useState(false);
 
+  // ---- Quote highlight (from prep bullet click) ----
+  const [highlightedQuote, setHighlightedQuote] = useState<string | null>(null);
+
   // ---- Editing state ----
   const [editingTurnText, setEditingTurnText] = useState<number | null>(null);
   const [editingTurnTextValue, setEditingTurnTextValue] = useState("");
@@ -657,6 +660,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     speakersPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
+  // Clicking a turn clears any quote highlight from prep bullets
+  const handleSetActiveTurn = useCallback((turnIndex: number) => {
+    setActiveTurnIndex(turnIndex);
+    setHighlightedQuote(null);
+  }, []);
+
   // EXTRACT: useKeyboardShortcuts — begin
   // ---- Keyboard shortcuts state & derived values ----
   const [showHelpOverlay, setShowHelpOverlay] = useState(false);
@@ -759,6 +768,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
       // Input guard — all other keys blocked when in input
       if (isInput) return;
+
+      // Any shortcut clears the quote highlight from prep bullet clicks
+      if (highlightedQuote) setHighlightedQuote(null);
 
       switch (e.key) {
         // --- Navigation ---
@@ -958,7 +970,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     sectionFirstTurns, editingTurnText, turnSpeakerDropdown, floatingPanel,
     showHelpOverlay, isMonologue, allSpeakersGeneric, speakers,
     cancelEditTurnText, startEditingTurnText, seekToTime,
-    toggleTurnExpanded, handleResetView, handleSpeakerClick,
+    toggleTurnExpanded, handleResetView, handleSpeakerClick, highlightedQuote,
   ]);
   // EXTRACT: useKeyboardShortcuts — end
 
@@ -1413,7 +1425,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                       collapsedIsSummary={!!summary}
                       canCollapse={hasMore || !!summary}
                       onToggleExpanded={toggleTurnExpanded}
-                      onSetActive={setActiveTurnIndex}
+                      onSetActive={handleSetActiveTurn}
                       onSeekToTime={seekToTime}
                       speakerInfo={undefined}
                       isEditingText={false}
@@ -1430,6 +1442,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                       onToggleSpeakerDropdown={null}
                       onScrollToSpeakerPanel={null}
                       searchQuery={debouncedQuery}
+                      highlightedQuote={activeTurnIndex === turn.turn_index ? highlightedQuote : null}
                     />
                   );
                 })}
@@ -1457,7 +1470,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                       collapsedIsSummary={!!summary}
                       canCollapse={hasMore || !!summary}
                       onToggleExpanded={toggleTurnExpanded}
-                      onSetActive={setActiveTurnIndex}
+                      onSetActive={handleSetActiveTurn}
                       onSeekToTime={seekToTime}
                       speakerInfo={speakers.find(s => s.name === turn.speaker)}
                       isEditingText={editingTurnText === turn.turn_index}
@@ -1474,6 +1487,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                       onToggleSpeakerDropdown={toggleSpeakerDropdown}
                       onScrollToSpeakerPanel={scrollToSpeakerPanel}
                       searchQuery={debouncedQuery}
+                      highlightedQuote={activeTurnIndex === turn.turn_index ? highlightedQuote : null}
                     />
                   );
                 })}
@@ -1558,7 +1572,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                             collapsedIsSummary={!!summary}
                             canCollapse={hasMore || !!summary}
                             onToggleExpanded={toggleTurnExpanded}
-                            onSetActive={setActiveTurnIndex}
+                            onSetActive={handleSetActiveTurn}
                             onSeekToTime={seekToTime}
                             speakerInfo={speakers.find(s => s.name === turn.speaker)}
                             isEditingText={editingTurnText === turn.turn_index}
@@ -1575,6 +1589,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                             onToggleSpeakerDropdown={toggleSpeakerDropdown}
                             onScrollToSpeakerPanel={scrollToSpeakerPanel}
                             searchQuery={debouncedQuery}
+                      highlightedQuote={activeTurnIndex === turn.turn_index ? highlightedQuote : null}
                           />
                         );
                       })}
@@ -1639,15 +1654,23 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         {firstQuote && (
                           <button
                             onClick={() => {
-                              // Find the matching turn and activate it
+                              // Find the matching turn by text prefix. Speaker/section
+                              // from bullets can be partial ("Hannah" vs "Hannah King")
+                              // or null, so text match is the primary signal.
                               const quotePrefix = firstQuote.quote.slice(0, 80);
                               const matchingTurn = turns.find(t =>
-                                t.section_anchor === firstQuote.section_anchor &&
-                                t.speaker === firstQuote.speaker &&
                                 t.text.includes(quotePrefix)
                               );
                               if (matchingTurn) {
                                 setActiveTurnIndex(matchingTurn.turn_index);
+                                // Ensure turn is expanded so the highlight is visible
+                                setExpandedTurns(prev => {
+                                  if (prev.has(matchingTurn.turn_index)) return prev;
+                                  const next = new Set(prev);
+                                  next.add(matchingTurn.turn_index);
+                                  return next;
+                                });
+                                setHighlightedQuote(firstQuote.quote);
                               } else if (isMonologue) {
                                 monologueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
                               } else if (firstQuote.section_anchor) {
