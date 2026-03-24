@@ -481,16 +481,25 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const allExpanded = allAnchors.every((a) => expandedSections[a]);
   const allCollapsed = allAnchors.every((a) => !expandedSections[a]);
 
+  // Guard against Enter→blur double-fire on inputs
+  const savingGuardRef = useRef(false);
+
   // Speaker rename handler
   const handleSpeakerRename = useCallback(
     async (oldName: string, newName: string) => {
+      if (savingGuardRef.current) return;
       const trimmed = newName.trim();
       if (!trimmed || trimmed === oldName) {
         setEditingSpeaker(null);
         return;
       }
-      await renameSpeaker(oldName, trimmed);
+      savingGuardRef.current = true;
       setEditingSpeaker(null);
+      try {
+        await renameSpeaker(oldName, trimmed);
+      } finally {
+        savingGuardRef.current = false;
+      }
     },
     [renameSpeaker]
   );
@@ -509,7 +518,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   const handleSpeakerMetaSave = useCallback(
     async (speakerName: string, currentTitle?: string, currentAffiliation?: string) => {
+      if (savingGuardRef.current) return;
       const raw = editingSpeakerMetaValue.trim();
+      savingGuardRef.current = true;
       setEditingSpeakerMeta(null);
       // Parse "Title, Affiliation" format
       const commaIdx = raw.indexOf(",");
@@ -523,8 +534,15 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         newAffiliation = "";
       }
       // Skip if unchanged
-      if (newTitle === (currentTitle ?? "") && newAffiliation === (currentAffiliation ?? "")) return;
-      await updateSpeaker(speakerName, { title: newTitle, affiliation: newAffiliation });
+      if (newTitle === (currentTitle ?? "") && newAffiliation === (currentAffiliation ?? "")) {
+        savingGuardRef.current = false;
+        return;
+      }
+      try {
+        await updateSpeaker(speakerName, { title: newTitle, affiliation: newAffiliation });
+      } finally {
+        savingGuardRef.current = false;
+      }
     },
     [updateSpeaker, editingSpeakerMetaValue]
   );
@@ -540,13 +558,19 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   const saveTurnTextEdit = useCallback(
     async (turnIndex: number, originalText: string) => {
+      if (savingGuardRef.current) return;
       const trimmed = editingTurnTextValue.trim();
       if (!trimmed || trimmed === originalText) {
         setEditingTurnText(null);
         return;
       }
-      await correctTurn(turnIndex, "text", originalText, trimmed);
+      savingGuardRef.current = true;
       setEditingTurnText(null);
+      try {
+        await correctTurn(turnIndex, "text", originalText, trimmed);
+      } finally {
+        savingGuardRef.current = false;
+      }
     },
     [correctTurn, editingTurnTextValue]
   );

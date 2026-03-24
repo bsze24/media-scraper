@@ -310,7 +310,7 @@ export async function processAppearance(id: string): Promise<void> {
 
       // Backfill speakers[] from turns when scraper found no speaker metadata
       if (speakers.length === 0 && currentTurns.length > 0) {
-        const distinctNames = [...new Set(currentTurns.map((t) => t.speaker))];
+        const distinctNames = [...new Set(currentTurns.map((t) => t.speaker))].filter(Boolean);
         speakers = distinctNames.map((name) => ({
           name,
           role: "guest" as const,
@@ -679,13 +679,7 @@ export async function reprocessSpeakers(
   console.log(`[reprocessSpeakers]   speakers: [${oldSpeakers.join(", ")}] → [${newSpeakers.join(", ")}]`);
 
   // Update speakers column
-  const { createServerClient } = await import("@lib/db/client");
-  const supabase = createServerClient();
-  const { error: speakersError } = await supabase
-    .from("appearances")
-    .update({ speakers })
-    .eq("id", id);
-  if (speakersError) throw speakersError;
+  await writeSpeakers(id, speakers);
 
   // Re-clean transcript with correct speaker names
   await updateProcessingDetail(id, "re-cleaning with correct speakers");

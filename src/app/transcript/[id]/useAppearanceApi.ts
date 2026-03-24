@@ -74,6 +74,16 @@ export interface RenameResult {
   bulletsUpdated: number;
 }
 
+/** Convert raw DB turn_summaries array to the Record<number, string> the viewer expects */
+function transformTurnSummaries(
+  raw: unknown
+): Appearance["turn_summaries"] {
+  if (!raw || !Array.isArray(raw)) return null;
+  return Object.fromEntries(
+    raw.map((s: { turn_index: number; summary: string }) => [s.turn_index, s.summary])
+  );
+}
+
 export function useAppearanceApi(appearanceId: string, initial: Appearance) {
   const [speakers, setSpeakers] = useState<Speaker[]>(initial.speakers);
   const [turns, setTurns] = useState<Turn[]>(initial.turns);
@@ -84,6 +94,17 @@ export function useAppearanceApi(appearanceId: string, initial: Appearance) {
   const [hasInferredAttribution, setHasInferredAttribution] = useState(
     initial.has_inferred_attribution
   );
+  // Cache entity_tags for enrichment after any speaker update.
+  // Initialize from initial speakers so enrichment works before any rename.
+  const [entityTags, setEntityTags] = useState<EntityTags>(() => ({
+    key_people: initial.speakers
+      .filter((s) => s.title || s.affiliation)
+      .map((s) => ({
+        name: s.name,
+        title: s.title ?? "",
+        fund_affiliation: s.affiliation ?? "",
+      })),
+  }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
@@ -123,14 +144,15 @@ export function useAppearanceApi(appearanceId: string, initial: Appearance) {
 
         // Update state slices from response
         const rawEntityTags = data.entity_tags as EntityTags;
+        setEntityTags(rawEntityTags);
         const newSpeakers = enrichSpeakers(
-          data.speakers as Array<{ name: string; role: string; affiliation?: string }>,
+          data.speakers as Array<{ name: string; role: string; title?: string; affiliation?: string }>,
           rawEntityTags
         );
         const newTurns = data.turns as Turn[];
         setSpeakers(newSpeakers);
         setTurns(newTurns);
-        setTurnSummaries(data.turn_summaries as Appearance["turn_summaries"]);
+        setTurnSummaries(transformTurnSummaries(data.turn_summaries));
 
         // prep_bullets comes back as PrepBulletsData shape { bullets: [...] }
         const bulletData = data.prep_bullets as { bullets?: PrepBullet[] };
@@ -170,13 +192,17 @@ export function useAppearanceApi(appearanceId: string, initial: Appearance) {
           return false;
         }
         if (data.no_op) return true;
-        setSpeakers(data.speakers as Speaker[]);
+        const newSpeakers = enrichSpeakers(
+          data.speakers as Array<{ name: string; role: string; title?: string; affiliation?: string }>,
+          entityTags
+        );
+        setSpeakers(newSpeakers);
         return true;
       } finally {
         setSaving(false);
       }
     },
-    [appearanceId]
+    [appearanceId, entityTags]
   );
 
   const correctTurn = useCallback(
