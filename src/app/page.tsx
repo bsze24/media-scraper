@@ -117,13 +117,13 @@ export default function Home() {
     refresh();
   }, [refresh]);
 
-  // Auto-refresh every 5s while there are non-terminal items
+  // Auto-refresh every 5s while there are non-terminal items or processing is active
   useEffect(() => {
     const hasActive = appearances.some(
       (a) =>
         a.processing_status !== "complete" && a.processing_status !== "failed"
     );
-    if (!hasActive || processing) return;
+    if (!hasActive && !processing) return;
 
     const timer = setInterval(refresh, 5000);
     return () => clearInterval(timer);
