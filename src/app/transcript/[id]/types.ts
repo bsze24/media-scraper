@@ -7,7 +7,7 @@ export interface TranscriptViewerProps {
     youtube_id: string | null;
     speakers: Array<{
       name: string;
-      role: "guest" | "host";
+      role: "host" | "guest" | "panelist" | "moderator" | "interviewer";
       title?: string; // e.g. "CEO"
       affiliation?: string; // e.g. "Apollo Global Management"
     }>;
@@ -20,10 +20,11 @@ export interface TranscriptViewerProps {
     }>;
     turns: Array<{
       speaker: string;
-      role: "guest" | "host";
+      role: "host" | "guest" | "panelist" | "moderator" | "interviewer";
       text: string;
       turn_index: number;
       section_anchor?: string;
+      corrected?: boolean;
       timestamp_seconds?: number;
       attribution?: "source" | "derived" | "inferred";
     }>;

@@ -42,6 +42,40 @@ import type {
   BulletsStepOutput,
 } from "@lib/db/types";
 
+/**
+ * Merge human-corrected turns into a fresh set of pipeline-generated turns.
+ * Corrected turns (corrected: true) are preserved by turn_index; uncorrected
+ * turns are replaced with the new pipeline output.
+ */
+function mergeCorrectedTurns(
+  existingTurns: import("@/types/appearance").Turn[],
+  newTurns: import("@/types/appearance").Turn[]
+): { merged: import("@/types/appearance").Turn[]; preserved: number } {
+  const correctedByIndex = new Map<number, import("@/types/appearance").Turn>();
+  for (const t of existingTurns) {
+    if (t.corrected) correctedByIndex.set(t.turn_index, t);
+  }
+  if (correctedByIndex.size === 0) {
+    return { merged: newTurns, preserved: 0 };
+  }
+  const merged = newTurns.map((t) => {
+    const corrected = correctedByIndex.get(t.turn_index);
+    if (corrected) {
+      // Keep corrected speaker/text but take new timestamps/anchors
+      return {
+        ...t,
+        speaker: corrected.speaker,
+        text: corrected.text,
+        attribution: corrected.attribution,
+        corrected: true,
+      };
+    }
+    return t;
+  });
+  console.log(`[reprocess] preserving ${correctedByIndex.size} human-corrected turns`);
+  return { merged, preserved: correctedByIndex.size };
+}
+
 export async function processAppearance(id: string): Promise<void> {
   const row = await getAppearanceById(id);
   if (!row) throw new Error(`Appearance not found: ${id}`);
@@ -263,6 +297,13 @@ export async function processAppearance(id: string): Promise<void> {
 
         // Stamp section_anchor on turns so the viewer can group by section
         currentTurns = stampSectionAnchors(currentTurns, sections);
+      }
+
+      // Preserve human-corrected turns during reprocessing
+      const existingTurns = row.turns ?? [];
+      if (existingTurns.some((t) => t.corrected)) {
+        const { merged } = mergeCorrectedTurns(existingTurns, currentTurns);
+        currentTurns = merged;
       }
 
       await writeTurns(id, currentTurns);
@@ -703,6 +744,11 @@ export async function reprocessSpeakers(
   });
   sections = mapSectionsToTurns(cleanSections, currentTurns);
   currentTurns = stampSectionAnchors(currentTurns, sections);
+
+  // Preserve human-corrected turns during reprocessing
+  const existingTurns = row.turns ?? [];
+  const { merged: mergedTurns } = mergeCorrectedTurns(existingTurns, currentTurns);
+  currentTurns = mergedTurns;
 
   await writeTurns(id, currentTurns);
   await writeSections(id, sections);
