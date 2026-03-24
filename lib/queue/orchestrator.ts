@@ -7,6 +7,7 @@ import {
   writeExtractResult,
   writeCleanResult,
   writeTurns,
+  writeSpeakers,
   writeTurnSummaries,
   appendProcessingWarning,
   removeProcessingWarning,
@@ -265,6 +266,17 @@ export async function processAppearance(id: string): Promise<void> {
       }
 
       await writeTurns(id, currentTurns);
+
+      // Backfill speakers[] from turns when scraper found no speaker metadata
+      if (speakers.length === 0 && currentTurns.length > 0) {
+        const distinctNames = [...new Set(currentTurns.map((t) => t.speaker))];
+        speakers = distinctNames.map((name) => ({
+          name,
+          role: "guest" as const,
+        }));
+        await writeSpeakers(id, speakers);
+        console.log(`[pipeline]   ↳ [backfill] populated speakers[] with ${speakers.length} speakers from turns`);
+      }
     }
 
     // Validation 3: suspiciously low turn count
