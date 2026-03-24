@@ -115,18 +115,17 @@ export function useAppearanceApi(appearanceId: string, initial: Appearance) {
   const renameSpeaker = useCallback(
     async (
       oldName: string,
-      newName: string,
-      role?: string
+      newName: string
     ): Promise<RenameResult | null> => {
       if (!newName.trim()) return null;
-      if (oldName === newName && !role) return null;
+      if (oldName === newName) return null;
 
       setSaving(true);
       setError(null);
       try {
         const { ok, data, error: apiError } = await apiFetch(
           `/api/appearances/${appearanceId}/rename-speaker`,
-          { old_name: oldName, new_name: newName, ...(role ? { role } : {}) }
+          { old_name: oldName, new_name: newName }
         );
         if (!ok) {
           setError(apiError ?? "Rename failed");
