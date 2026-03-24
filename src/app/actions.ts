@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
+import { unstable_noStore as noStore } from "next/cache";
 import {
   getAppearanceByUrl,
   insertAppearance,
@@ -95,6 +96,7 @@ export async function retryAppearance(
 export async function getQueueStatus(): Promise<
   Record<ProcessingStatus | "total", number>
 > {
+  noStore();
   return countByStatus();
 }
 
@@ -132,6 +134,7 @@ export async function getAllAppearances(): Promise<
     created_at: string;
   }[]
 > {
+  noStore();
   const rows = await listAppearances({ limit: 200 });
   return rows.map((r) => ({
     id: r.id,

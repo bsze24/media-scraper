@@ -278,6 +278,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const pendingPlayRef = useRef<boolean>(false);
 
   const seekToTime = useCallback((seconds: number) => {
+    setCurrentTime(seconds); // immediate UI update
     const player = ytPlayerRef.current;
     if (player) {
       player.seekTo(seconds, true);
@@ -1018,7 +1019,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         style={{ width: duration > 0 ? `${(currentTime / duration) * 100}%` : "0%" }}
                       />
                     </div>
-                    <span className="text-[11px] font-mono text-[#999]">{duration > 0 ? formatPlayerTime(duration) : "--:--"}</span>
+                    <span className="text-[11px] font-mono text-[#999]">{duration > 0 ? `-${formatPlayerTime(duration - currentTime)}` : "--:--"}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 text-[#888]">
