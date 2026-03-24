@@ -503,8 +503,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           setActiveTurnIndex(nextItem.turnIndex);
           setTimeout(() => { skipInProgressRef.current = false; }, 500);
         } else {
-          // Past all expanded turns — pause
-          player.pauseVideo();
+          // Past all expanded turns — let video play to end naturally
+          setAutoFollowEnabled(false);
         }
       }
     }, 250);
