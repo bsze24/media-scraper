@@ -1,7 +1,7 @@
 # Meeting Prep Tool — Technical Implementation Plan
 **Last updated:** March 23, 2026
 **Branch:** `main` (feature branches per PR)
-**Status:** Phase 1D complete. Phase 1A transcript viewer redesigned (3-column app layout, YouTube player modes, mobile responsive). Phase 1C search/list page live (basic — no card/triage UI yet). Prod synced: 41 appearances (29 Colossus + 12 YouTube). PR #37 (YouTube player modes) in review.
+**Status:** Phase 1D complete, Phase 1E in progress. Transcript QA + speaker management shipped (speaker rename/role/title editing, turn corrections, data quality banner). Keyboard shortcuts next. Phase 2 partially pulled forward (corrections table, inline editing, speaker reassignment now live in Phase 1E). Prod synced: 41 appearances (29 Colossus + 12 YouTube).
 
 ---
 
@@ -15,12 +15,13 @@
 | `002_turns_and_summaries.sql` | Deployed | `turns` JSONB + `turn_summaries` JSONB + GIN index on turns |
 | `003_tighten_anon_rls.sql` | Deployed | Row-level security tightening for anon role |
 | `004_sections.sql` | Deployed | `sections` JSONB DEFAULT '[]' on appearances |
-| `005_corrections.sql` | Created (Phase 1 prep) | `corrections` audit table for human edits to turns |
-| `006_turns_corrected_flag.sql` | Created (Phase 1 prep) | Documents Turn.corrected boolean intent (no DDL) |
+| `005_corrections.sql` | Deployed | `corrections` audit table for human edits to turns |
+| `006_turns_corrected_flag.sql` | Deployed | Documents Turn.corrected boolean intent (no DDL) |
 | `007_prompt_snapshot.sql` | Deployed (Phase 1B) | `prompt_context_snapshot TEXT` + `bullets_generated_at TIMESTAMPTZ` on appearances |
 | `008_rename_raw_caption_data.sql` | Deployed (Phase 1D) | Renames `raw_caption_data` → `scraper_metadata` |
 | `009_atomic_processing_warning.sql` | Deployed | Postgres RPC for atomic `append_processing_warning` / `remove_processing_warning` |
 | `010_processing_detail.sql` | Deployed | `processing_detail TEXT` column on appearances |
+| `011_corrections_extend.sql` | Deployed | ALTER corrections: turn_index nullable, field CHECK adds 'role' |
 | `003_embeddings.sql` | Not created — Phase 5 | `transcript_chunks` table + pgvector extension + HNSW index |
 
 ---
@@ -35,7 +36,7 @@ transcript_source (TEXT: "colossus"/"capital_allocators"/"acquired"/"youtube_cap
 source_name (TEXT)
 title
 appearance_date (DATE)
-speakers (JSONB: [{name, role, affiliation}])
+speakers (JSONB: [{name, role, title?, affiliation?}])  — human-validated speaker profiles. role: "host"|"guest"|"rowspace"|"customer"|"other". title/affiliation override entity_tags.key_people when set.
 raw_transcript (TEXT)
 scraper_metadata (JSONB)                         — general-purpose scraper output (YouTube: caption segments; Colossus: sections + episode number)
 cleaned_transcript (TEXT)
@@ -60,7 +61,7 @@ interface Turn {
   text: string;
   turn_index: number;
   section_anchor?: string;       // stamped at parse time from sections[]; undefined before first heading
-  corrected?: boolean;           // true if human-verified (Phase 2 corrections UI)
+  corrected?: boolean;           // true if human-verified — set by speaker rename, turn re-attribution, and text editing APIs
   timestamp_seconds?: number;    // YouTube only (Phase 1) — extracted from scraper_metadata
   attribution?: "source" | "derived" | "inferred";  // "source" = from original transcript, "derived" = mechanically extracted, "inferred" = LLM-attributed. Omitted on legacy turns (treated as "source").
 }
@@ -127,6 +128,8 @@ interface SectionHeading {
 **Known limitation — `sectors_themes`:** Unstructured `string[]` by design. The LLM generates whatever themes it finds in the transcript — no controlled vocabulary, no normalization ("private credit" vs. "direct lending" may appear inconsistently across appearances). Sufficient for display and fuzzy search. If filtered views or aggregations are needed (Phase 3+), add a coarse `sector_category` enum alongside free-text themes — preserves the LLM's specificity while enabling reliable filtering.
 
 **Known limitation — `key_people` titles:** Titles are extracted from what's said in the transcript, not enriched from external sources. "John Zito, who runs credit at Apollo" becomes `title: "runs credit"` or similar — good enough for prep context, not authoritative.
+
+**Two-layer speaker metadata:** `speakers[]` is the human-validated layer (names, roles, titles). `entity_tags.key_people[]` is the LLM-generated draft. Enrichment precedence: `speakers[].title ?? entity_tags.key_people[].title`. Speaker edits write to `speakers[]` only — `entity_tags` is updated during renames (name propagation) but not for title/role changes.
 
 ### fund_overview_cache
 `fund_name (TEXT PK), overview_text, appearance_ids (UUID[]), generated_at`
@@ -313,7 +316,8 @@ src/
     globals.css
     transcript/[id]/
       page.tsx                     Server component — fetches appearance, routes by status
-      TranscriptViewer.tsx         Client component — all interaction logic, inferred attribution disclaimer
+      TranscriptViewer.tsx         Client component — all interaction logic, speaker management, turn editing
+      useAppearanceApi.ts          Custom hook — mutable state + API calls for speaker/turn corrections
       RegenerateBulletsButton.tsx  Client component — triggers bullet regeneration
       types.ts                     TranscriptViewerProps interface
     search/page.tsx                [Phase 1]
@@ -332,8 +336,11 @@ src/
         turn-summaries/route.ts    POST — single-appearance turn summary regeneration
         turn-summaries/bulk/route.ts POST — bulk turn summary regeneration
         manual-ingest/route.ts     POST — manual transcript paste
+      appearances/[id]/
+        rename-speaker/route.ts    POST — cascading speaker rename across 6 data locations
+        correct-turn/route.ts      POST — single-turn speaker re-attribution or text fix
+        set-speaker-role/route.ts  POST — speaker role, title, affiliation updates
       feedback/route.ts            [Phase 2] — NOT YET BUILT
-      corrections/route.ts         [Phase 2] — NOT YET BUILT
       notion/route.ts              [Phase 3] — NOT YET BUILT
       admin/stats/route.ts         [Phase 4] — NOT YET BUILT
 supabase/
@@ -348,6 +355,7 @@ supabase/
     008_rename_raw_caption_data.sql
     009_atomic_processing_warning.sql
     010_processing_detail.sql
+    011_corrections_extend.sql     ALTER corrections: turn_index nullable, field CHECK adds 'role'
     003_embeddings.sql             [Phase 5] — NOT YET CREATED
 scripts/
   reprocess-timestamps.ts          Re-run timestamp extraction on all YouTube appearances
@@ -445,6 +453,33 @@ Every LLM-dependent pipeline step has a validation guard that checks output qual
 - ✓ Speaker name normalization verified — all 29 Colossus rows checked, no normalization needed
 - ✓ Prod sync: 12 YouTube appearances copied dev → prod, section source backfilled on prod, migrations 009+010 confirmed on prod
 - ✓ Stripped all `dark:` Tailwind variants from non-transcript pages (48 instances) — app is light-only
+- ✓ Speakers[] backfill — after LLM cleaning, if speakers[] is empty, extract distinct speaker names from turns and populate with role: "guest" default. Ensures sidebar has data for Loom/call recordings where scraper finds no speaker metadata.
+- ✓ Transcript viewer redesign (PR #36) — v0 + Claude Code. Three-column layout rebuilt.
+- ✓ YouTube player modes (PR #37) — collapsed/pip/full with single always-mounted container, CSS positioning, onStateChange sync.
+
+**Phase 1E — Transcript QA + Speaker Management (IN PROGRESS):**
+
+Speaker management (shipped):
+- ✓ Speaker sidebar panel — inline rename (cascading across 6 data locations), role dropdown (host/guest/rowspace/customer/other), title/affiliation editing
+- ✓ `POST /api/appearances/[id]/rename-speaker` — cascading rename across speakers[], turns[], turn_summaries[], prep_bullets[].supporting_quotes[], entity_tags.key_people[], cleaned_transcript. Regex anchored to line start. Single UPDATE. Audit trail in corrections table.
+- ✓ `POST /api/appearances/[id]/correct-turn` — single-turn speaker re-attribution or text fix. Sets corrected: true, attribution: "source".
+- ✓ `POST /api/appearances/[id]/set-speaker-role` — role, title, affiliation updates on speakers[]. Title/affiliation written to speakers[] (human-validated layer), not entity_tags.
+- ✓ `useAppearanceApi` hook — mutable state management for speakers, turns, turnSummaries, prepBullets, hasInferredAttribution. API responses replace state slices without router.refresh(). enrichSpeakers() re-runs key_people lookup after each update.
+- ✓ Reprocessing protection — `mergeCorrectedTurns()` preserves human-edited turns (corrected: true) during pipeline re-runs. Keeps corrected speaker/text, accepts new timestamps/anchors. Applied in processAppearance and reprocessSpeakers.
+- ✓ Turn-level editing — re-attribution dropdown (speaker), text editing textarea (Cmd+Enter save, Escape cancel). Generic speaker nudge: clicking Speaker 1/2 on a turn scrolls to sidebar rename instead of opening dropdown.
+- ✓ Collapse logic updated: role === "host" || role === "rowspace" triggers muted/collapsed/summarized treatment. Customer turns get full detail.
+- ✓ Data quality review banner — amber banner at top of transcript when any speaker is generic, all attributions inferred, or timestamp coverage <50%. Dismissable, reappears on reload, disappears reactively when conditions clear.
+
+Keyboard shortcuts (next):
+- Active turn state (activeTurnIndex) — keyboard cursor with amber left border
+- j/k turn navigation, n/p section jumping
+- Enter play/pause, t seek to active turn timestamp
+- ? help overlay, Escape dismiss chain
+
+Deferred:
+- Auto-follow (video position drives transcript highlight) — after keyboard shortcuts
+- Guest turn collapse/expand — summaries exist for all turns but only host/rowspace collapsed
+- Prep bullet regeneration filtered to guest/customer speakers only
 
 **Fund overview (Phase 1 stretch / Phase 2):**
 - Write `lib/prompts/overview.ts` — synthesis prompt that receives `prep_bullets` + metadata from all matching appearances for a fund, produces a cross-appearance narrative (consistent themes, evolving views, key people)
@@ -460,32 +495,16 @@ Every LLM-dependent pipeline step has a validation guard that checks output qual
 
 ---
 
-### Phase 2: Corrections + Keyboard Shortcuts
+### Phase 2: Feedback + Diarization
 
-Trigger: corpus at ~50 transcripts, speaker attribution errors making queries unreliable.
+Trigger: corpus at ~50 transcripts, real meeting prep usage generating feedback.
 
-Schema (already migrated in Phase 1 prep):
-- corrections table (appearance_id, turn_index, field, old_value, new_value, action, corrected_by)
-- Turn.corrected boolean flag
+**Pulled forward to Phase 1E:** Corrections table, inline turn editing, speaker reassignment, keyboard shortcuts. See Phase 1E above.
 
-Transcript viewer additions:
-- Inline turn editing: double-click a guest turn to enter edit mode (textarea in place, ⌘S/Enter to save, Esc to cancel)
-- Speaker reassignment: click speaker label on any turn → dropdown of known speakers from this appearance + "Add speaker"; one click writes corrections table
-- Undo: revert turn to original value from corrections log; writes action: 'undone' to corrections table
+Remaining Phase 2 items:
 - POST /api/feedback route — thumbs up / thumbs down on bullets with optional text feedback overlay. Replaces [×] flag (local state) from Phase 1. Storage TBD (new `bullet_feedback` table or JSONB).
-- POST /api/corrections route for turn edits and speaker reassignment
-- "Upgrade Transcript" flow — user-triggered re-extraction via AssemblyAI diarization API. Downloads audio via yt-dlp, sends to AssemblyAI async transcription with speaker_labels=True, replaces raw_transcript and updates transcript_source to "youtube_diarized". Re-runs full pipeline (clean/entities/bullets). Same deployment constraint as tech debt #20. Estimated cost: ~$0.30 per episode.
-
-Keyboard shortcuts:
-- / — focus search input
-- Esc — clear search / exit edit mode / dismiss floating panel
-- + / − — expand / collapse all sections
-- E — enter edit mode on focused turn
-- ⌘S — save turn edit
-- J / K — navigate between turns (vim-style)
-
-Note: Don't make single-click on turn text trigger edit mode — too easy to misfire while reading.
-Trigger: double-click, or E shortcut when turn is focused.
+- Undo — revert turn to original value from corrections log; writes action: 'undone' to corrections table
+- "Upgrade Transcript" flow — user-triggered re-extraction via AssemblyAI diarization API. Downloads audio via yt-dlp, sends to AssemblyAI async transcription with speaker_labels=True, replaces raw_transcript and updates transcript_source to "youtube_diarized". Re-runs full pipeline (clean/entities/bullets). Same deployment constraint as tech debt #20. Estimated cost: ~$0.30 per episode. AssemblyAI selected over pyannote/Whisper for managed API with built-in diarization ($100 free credits). Test script scoped as Phase 1E reach goal (standalone comparison, not integrated).
 
 ---
 
@@ -540,7 +559,7 @@ Trigger: double-click, or E shortcut when turn is focused.
 | 5 | Stuck-row retry UI | P2 | "Reset to queued" for any non-complete status |
 | 6 | Multi-speaker scraper test coverage | P3 | Low priority — DOM selectors change anyway |
 | 7 | Bullet feedback writes to local state only. Current [×] flag is negative-only. **Phase 2 plan:** Replace [×] with thumbs up / thumbs down, both with optional text feedback overlay. Wire to `POST /api/feedback` with backend storage. Accumulated positive ratings become candidates for few-shot prompt examples (Phase 4+). | P2 | Wire POST /api/feedback in Phase 2 |
-| 8 | Turn.corrected flag not yet populated | P2 | Corrections UI in Phase 2 |
+| 8 | ~~Turn.corrected flag not yet populated~~ | ~~P2~~ | Done — populated by rename-speaker, correct-turn, and set-speaker-role API routes |
 | 9 | ~~Speaker name drift ("Marc" vs "Marc Rowan")~~ | ~~P2~~ | Done — `normalizeSpeakerNames()` in `lib/pipeline/normalize-speakers.ts` handles variant forms at ingest via subset matching. All 29 Colossus rows verified clean. Runs for all sources. |
 | 10 | Migration naming — switch to timestamp-prefixed filenames | P2 | All new migrations from Phase 2 onward |
 | 11 | Responsive layout — partially done | P3 | Mobile `max-md` breakpoints implemented: flex-col stacking, video panel hidden, natural scroll, header breadcrumb hidden. TOC doesn't collapse to drawer yet — stacks above transcript. Refinement deferred. |
@@ -555,6 +574,10 @@ Trigger: double-click, or E shortcut when turn is focused.
 | 20 | yt-dlp local only — YouTube extraction + batch processing runs locally via `npx tsx` scripts, can't run on Vercel serverless. Includes the job queue concern (formerly #14): web bulk endpoints have 300s timeout, but local scripts bypass this entirely. | P3 | Phase 4 — when self-serve URL submission is built or extraction moves to Docker (Railway/Fly.io/Cloud Run), add proper job queue (Inngest, BullMQ) alongside. |
 | 21 | Turn attribution heuristic assumes all non-YouTube sources have speaker labels. Orchestrator stamps attribution: "source" for all curated sources without inspecting whether the raw transcript actually contains SpeakerName:\n formatting. Correct for current sources (Colossus, manual with labels) but would silently mismark turns if a future scraper produces unlabeled transcripts. Fix: inspect raw transcript for speaker label patterns before stamping, or require scrapers to declare hasSpeakerLabels: boolean on their result. Trigger: when adding a new scraper for a source without speaker-labeled transcripts. |
 | 22 | Speaker extraction is hardcoded per-channel. `extractSpeakers()` relies on a `knownHosts` map and channel-specific title regex. Works for a small number of known podcast sources (Capital Allocators, AGM) but breaks on any new channel without a manual code change. Trigger to generalize: Phase 4 self-serve URL submission, or when adding a 4th-5th source becomes frequent enough that manual updates are friction. Options: LLM-based speaker extraction from description text, or a configurable speaker map in the DB/admin UI. | P3 | Phase 4 — when self-serve URL submission is built. |
+| 24 | **TranscriptViewer god component** — ~1800 lines after keyboard shortcuts. Extract `useAppearanceApi` hook (done), `SpeakerPanel` component, `TurnRenderer` component, `HelpOverlay` component. Refactor PR after keyboard shortcuts ship, before auto-follow. | P1 | After Phase 1E keyboard shortcuts |
+| 25 | **Speaker metadata two-layer model** — `speakers[]` is human-validated (names, roles, titles), `entity_tags.key_people[]` is LLM-generated draft. Current precedence: `speakers[].title ?? entity_tags.key_people[].title`. Consider whether entity_tags.key_people should stop overlapping with speakers[], or add explicit graduation flow. | P2 | When entity extraction prompt is updated |
+| 26 | **Entity extraction prompt needs speakers[] context** — entity_tags.key_people confuses speakers with mentioned people because entity extraction runs without speaker context. Fix: pass speakers[] to entity extraction prompt. | P2 | Next pipeline improvement pass |
+| 27 | **Prep bullet regeneration (guest only)** — sales calls need bullets from customer speakers only, not internal team. Add "Regenerate bullets (guest only)" button visible after roles assigned. New prompt variant filtering turns to role !== "host" && role !== "rowspace". | P1 | After speaker roles are reliably set |
 | 23 | Unknown speaker names are silent. `validateSpeakerAttribution()` (`lib/pipeline/validate-speakers.ts:52`) logs a `console.warn` when the LLM uses a speaker name that doesn't fuzzy-match any name in `speakers[]`, but this warning is server-log-only — not persisted to `processing_error` and not surfaced in the admin table or transcript viewer. This matters because: (a) the LLM may have hallucinated a name, or (b) the LLM correctly identified a third speaker not in scraped metadata (e.g., a panelist introduced mid-conversation). Either way the user should know. Fix: append a `speaker_unvalidated:Name` processing warning via `appendProcessingWarning()` so it shows in admin, and add a visual indicator in the transcript viewer on turns attributed to unvalidated speakers (similar to the "inferred" attribution disclaimer). | P2 | When speaker quality becomes a visible issue in real usage. |
 
 ---
@@ -571,7 +594,7 @@ These are ideas worth capturing but not worth building yet. Unlike tech debt (so
 | **Passive source subscriptions (cron-based)** | "Watch Colossus for new ILTB episodes, auto-ingest weekly." Eliminates manual URL pasting. | Active path (paste URLs) covers everything these sources produce. Subscriptions add convenience, not coverage. Vercel cron or external scheduler needed. |
 | **Controlled sector taxonomy** | Fixed enum alongside free-text `sectors_themes` for reliable filtering and aggregation ("show me all private credit appearances"). | Free-text is sufficient for display and fuzzy search at current scale. Build when filtered views or dashboards are needed (Phase 3+). |
 | **Entity confidence scores** | Flag low-confidence entity extractions for human review. | Review after seeing extraction quality on 50+ real transcripts. Don't add scoring complexity before you know where extraction fails. |
-| **Audio-based speaker diarization (pyannote.audio)** | Reliable speaker attribution for conference panels where text-based attribution fails. | Only relevant for YouTube/audio sources with multiple unknown speakers. Colossus transcripts already have speaker labels. Evaluate when YouTube pipeline is active. |
+| **Audio-based speaker diarization (AssemblyAI)** | Reliable speaker attribution for conference panels and call recordings where text-based attribution fails. AssemblyAI selected over pyannote/Whisper for managed API with built-in diarization. $100 free credits available. | Test script scoped as Phase 1E reach goal (standalone comparison tool, not integrated into pipeline). See Phase 2 "Upgrade Transcript" flow for integration plan. |
 
 ---
 
@@ -632,7 +655,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY   Supabase anonymous key
 SUPABASE_SERVICE_KEY            Supabase service role key (server-side only)
 ANTHROPIC_API_KEY               Claude API key
 GOOGLE_AUTH_TOKEN               Colossus scraper auth cookie
-ADMIN_TOKEN                     Required on all /api/process/* routes
+ADMIN_TOKEN                     Required on all /api/process/* and /api/appearances/* routes
+ASSEMBLYAI_API_KEY              AssemblyAI API key (optional — only for diarization test script)
 ```
 
 **Browser setup:** Set `admin_token` cookie in dev tools (Application → Cookies → localhost) matching `ADMIN_TOKEN` value in `.env.local`. Required once per dev session.
