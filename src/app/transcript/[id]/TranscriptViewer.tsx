@@ -1451,7 +1451,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                       isActive={activeTurnIndex === turn.turn_index}
                       isTurnHit={hasSearch && searchResults.turnKeys.has(`${INTRO_ANCHOR}-${ti}`)}
                       isCitedTurn={false}
-                      isDimmed={!!activeSpeaker && activeSpeaker !== turn.speaker}
+                      isDimmed={false}
                       isHost={isCollapsedRole(turn.speaker)}
                       collapsedText={summary || (hasMore ? first : turn.text)}
                       collapsedIsSummary={!!summary}
@@ -1552,7 +1552,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                             isActive={activeTurnIndex === turn.turn_index}
                             isTurnHit={hasSearch && searchResults.turnKeys.has(`${section.anchor}-${ti}`)}
                             isCitedTurn={citedTurnIndices.has(turn.turn_index)}
-                            isDimmed={!!activeSpeaker && activeSpeaker !== turn.speaker}
+                            isDimmed={false}
                             isHost={isCollapsedRole(turn.speaker)}
                             collapsedText={summary || (hasMore ? first : turn.text)}
                             collapsedIsSummary={!!summary}
