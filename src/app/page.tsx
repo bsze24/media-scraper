@@ -5,6 +5,7 @@ import {
   submitUrls,
   processNext,
   retryAppearance,
+  deleteAppearance,
   getQueueStatus,
   getAllAppearances,
   validateAdminToken,
@@ -16,6 +17,7 @@ type StatusCounts = Record<ProcessingStatus | "total", number>;
 interface AppearanceItem {
   id: string;
   source_url: string;
+  source_name: string | null;
   title: string | null;
   processing_status: ProcessingStatus;
   processing_detail: string | null;
@@ -224,6 +226,17 @@ export default function Home() {
     }
   }
 
+  async function handleDelete(id: string) {
+    const confirmed = window.confirm("Delete this appearance? This cannot be undone.");
+    if (!confirmed) return;
+    try {
+      await deleteAppearance(id);
+      await refresh();
+    } catch (err) {
+      console.error("Delete failed:", err);
+    }
+  }
+
   const activeCount =
     (counts?.extracting ?? 0) + (counts?.cleaning ?? 0) + (counts?.analyzing ?? 0);
 
@@ -380,6 +393,9 @@ export default function Home() {
                     URL
                   </th>
                   <th className="px-4 py-2 font-medium text-zinc-600">
+                    Source
+                  </th>
+                  <th className="px-4 py-2 font-medium text-zinc-600">
                     Title
                   </th>
                   <th className="px-4 py-2 font-medium text-zinc-600">
@@ -416,6 +432,9 @@ export default function Home() {
                         title={a.source_url}
                       >
                         {truncateUrl(a.source_url)}
+                      </td>
+                      <td className="max-w-[120px] truncate px-4 py-2 text-xs text-zinc-500" title={a.source_name ?? ""}>
+                        {a.source_name ?? "\u2014"}
                       </td>
                       <td className="max-w-[200px] truncate px-4 py-2 text-zinc-700">
                         {isComplete ? (
@@ -463,14 +482,24 @@ export default function Home() {
                         {a.processing_detail ?? "\u2014"}
                       </td>
                       <td className="px-4 py-2">
-                        {canRetry && (
-                          <button
-                            onClick={() => handleRetry(a.id)}
-                            className="text-xs font-medium text-blue-600 hover:text-blue-500"
-                          >
-                            Retry
-                          </button>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {canRetry && (
+                            <button
+                              onClick={() => handleRetry(a.id)}
+                              className="text-xs font-medium text-blue-600 hover:text-blue-500"
+                            >
+                              Retry
+                            </button>
+                          )}
+                          {!isComplete && !isInFlight && (
+                            <button
+                              onClick={() => handleDelete(a.id)}
+                              className="text-xs font-medium text-red-500 hover:text-red-700"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

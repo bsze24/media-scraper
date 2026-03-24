@@ -10,6 +10,7 @@ import {
   getAppearanceById,
   updateProcessingStatus,
   updateProcessingDetail,
+  deleteAppearance as dbDeleteAppearance,
 } from "@lib/db/queries";
 import { detectTranscriptSource } from "@lib/scrapers/registry";
 import { processOne, reprocessBullets } from "@lib/queue/orchestrator";
@@ -122,10 +123,21 @@ export async function validateAdminToken(): Promise<boolean> {
   }
 }
 
+export async function deleteAppearance(id: string): Promise<void> {
+  await requireAdmin();
+  const row = await getAppearanceById(id);
+  if (!row) throw new Error("Not found");
+  if (row.processing_status === "complete") {
+    throw new Error("Cannot delete completed appearances");
+  }
+  await dbDeleteAppearance(id);
+}
+
 export async function getAllAppearances(): Promise<
   {
     id: string;
     source_url: string;
+    source_name: string | null;
     title: string | null;
     processing_status: ProcessingStatus;
     processing_detail: string | null;
@@ -139,6 +151,7 @@ export async function getAllAppearances(): Promise<
   return rows.map((r) => ({
     id: r.id,
     source_url: r.source_url,
+    source_name: r.source_name,
     title: r.title,
     processing_status: r.processing_status,
     processing_detail: r.processing_detail,
