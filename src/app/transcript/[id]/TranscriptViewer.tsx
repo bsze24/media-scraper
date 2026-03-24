@@ -325,6 +325,57 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     setResetConfirmation(true);
     setTimeout(() => setResetConfirmation(false), 2000);
   }, [computeRoleDefaults]);
+  // ---- Active turn (cursor) ----
+  const [activeTurnIndex, setActiveTurnIndex] = useState<number | null>(null);
+
+  // Auto-expand section containing active turn, then scroll into view.
+  // Single effect avoids ordering issue (scroll before section expands).
+  // expandedSections NOT in deps — prevents feedback loop where collapsing
+  // a section with the active turn immediately re-expands it.
+  useEffect(() => {
+    if (activeTurnIndex === null) return;
+    const activeTurn = turns.find(t => t.turn_index === activeTurnIndex);
+
+    // Expand section if needed (functional updater avoids stale closure)
+    if (activeTurn?.section_anchor) {
+      setExpandedSections(prev => {
+        if (prev[activeTurn.section_anchor!]) return prev;
+        return { ...prev, [activeTurn.section_anchor!]: true };
+      });
+    }
+
+    // Always defer scroll one frame — ensures DOM is updated after any
+    // section expansion. The one-frame delay is imperceptible.
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-turn-index="${activeTurnIndex}"]`);
+      el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  }, [activeTurnIndex, turns]);
+
+  // ---- Auto-follow / skip playback ----
+  const [autoFollowEnabled, setAutoFollowEnabled] = useState(true);
+  const skipInProgressRef = useRef(false);
+
+  // Ordered list of expanded turns with timestamps — the "highlight reel" playlist.
+  // end = next sequential turn's timestamp (regardless of expanded), defining airtime.
+  const expandedPlaylist = useMemo(() => {
+    const withTimestamps = turns
+      .filter(t => expandedTurns.has(t.turn_index) && t.timestamp_seconds != null)
+      .sort((a, b) => a.timestamp_seconds! - b.timestamp_seconds!);
+
+    return withTimestamps.map((turn) => {
+      const nextTurn = turns.find(t =>
+        t.timestamp_seconds != null &&
+        t.timestamp_seconds! > turn.timestamp_seconds!
+      );
+      return {
+        turnIndex: turn.turn_index,
+        start: turn.timestamp_seconds!,
+        end: nextTurn?.timestamp_seconds ?? Infinity,
+      };
+    });
+  }, [turns, expandedTurns]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [feedback, setFeedback] = useState<Record<number, BulletFeedback>>({});
@@ -425,19 +476,47 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     };
   }, [youtube_id]);
 
-  // Poll player time/duration while playing
+  // Consolidated 250ms poll: time display + auto-follow skip logic
   useEffect(() => {
     if (!isPlaying) return;
     const interval = setInterval(() => {
       const player = ytPlayerRef.current;
-      if (player) {
-        setCurrentTime(player.getCurrentTime());
-        const d = player.getDuration();
-        if (d > 0) setDuration(d);
+      if (!player) return;
+
+      const time = player.getCurrentTime();
+      setCurrentTime(time);
+      const d = player.getDuration();
+      if (d > 0) setDuration(d);
+
+      // Auto-follow: track active turn and skip collapsed regions
+      if (!autoFollowEnabled || skipInProgressRef.current) return;
+
+      const currentItem = expandedPlaylist.find(
+        item => time >= item.start && time < item.end
+      );
+
+      if (currentItem) {
+        // In an expanded turn — update highlight
+        setActiveTurnIndex(prev =>
+          prev === currentItem.turnIndex ? prev : currentItem.turnIndex
+        );
+      } else {
+        // In a collapsed region — skip to next expanded turn
+        const nextItem = expandedPlaylist.find(item => item.start > time);
+        if (nextItem) {
+          skipInProgressRef.current = true;
+          player.seekTo(nextItem.start, true);
+          setCurrentTime(nextItem.start);
+          setActiveTurnIndex(nextItem.turnIndex);
+          setTimeout(() => { skipInProgressRef.current = false; }, 500);
+        } else {
+          // Past all expanded turns — let video play to end naturally
+          setAutoFollowEnabled(false);
+        }
       }
-    }, 500);
+    }, 250);
     return () => clearInterval(interval);
-  }, [isPlaying]);
+  }, [isPlaying, autoFollowEnabled, expandedPlaylist]);
 
   // Debounce search
   useEffect(() => {
@@ -1101,10 +1180,23 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 text-[#888]">
+                  {/* Auto-follow toggle */}
+                  <button
+                    onClick={() => setAutoFollowEnabled(prev => !prev)}
+                    className={`text-[10px] px-2 py-1 rounded transition-colors ${
+                      autoFollowEnabled
+                        ? 'bg-[#b8860b]/15 text-[#b8860b] hover:bg-[#b8860b]/25'
+                        : 'text-[#999] hover:text-[#666] hover:bg-[#f5f4f2]'
+                    }`}
+                    title={autoFollowEnabled ? "Auto-follow: ON — skips collapsed turns" : "Auto-follow: OFF — plays everything"}
+                  >
+                    {autoFollowEnabled ? "Follow ON" : "Follow OFF"}
+                  </button>
+                  <span className="w-px h-4 bg-[#e5e3df]" />
                   {/* Mini PiP */}
-                  <button 
+                  <button
                     onClick={() => setVideoMode('pip')}
-                    className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" 
+                    className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded"
                     title="Mini player (podcast mode)"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1112,9 +1204,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                     </svg>
                   </button>
                   {/* Full expand - vertical arrows */}
-                  <button 
+                  <button
                     onClick={() => setVideoMode('full')}
-                    className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" 
+                    className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded"
                     title="Full video (interview mode)"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1199,11 +1291,19 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   const summary = turn_summaries?.[turn.turn_index];
                   const canCollapse = hasMore || !!summary;
 
+                  const isActive = activeTurnIndex === turn.turn_index;
+
                   return (
                     <div
                       key={turn.turn_index}
-                      className={`group relative py-3 px-4 transition-all hover:bg-[#faf9f7] border-l-2 border-transparent ${
-                        isTurnHit ? 'bg-[#eff6ff] border-l-[#5a8fc7]' : ''
+                      data-turn-index={turn.turn_index}
+                      onClick={() => setActiveTurnIndex(turn.turn_index)}
+                      className={`group relative py-3 px-4 transition-all scroll-mt-20 border-l-[3px] ${
+                        isActive
+                          ? 'bg-[#b8860b]/5 border-[#b8860b]'
+                          : isTurnHit
+                          ? 'bg-[#eff6ff] border-[#5a8fc7]'
+                          : 'hover:bg-[#faf9f7] border-transparent'
                       }`}
                     >
                       <div className="flex items-baseline gap-3 mb-1">
@@ -1262,12 +1362,17 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   const canCollapse = hasMore || !!summary;
 
                   const speakerInfo = speakers.find(s => s.name === turn.speaker);
+                  const isActive = activeTurnIndex === turn.turn_index;
                   return (
                     <div
                       key={ti}
-                      className={`group relative py-3 px-4 transition-all border-l-2 ${
-                        isTurnHit
-                          ? 'bg-[#eff6ff] border-l-[#5a8fc7]'
+                      data-turn-index={turn.turn_index}
+                      onClick={() => setActiveTurnIndex(turn.turn_index)}
+                      className={`group relative py-3 px-4 transition-all scroll-mt-20 border-l-[3px] ${
+                        isActive
+                          ? 'bg-[#b8860b]/5 border-[#b8860b]'
+                          : isTurnHit
+                          ? 'bg-[#eff6ff] border-[#5a8fc7]'
                           : 'hover:bg-[#faf9f7] border-transparent'
                       }`}
                       style={dimmed ? { opacity: 0.3 } : undefined}
@@ -1445,15 +1550,20 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         const dimmed = activeSpeaker && activeSpeaker !== turn.speaker;
                         const speakerInfo = speakers.find(s => s.name === turn.speaker);
                         const isCitedTurn = citedTurnIndices.has(turn.turn_index);
+                        const isActive = activeTurnIndex === turn.turn_index;
 
                         return (
                           <div
                             key={ti}
-                            className={`group relative py-3 px-4 transition-all border-l-2 ${
-                              isTurnHit
-                                ? 'bg-[#eff6ff] border-l-[#5a8fc7]'
+                            data-turn-index={turn.turn_index}
+                            onClick={() => setActiveTurnIndex(turn.turn_index)}
+                            className={`group relative py-3 px-4 transition-all scroll-mt-20 border-l-[3px] ${
+                              isActive
+                                ? 'bg-[#b8860b]/5 border-[#b8860b]'
+                                : isTurnHit
+                                ? 'bg-[#eff6ff] border-[#5a8fc7]'
                                 : isCitedTurn
-                                ? 'bg-[#b8860b]/5 border-l-[#b8860b]/40'
+                                ? 'bg-[#b8860b]/5 border-[#b8860b]/40'
                                 : 'hover:bg-[#faf9f7] border-transparent'
                             }`}
                             style={dimmed ? { opacity: 0.3 } : undefined}
