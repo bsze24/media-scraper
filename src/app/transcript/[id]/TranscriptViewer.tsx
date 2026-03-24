@@ -561,6 +561,44 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     [correctTurn]
   );
 
+  // ---- Data quality banner ----
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  const bannerConditions = useMemo(() => {
+    const conditions: Array<{ key: string; text: string; action?: string }> = [];
+
+    const genericSpeakers = speakers.filter((s) => /^Speaker \d+$/.test(s.name));
+    if (genericSpeakers.length > 0) {
+      conditions.push({
+        key: "generic-speakers",
+        text: `${genericSpeakers.length} speaker${genericSpeakers.length !== 1 ? "s" : ""} need${genericSpeakers.length === 1 ? "s" : ""} identification`,
+        action: "Open Speaker Panel",
+      });
+    }
+
+    if (has_inferred_attribution) {
+      conditions.push({
+        key: "inferred-attribution",
+        text: "All speaker attributions are auto-generated",
+      });
+    }
+
+    if (youtube_id && turns.length > 0) {
+      const withTimestamp = turns.filter((t) => t.timestamp_seconds != null).length;
+      const coverage = Math.round((withTimestamp / turns.length) * 100);
+      if (coverage < 50) {
+        conditions.push({
+          key: "low-timestamps",
+          text: `Low timestamp coverage (${coverage}%)`,
+        });
+      }
+    }
+
+    return conditions;
+  }, [speakers, has_inferred_attribution, youtube_id, turns]);
+
+  const showBanner = !bannerDismissed && bannerConditions.length > 0;
+
   const ROLE_OPTIONS = ["host", "guest", "rowspace", "customer", "other"] as const;
 
   // ---- Render ----
@@ -991,6 +1029,37 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               <div className="text-center text-[11px] text-[#888]">
                 No video available for this episode
               </div>
+            </div>
+          )}
+
+          {/* Data Quality Review Banner */}
+          {showBanner && (
+            <div className="mx-6 mt-4 mb-2 px-4 py-3 bg-[#b8860b]/10 border border-[#b8860b]/30 flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[13px] font-medium text-[#8b6914] mb-1.5">This transcript needs review</div>
+                <ul className="space-y-1">
+                  {bannerConditions.map((c) => (
+                    <li key={c.key} className="flex items-center gap-2 text-[12px] text-[#8b6914]/80">
+                      <span className="w-1 h-1 rounded-full bg-[#b8860b]/60 shrink-0" />
+                      <span>{c.text}</span>
+                      {c.action && (
+                        <button
+                          onClick={() => speakersPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                          className="text-[11px] text-[#b8860b] hover:underline font-medium ml-1"
+                        >
+                          {c.action}
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button
+                onClick={() => setBannerDismissed(true)}
+                className="text-[#b8860b]/50 hover:text-[#b8860b] transition-colors shrink-0 mt-0.5"
+              >
+                <span className="text-sm">&times;</span>
+              </button>
             </div>
           )}
 
