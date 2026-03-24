@@ -58,6 +58,14 @@ export async function POST(
 
   const speakers: Speaker[] = row.speakers ?? [];
 
+  // Validate old_name exists
+  if (!speakers.some((s) => s.name === old_name)) {
+    return NextResponse.json(
+      { error: `Speaker "${old_name}" not found` },
+      { status: 404 }
+    );
+  }
+
   // Reject if new_name already exists as a different speaker
   const nameChanged = old_name !== new_name;
   if (nameChanged && speakers.some((s) => s.name === new_name)) {
