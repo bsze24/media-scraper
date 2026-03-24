@@ -1639,7 +1639,16 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         {firstQuote && (
                           <button
                             onClick={() => {
-                              if (isMonologue) {
+                              // Find the matching turn and activate it
+                              const quotePrefix = firstQuote.quote.slice(0, 80);
+                              const matchingTurn = turns.find(t =>
+                                t.section_anchor === firstQuote.section_anchor &&
+                                t.speaker === firstQuote.speaker &&
+                                t.text.includes(quotePrefix)
+                              );
+                              if (matchingTurn) {
+                                setActiveTurnIndex(matchingTurn.turn_index);
+                              } else if (isMonologue) {
                                 monologueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
                               } else if (firstQuote.section_anchor) {
                                 scrollToSection(firstQuote.section_anchor);
