@@ -265,18 +265,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   // Unified expand/collapse: a turn is expanded iff its turn_index is in this set.
   // Always initialize with role-based defaults (SSR-safe), then override from URL on mount.
-  const [expandedTurns, setExpandedTurns] = useState<Set<number>>(() => {
-    const roleMap = new Map<string, string>();
-    for (const s of appearance.speakers) roleMap.set(s.name, s.role);
-    return new Set(
-      appearance.turns
-        .filter(t => {
-          const role = roleMap.get(t.speaker) ?? "guest";
-          return role !== "host" && role !== "rowspace";
-        })
-        .map(t => t.turn_index)
-    );
-  });
+  // Uses computeRoleDefaults directly — at init time, speakers/turns state equals appearance props.
+  const [expandedTurns, setExpandedTurns] = useState<Set<number>>(computeRoleDefaults);
 
   // Track whether we're in highlight mode (URL has ?expanded= param)
   const [isHighlightMode, setIsHighlightMode] = useState(false);
