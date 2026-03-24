@@ -513,15 +513,35 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   }, [hasSearch, debouncedQuery, searchResults.anchors, allAnchors, activeSpeaker]);
 
   // ---- Handlers ----
+  // Save expandedTurns before speaker filter so we can restore on deselect
+  const savedExpandedTurnsRef = useRef<Set<number> | null>(null);
+  const savedIsHighlightModeRef = useRef(false);
+
   const handleSpeakerClick = useCallback(
     (name: string) => {
       if (activeSpeaker === name) {
+        // Deselect — restore pre-filter state
         setActiveSpeaker(null);
+        if (savedExpandedTurnsRef.current) {
+          setExpandedTurns(savedExpandedTurnsRef.current);
+          setIsHighlightMode(savedIsHighlightModeRef.current);
+          savedExpandedTurnsRef.current = null;
+        }
         const m: Record<string, boolean> = {};
         allAnchors.forEach((a) => (m[a] = true));
         setExpandedSections(m);
       } else {
+        // Select — save current state, expand speaker's turns, collapse others
+        if (!activeSpeaker) {
+          savedExpandedTurnsRef.current = expandedTurns;
+          savedIsHighlightModeRef.current = isHighlightMode;
+        }
         setActiveSpeaker(name);
+        // Expand all turns for this speaker, collapse everyone else
+        setExpandedTurns(
+          new Set(turns.filter(t => t.speaker === name).map(t => t.turn_index))
+        );
+        // Only show sections containing this speaker
         const m: Record<string, boolean> = {};
         allAnchors.forEach((a) => {
           m[a] = (turnsBySection.get(a) ?? []).some((t) => t.speaker === name);
@@ -529,7 +549,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         setExpandedSections(m);
       }
     },
-    [activeSpeaker, allAnchors, turnsBySection]
+    [activeSpeaker, allAnchors, turnsBySection, turns, expandedTurns, isHighlightMode]
   );
 
   const scrollToSection = useCallback((anchor: string) => {
