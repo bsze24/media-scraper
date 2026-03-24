@@ -560,8 +560,17 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         setActiveSpeaker(null);
         if (savedExpandedTurnsRef.current) {
           setExpandedTurns(savedExpandedTurnsRef.current);
-          setIsHighlightMode(savedIsHighlightModeRef.current);
+          const restoreHighlight = savedIsHighlightModeRef.current;
+          setIsHighlightMode(restoreHighlight);
           savedExpandedTurnsRef.current = null;
+          // Clean stale URL param if restoring to non-highlight mode
+          if (!restoreHighlight && typeof window !== "undefined") {
+            const url = new URL(window.location.href);
+            if (url.searchParams.has("expanded")) {
+              url.searchParams.delete("expanded");
+              window.history.replaceState({}, "", url.toString());
+            }
+          }
         }
         const m: Record<string, boolean> = {};
         allAnchors.forEach((a) => (m[a] = true));
@@ -1277,6 +1286,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                           } else {
                             // Player not loaded yet — toggle pending play
                             pendingPlayRef.current = !pendingPlayRef.current;
+                            isPlayingRef.current = pendingPlayRef.current;
                             setIsPlaying(pendingPlayRef.current);
                           }
                         }}
