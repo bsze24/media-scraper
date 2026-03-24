@@ -7,9 +7,9 @@ import type { SpeakerRole } from "@/types/appearance";
 const speakerRoles: [SpeakerRole, ...SpeakerRole[]] = [
   "host",
   "guest",
-  "panelist",
-  "moderator",
-  "interviewer",
+  "rowspace",
+  "customer",
+  "other",
 ];
 
 const speakerSchema = z.object({

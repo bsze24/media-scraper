@@ -7,6 +7,7 @@ import {
   writeExtractResult,
   writeCleanResult,
   writeTurns,
+  writeSpeakers,
   writeTurnSummaries,
   appendProcessingWarning,
   removeProcessingWarning,
@@ -40,6 +41,43 @@ import type {
   EntitiesStepOutput,
   BulletsStepOutput,
 } from "@lib/db/types";
+
+/**
+ * Merge human-corrected turns into a fresh set of pipeline-generated turns.
+ * Corrected turns (corrected: true) are preserved by turn_index; uncorrected
+ * turns are replaced with the new pipeline output.
+ */
+function mergeCorrectedTurns(
+  existingTurns: import("@/types/appearance").Turn[],
+  newTurns: import("@/types/appearance").Turn[]
+): { merged: import("@/types/appearance").Turn[]; preserved: number } {
+  const correctedByIndex = new Map<number, import("@/types/appearance").Turn>();
+  for (const t of existingTurns) {
+    if (t.corrected) correctedByIndex.set(t.turn_index, t);
+  }
+  if (correctedByIndex.size === 0) {
+    return { merged: newTurns, preserved: 0 };
+  }
+  let matched = 0;
+  const merged = newTurns.map((t) => {
+    const corrected = correctedByIndex.get(t.turn_index);
+    if (corrected) {
+      matched++;
+      // Keep corrected speaker/text but take new timestamps/anchors
+      return {
+        ...t,
+        speaker: corrected.speaker,
+        text: corrected.text,
+        attribution: corrected.attribution,
+        corrected: true,
+      };
+    }
+    return t;
+  });
+  const lost = correctedByIndex.size - matched;
+  console.log(`[reprocess] preserving ${matched} human-corrected turns${lost > 0 ? ` (${lost} corrections lost — turn_index not found in new turns)` : ""}`);
+  return { merged, preserved: matched };
+}
 
 export async function processAppearance(id: string): Promise<void> {
   const row = await getAppearanceById(id);
@@ -264,7 +302,25 @@ export async function processAppearance(id: string): Promise<void> {
         currentTurns = stampSectionAnchors(currentTurns, sections);
       }
 
+      // Preserve human-corrected turns during reprocessing
+      const existingTurns = row.turns ?? [];
+      if (existingTurns.some((t) => t.corrected)) {
+        const { merged } = mergeCorrectedTurns(existingTurns, currentTurns);
+        currentTurns = merged;
+      }
+
       await writeTurns(id, currentTurns);
+
+      // Backfill speakers[] from turns when scraper found no speaker metadata
+      if (speakers.length === 0 && currentTurns.length > 0) {
+        const distinctNames = [...new Set(currentTurns.map((t) => t.speaker))].filter(Boolean);
+        speakers = distinctNames.map((name) => ({
+          name,
+          role: "guest" as const,
+        }));
+        await writeSpeakers(id, speakers);
+        console.log(`[pipeline]   ↳ [backfill] populated speakers[] with ${speakers.length} speakers from turns`);
+      }
     }
 
     // Validation 3: suspiciously low turn count
@@ -626,13 +682,7 @@ export async function reprocessSpeakers(
   console.log(`[reprocessSpeakers]   speakers: [${oldSpeakers.join(", ")}] → [${newSpeakers.join(", ")}]`);
 
   // Update speakers column
-  const { createServerClient } = await import("@lib/db/client");
-  const supabase = createServerClient();
-  const { error: speakersError } = await supabase
-    .from("appearances")
-    .update({ speakers })
-    .eq("id", id);
-  if (speakersError) throw speakersError;
+  await writeSpeakers(id, speakers);
 
   // Re-clean transcript with correct speaker names
   await updateProcessingDetail(id, "re-cleaning with correct speakers");
@@ -691,6 +741,11 @@ export async function reprocessSpeakers(
   });
   sections = mapSectionsToTurns(cleanSections, currentTurns);
   currentTurns = stampSectionAnchors(currentTurns, sections);
+
+  // Preserve human-corrected turns during reprocessing
+  const existingTurns = row.turns ?? [];
+  const { merged: mergedTurns } = mergeCorrectedTurns(existingTurns, currentTurns);
+  currentTurns = mergedTurns;
 
   await writeTurns(id, currentTurns);
   await writeSections(id, sections);

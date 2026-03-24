@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { TranscriptViewerProps } from "./types";
 import { RegenerateBulletsButton } from "./RegenerateBulletsButton";
+import { useAppearanceApi } from "./useAppearanceApi";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -139,15 +140,53 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     date,
     source_name,
     youtube_id,
-    speakers,
     sections,
-    turns,
-    has_inferred_attribution,
-    turn_summaries,
-    prep_bullets,
     bullets_generated_at,
     transcript_char_count,
   } = appearance;
+
+  // Mutable state — updated by API calls
+  const {
+    speakers,
+    turns,
+    turnSummaries: turn_summaries,
+    prepBullets: prep_bullets,
+    hasInferredAttribution: has_inferred_attribution,
+    saving,
+    error: apiError,
+    confirmation,
+    clearError,
+    clearConfirmation,
+    renameSpeaker,
+    updateSpeaker,
+    correctTurn,
+  } = useAppearanceApi(appearance.id, appearance);
+
+  // Derive role from current speakers state
+  const speakerRoleMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of speakers) map.set(s.name, s.role);
+    return map;
+  }, [speakers]);
+
+  const getRoleForSpeaker = useCallback(
+    (name: string) => speakerRoleMap.get(name) ?? "guest",
+    [speakerRoleMap]
+  );
+
+  const isCollapsedRole = useCallback(
+    (name: string) => {
+      const role = getRoleForSpeaker(name);
+      return role === "host" || role === "rowspace";
+    },
+    [getRoleForSpeaker]
+  );
+
+  // Check if all speakers are still generic labels
+  const allSpeakersGeneric = useMemo(
+    () => speakers.length > 0 && speakers.every((s) => /^Speaker \d+$/.test(s.name)),
+    [speakers]
+  );
 
   const allAnchors = useMemo(() => sections.map((s) => s.anchor), [sections]);
 
@@ -222,6 +261,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const [duration, setDuration] = useState(0);
   const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null);
   const [relatedExpanded, setRelatedExpanded] = useState(false);
+
+  // ---- Editing state ----
+  const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
+  const [editingSpeakerName, setEditingSpeakerName] = useState("");
+  const [editingTurnText, setEditingTurnText] = useState<number | null>(null);
+  const [editingTurnTextValue, setEditingTurnTextValue] = useState("");
+  const [turnSpeakerDropdown, setTurnSpeakerDropdown] = useState<number | null>(null);
+  const speakersPanelRef = useRef<HTMLDivElement | null>(null);
 
   const panelInputRef = useRef<HTMLInputElement>(null);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -330,14 +377,35 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     }
   }, [floatingPanel]);
 
-  // Escape to close panel
+  // Escape to close panels + dropdowns
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setFloatingPanel(null);
+      if (e.key === "Escape") {
+        setFloatingPanel(null);
+        setTurnSpeakerDropdown(null);
+        setEditingSpeaker(null);
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  // Click outside to close speaker dropdown
+  useEffect(() => {
+    if (turnSpeakerDropdown === null) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-speaker-dropdown]")) {
+        setTurnSpeakerDropdown(null);
+      }
+    };
+    // Delay to avoid immediate close from the click that opened it
+    const timer = setTimeout(() => document.addEventListener("click", handler), 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("click", handler);
+    };
+  }, [turnSpeakerDropdown]);
 
   // ---- Search ----
   const searchTerms = useMemo(() => parseSearchQuery(debouncedQuery), [debouncedQuery]);
@@ -414,8 +482,152 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const allExpanded = allAnchors.every((a) => expandedSections[a]);
   const allCollapsed = allAnchors.every((a) => !expandedSections[a]);
 
-  const guests = speakers.filter((s) => s.role !== "host");
-  const host = speakers.find((s) => s.role === "host");
+  // Guard against Enter→blur double-fire on inputs
+  const savingGuardRef = useRef(false);
+
+  // Speaker rename handler
+  const handleSpeakerRename = useCallback(
+    async (oldName: string, newName: string) => {
+      if (savingGuardRef.current) return;
+      const trimmed = newName.trim();
+      if (!trimmed || trimmed === oldName) {
+        setEditingSpeaker(null);
+        return;
+      }
+      savingGuardRef.current = true;
+      setEditingSpeaker(null);
+      try {
+        await renameSpeaker(oldName, trimmed);
+        // Update active speaker filter if the renamed speaker was selected
+        setActiveSpeaker((prev) => prev === oldName ? trimmed : prev);
+      } finally {
+        savingGuardRef.current = false;
+      }
+    },
+    [renameSpeaker]
+  );
+
+  // Speaker role change handler
+  const handleRoleChange = useCallback(
+    async (speakerName: string, role: string) => {
+      await updateSpeaker(speakerName, { role });
+    },
+    [updateSpeaker]
+  );
+
+  // Speaker title/affiliation edit
+  const [editingSpeakerMeta, setEditingSpeakerMeta] = useState<string | null>(null);
+  const [editingSpeakerMetaValue, setEditingSpeakerMetaValue] = useState("");
+
+  const handleSpeakerMetaSave = useCallback(
+    async (speakerName: string, currentTitle?: string, currentAffiliation?: string) => {
+      if (savingGuardRef.current) return;
+      const raw = editingSpeakerMetaValue.trim();
+      savingGuardRef.current = true;
+      setEditingSpeakerMeta(null);
+      // Parse "Title, Affiliation" format
+      const commaIdx = raw.indexOf(",");
+      let newTitle: string;
+      let newAffiliation: string;
+      if (commaIdx >= 0) {
+        newTitle = raw.slice(0, commaIdx).trim();
+        newAffiliation = raw.slice(commaIdx + 1).trim();
+      } else {
+        newTitle = raw;
+        newAffiliation = "";
+      }
+      // Skip if unchanged
+      if (newTitle === (currentTitle ?? "") && newAffiliation === (currentAffiliation ?? "")) {
+        savingGuardRef.current = false;
+        return;
+      }
+      try {
+        await updateSpeaker(speakerName, { title: newTitle, affiliation: newAffiliation });
+      } finally {
+        savingGuardRef.current = false;
+      }
+    },
+    [updateSpeaker, editingSpeakerMetaValue]
+  );
+
+  // Turn text edit handlers
+  const startEditingTurnText = useCallback(
+    (turnIndex: number, currentText: string) => {
+      setEditingTurnText(turnIndex);
+      setEditingTurnTextValue(currentText);
+    },
+    []
+  );
+
+  const saveTurnTextEdit = useCallback(
+    async (turnIndex: number, originalText: string) => {
+      if (savingGuardRef.current) return;
+      const trimmed = editingTurnTextValue.trim();
+      if (!trimmed || trimmed === originalText) {
+        setEditingTurnText(null);
+        return;
+      }
+      savingGuardRef.current = true;
+      setEditingTurnText(null);
+      try {
+        await correctTurn(turnIndex, "text", originalText, trimmed);
+      } finally {
+        savingGuardRef.current = false;
+      }
+    },
+    [correctTurn, editingTurnTextValue]
+  );
+
+  // Turn speaker re-attribution handler
+  const handleTurnSpeakerChange = useCallback(
+    async (turnIndex: number, oldSpeaker: string, newSpeaker: string) => {
+      setTurnSpeakerDropdown(null);
+      if (oldSpeaker === newSpeaker) return;
+      await correctTurn(turnIndex, "speaker", oldSpeaker, newSpeaker);
+    },
+    [correctTurn]
+  );
+
+  // ---- Data quality banner ----
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  const bannerConditions = useMemo(() => {
+    const conditions: Array<{ key: string; text: string; action?: string }> = [];
+
+    const genericSpeakers = speakers.filter((s) => /^Speaker \d+$/.test(s.name));
+    if (genericSpeakers.length > 0) {
+      conditions.push({
+        key: "generic-speakers",
+        text: `${genericSpeakers.length} speaker${genericSpeakers.length !== 1 ? "s" : ""} need${genericSpeakers.length === 1 ? "s" : ""} identification`,
+        action: "Open Speaker Panel",
+      });
+    }
+
+    const allInferred = turns.length > 0 && turns.every((t) => t.attribution === "inferred");
+    if (allInferred) {
+      conditions.push({
+        key: "inferred-attribution",
+        text: "All speaker attributions are auto-generated",
+      });
+    }
+
+    if (youtube_id && turns.length > 0) {
+      const withTimestamp = turns.filter((t) => t.timestamp_seconds != null).length;
+      const coverage = Math.round((withTimestamp / turns.length) * 100);
+      if (coverage < 50) {
+        conditions.push({
+          key: "low-timestamps",
+          text: `Low timestamp coverage (${coverage}%)`,
+        });
+      }
+    }
+
+    return conditions;
+  }, [speakers, youtube_id, turns]);
+
+  const showBanner = !bannerDismissed && bannerConditions.length > 0;
+
+  const ROLE_OPTIONS = ["host", "guest", "rowspace", "customer", "other"] as const;
 
   // ---- Render ----
   return (
@@ -443,7 +655,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         {/* Left Sidebar */}
         <aside className="h-full bg-[#faf9f7] flex flex-col border-r border-[#e5e3df] overflow-y-auto max-md:h-auto max-md:overflow-visible max-md:order-first max-md:border-r-0 max-md:border-b">
           {/* Speakers */}
-          <div className="px-3 py-3 border-b border-[#e5e3df]">
+          <div ref={speakersPanelRef} className="px-3 py-3 border-b border-[#e5e3df]">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Speakers</span>
               {has_inferred_attribution && (
@@ -452,50 +664,120 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                 </span>
               )}
             </div>
+            {/* Confirmation / Error banners */}
+            {confirmation && (
+              <div className="mb-2 px-2 py-1.5 bg-green-50 border border-green-200 text-[11px] text-green-700 flex items-center justify-between">
+                <span>{confirmation}</span>
+                <button onClick={clearConfirmation} className="text-green-400 hover:text-green-600 ml-2">&times;</button>
+              </div>
+            )}
+            {apiError && (
+              <div className="mb-2 px-2 py-1.5 bg-red-50 border border-red-200 text-[11px] text-red-700 flex items-center justify-between">
+                <span>{apiError}</span>
+                <button onClick={clearError} className="text-red-400 hover:text-red-600 ml-2">&times;</button>
+              </div>
+            )}
             <div className="space-y-2">
-              {guests.map((g) => (
-                <button
-                  key={g.name}
-                  onClick={() => handleSpeakerClick(g.name)}
-                  className={`w-full flex items-center justify-between p-2 border transition-colors ${
-                    activeSpeaker === g.name
-                      ? 'bg-white border-[#b8860b]/30'
-                      : 'bg-white border-[#e5e3df] hover:border-[#b8860b]/30'
-                  }`}
-                >
-                  <div className="text-left">
-                    <div className={`text-[12px] font-medium ${activeSpeaker === g.name ? 'text-[#b8860b]' : 'text-[#555]'}`}>
-                      {g.name}
+              {speakers.map((s) => {
+                const isHost = s.role === "host" || s.role === "rowspace";
+                const isEditing = editingSpeaker === s.name;
+
+                return (
+                  <div
+                    key={s.name}
+                    className={`w-full p-2 border transition-colors ${
+                      isHost
+                        ? activeSpeaker === s.name
+                          ? 'bg-[#f5f4f2] border-[#ccc]'
+                          : 'bg-[#f5f4f2] border-[#e5e3df] hover:border-[#ccc]'
+                        : activeSpeaker === s.name
+                        ? 'bg-white border-[#b8860b]/30'
+                        : 'bg-white border-[#e5e3df] hover:border-[#b8860b]/30'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      {isEditing ? (
+                        <input
+                          autoFocus
+                          value={editingSpeakerName}
+                          onChange={(e) => setEditingSpeakerName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSpeakerRename(s.name, editingSpeakerName);
+                            if (e.key === "Escape") { savingGuardRef.current = true; setEditingSpeaker(null); setTimeout(() => { savingGuardRef.current = false; }, 0); }
+                          }}
+                          onBlur={() => handleSpeakerRename(s.name, editingSpeakerName)}
+                          disabled={saving}
+                          className="flex-1 text-[12px] font-medium text-[#333] bg-white border border-[#b8860b]/50 px-1.5 py-0.5 outline-none focus:border-[#b8860b]"
+                        />
+                      ) : (
+                        <button
+                          onClick={() => handleSpeakerClick(s.name)}
+                          className="flex-1 text-left"
+                        >
+                          <div className={`text-[12px] font-medium ${isHost ? 'text-[#555]' : activeSpeaker === s.name ? 'text-[#b8860b]' : 'text-[#555]'}`}>
+                            {s.name}
+                          </div>
+                        </button>
+                      )}
+                      {!isEditing && (
+                        <button
+                          onClick={() => {
+                            setEditingSpeaker(s.name);
+                            setEditingSpeakerName(s.name);
+                          }}
+                          className="p-0.5 text-[#ccc] hover:text-[#888] transition-colors"
+                          title="Rename speaker"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
-                    <div className="text-[10px] text-[#888]">
-                      {[g.title, g.affiliation].filter(Boolean).join(", ")}
+                    <div className="flex items-center justify-between mt-1">
+                      {editingSpeakerMeta === s.name ? (
+                        <input
+                          autoFocus
+                          value={editingSpeakerMetaValue}
+                          onChange={(e) => setEditingSpeakerMetaValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSpeakerMetaSave(s.name, s.title, s.affiliation);
+                            if (e.key === "Escape") { savingGuardRef.current = true; setEditingSpeakerMeta(null); setTimeout(() => { savingGuardRef.current = false; }, 0); }
+                          }}
+                          onBlur={() => handleSpeakerMetaSave(s.name, s.title, s.affiliation)}
+                          disabled={saving}
+                          placeholder="Title, Affiliation"
+                          className="flex-1 text-[10px] text-[#888] bg-white border border-[#b8860b]/50 px-1.5 py-0.5 outline-none focus:border-[#b8860b]"
+                        />
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setEditingSpeakerMeta(s.name);
+                            setEditingSpeakerMetaValue(
+                              [s.title, s.affiliation].filter(Boolean).join(", ")
+                            );
+                          }}
+                          className="text-[10px] text-[#888] hover:text-[#b8860b] transition-colors text-left"
+                        >
+                          {[s.title, s.affiliation].filter(Boolean).join(", ") || (
+                            <span className="text-[#ccc] italic">+ Add title</span>
+                          )}
+                        </button>
+                      )}
+                      <select
+                        value={s.role}
+                        onChange={(e) => handleRoleChange(s.name, e.target.value)}
+                        disabled={saving}
+                        className="text-[10px] text-[#999] bg-transparent border-none outline-none cursor-pointer hover:text-[#b8860b] transition-colors"
+                      >
+                        {ROLE_OPTIONS.map((r) => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
-                  <svg className="w-3.5 h-3.5 text-[#999]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              ))}
-              {host && (
-                <button
-                  onClick={() => handleSpeakerClick(host.name)}
-                  className={`w-full flex items-center justify-between p-2 border transition-colors ${
-                    activeSpeaker === host.name
-                      ? 'bg-[#f5f4f2] border-[#ccc]'
-                      : 'bg-[#f5f4f2] border-[#e5e3df] hover:border-[#ccc]'
-                  }`}
-                >
-                  <div className="text-left">
-                    <div className="text-[12px] text-[#555]">{host.name}</div>
-                    <div className="text-[10px] text-[#999]">
-                      {[host.title, host.affiliation].filter(Boolean).join(", ") || "Host"}
-                    </div>
-                  </div>
-                  <svg className="w-3.5 h-3.5 text-[#bbb]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              )}
+                );
+              })}
             </div>
           </div>
 
@@ -778,6 +1060,37 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             </div>
           )}
 
+          {/* Data Quality Review Banner */}
+          {showBanner && (
+            <div className="mx-6 mt-4 mb-2 px-4 py-3 bg-[#b8860b]/10 border border-[#b8860b]/30 flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[13px] font-medium text-[#8b6914] mb-1.5">This transcript needs review</div>
+                <ul className="space-y-1">
+                  {bannerConditions.map((c) => (
+                    <li key={c.key} className="flex items-center gap-2 text-[12px] text-[#8b6914]/80">
+                      <span className="w-1 h-1 rounded-full bg-[#b8860b]/60 shrink-0" />
+                      <span>{c.text}</span>
+                      {c.action && (
+                        <button
+                          onClick={() => speakersPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                          className="text-[11px] text-[#b8860b] hover:underline font-medium ml-1"
+                        >
+                          {c.action}
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button
+                onClick={() => setBannerDismissed(true)}
+                className="text-[#b8860b]/50 hover:text-[#b8860b] transition-colors shrink-0 mt-0.5"
+              >
+                <span className="text-sm">&times;</span>
+              </button>
+            </div>
+          )}
+
           {/* Transcript Content */}
           <div className="flex-1 px-6 py-5 space-y-1">
             {/* Monologue mode */}
@@ -825,7 +1138,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             {!isMonologue && (turnsBySection.get(INTRO_ANCHOR)?.length ?? 0) > 0 && (
               <div className="mb-4">
                 {turnsBySection.get(INTRO_ANCHOR)!.map((turn, ti) => {
-                  const isHost = turn.role === "host";
+                  const isHost = isCollapsedRole(turn.speaker);
                   const dimmed = activeSpeaker && activeSpeaker !== turn.speaker;
                   const isTurnHit = hasSearch && searchResults.turnKeys.has(`${INTRO_ANCHOR}-${ti}`);
 
@@ -842,7 +1155,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                     >
                       <div className="flex items-baseline gap-3 mb-1">
                         {turn.timestamp_seconds != null && (
-                          <button 
+                          <button
                             onClick={() => seekToTime(turn.timestamp_seconds!)}
                             className="text-[10px] font-mono text-[#999] hover:text-[#b8860b] transition-colors flex-shrink-0"
                             title="Jump to timestamp"
@@ -850,8 +1163,34 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                             {formatTimestamp(turn.timestamp_seconds)}
                           </button>
                         )}
-                        <span className={`text-[13px] font-medium ${isHost ? 'text-[#666]' : 'text-[#b8860b]'}`}>
-                          {turn.speaker}
+                        <span className="relative">
+                          <button
+                            onClick={() => {
+                              if (allSpeakersGeneric) {
+                                speakersPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                              } else {
+                                setTurnSpeakerDropdown(turnSpeakerDropdown === turn.turn_index ? null : turn.turn_index);
+                              }
+                            }}
+                            className={`text-[13px] font-medium ${isHost ? 'text-[#666]' : 'text-[#b8860b]'} hover:underline`}
+                          >
+                            {turn.speaker}
+                          </button>
+                          {turnSpeakerDropdown === turn.turn_index && !allSpeakersGeneric && (
+                            <div data-speaker-dropdown className="absolute left-0 top-full z-50 mt-1 bg-white border border-[#e5e3df] shadow-lg py-1 min-w-[140px]">
+                              {speakers.map((sp) => (
+                                <button
+                                  key={sp.name}
+                                  onClick={() => handleTurnSpeakerChange(turn.turn_index, turn.speaker, sp.name)}
+                                  className={`w-full text-left px-3 py-1.5 text-[12px] hover:bg-[#f5f4f2] transition-colors ${
+                                    sp.name === turn.speaker ? 'text-[#b8860b] font-medium' : 'text-[#555]'
+                                  }`}
+                                >
+                                  {sp.name}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </span>
                         {speakerInfo && (
                           <span className="text-[10px] text-[#999]">
@@ -859,9 +1198,39 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                           </span>
                         )}
                       </div>
-                      <p className={`text-[14px] leading-[1.6] ${isHost ? 'text-[#555] italic' : 'text-[#333]'}`}>
-                        {highlightText(turn.text, debouncedQuery)}
-                      </p>
+                      {editingTurnText === turn.turn_index ? (
+                        <div>
+                          <textarea
+                            autoFocus
+                            value={editingTurnTextValue}
+                            onChange={(e) => setEditingTurnTextValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Escape") { savingGuardRef.current = true; setEditingTurnText(null); setTimeout(() => { savingGuardRef.current = false; }, 0); }
+                              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") saveTurnTextEdit(turn.turn_index, turn.text);
+                            }}
+                            onBlur={() => saveTurnTextEdit(turn.turn_index, turn.text)}
+                            disabled={saving}
+                            className="w-full text-[14px] leading-[1.6] text-[#333] bg-white border border-[#b8860b]/50 p-2 outline-none focus:border-[#b8860b] resize-none max-h-[300px] overflow-y-auto"
+                            rows={Math.min(10, Math.max(2, editingTurnTextValue.split("\n").length))}
+                          />
+                          <div className="text-[10px] text-[#bbb] mt-1">Cmd+Enter to save, Escape to cancel</div>
+                        </div>
+                      ) : (
+                        <div className="relative group/text">
+                          <p className={`text-[14px] leading-[1.6] ${isHost ? 'text-[#555] italic' : 'text-[#333]'}`}>
+                            {highlightText(turn.text, debouncedQuery)}
+                          </p>
+                          <button
+                            onClick={() => startEditingTurnText(turn.turn_index, turn.text)}
+                            className="absolute top-0 right-0 p-1 text-[#ccc] hover:text-[#888] opacity-0 group-hover/text:opacity-100 transition-opacity"
+                            title="Edit text"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -929,7 +1298,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   {isOpen && (
                     <div className="border-l border-[#e5e3df] ml-1">
                       {sectionTurns.map((turn, ti) => {
-                        const isHost = turn.role === "host";
+                        const isHost = isCollapsedRole(turn.speaker);
                         const key = `${section.anchor}-${ti}`;
                         const hostExpanded = expandedHostTurns[key];
                         const isTurnHit = hasSearch && searchResults.turnKeys.has(key);
@@ -954,7 +1323,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                             {/* Header: timestamp + name/title + cited badge */}
                             <div className="flex items-baseline gap-3 mb-1">
                               {turn.timestamp_seconds != null && (
-                                <button 
+                                <button
                                   onClick={() => seekToTime(turn.timestamp_seconds!)}
                                   className="text-[10px] font-mono text-[#999] hover:text-[#b8860b] transition-colors flex-shrink-0"
                                   title="Jump to timestamp"
@@ -962,8 +1331,36 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                                   {formatTimestamp(turn.timestamp_seconds)}
                                 </button>
                               )}
-                              <span className={`text-[13px] font-medium ${isHost ? 'text-[#666]' : 'text-[#b8860b]'}`}>
-                                {turn.speaker}
+                              {/* Speaker name — clickable for re-attribution */}
+                              <span className="relative">
+                                <button
+                                  onClick={() => {
+                                    if (allSpeakersGeneric) {
+                                      // Nudge to rename first
+                                      speakersPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                    } else {
+                                      setTurnSpeakerDropdown(turnSpeakerDropdown === turn.turn_index ? null : turn.turn_index);
+                                    }
+                                  }}
+                                  className={`text-[13px] font-medium ${isHost ? 'text-[#666]' : 'text-[#b8860b]'} hover:underline`}
+                                >
+                                  {turn.speaker}
+                                </button>
+                                {turnSpeakerDropdown === turn.turn_index && !allSpeakersGeneric && (
+                                  <div data-speaker-dropdown className="absolute left-0 top-full z-50 mt-1 bg-white border border-[#e5e3df] shadow-lg py-1 min-w-[140px]">
+                                    {speakers.map((sp) => (
+                                      <button
+                                        key={sp.name}
+                                        onClick={() => handleTurnSpeakerChange(turn.turn_index, turn.speaker, sp.name)}
+                                        className={`w-full text-left px-3 py-1.5 text-[12px] hover:bg-[#f5f4f2] transition-colors ${
+                                          sp.name === turn.speaker ? 'text-[#b8860b] font-medium' : 'text-[#555]'
+                                        }`}
+                                      >
+                                        {sp.name}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
                               </span>
                               {speakerInfo && (
                                 <span className="text-[10px] text-[#999]">
@@ -978,31 +1375,72 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                               )}
                             </div>
 
-                            {/* Text content - aligned with header */}
-                            {isHost ? (
-                              <p className="text-[14px] leading-[1.6] text-[#555] italic">
-                                {hostExpanded || isTurnHit
-                                  ? highlightText(turn.text, debouncedQuery)
-                                  : summary
-                                  ? summary
-                                  : hasMore
-                                  ? highlightText(first, debouncedQuery)
-                                  : highlightText(turn.text, debouncedQuery)
-                                }
-                                {(hasMore || summary) && !isTurnHit && (
-                                  <button
-                                    onClick={() => setExpandedHostTurns((prev) => ({ ...prev, [key]: !prev[key] }))}
-                                    className="ml-1 text-[12px] text-[#b8860b] hover:underline transition-colors"
-                                    title={hostExpanded ? (summary ? "Show summary" : "Show less") : "Show full text"}
-                                  >
-                                    {hostExpanded ? "[less]" : "[more]"}
-                                  </button>
-                                )}
-                              </p>
+                            {/* Text content — with edit capability */}
+                            {editingTurnText === turn.turn_index ? (
+                              <div>
+                                <textarea
+                                  autoFocus
+                                  value={editingTurnTextValue}
+                                  onChange={(e) => setEditingTurnTextValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Escape") { savingGuardRef.current = true; setEditingTurnText(null); setTimeout(() => { savingGuardRef.current = false; }, 0); }
+                                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                                      saveTurnTextEdit(turn.turn_index, turn.text);
+                                    }
+                                  }}
+                                  onBlur={() => saveTurnTextEdit(turn.turn_index, turn.text)}
+                                  disabled={saving}
+                                  className="w-full text-[14px] leading-[1.6] text-[#333] bg-white border border-[#b8860b]/50 p-2 outline-none focus:border-[#b8860b] resize-none max-h-[300px] overflow-y-auto"
+                                  rows={Math.min(10, Math.max(2, editingTurnTextValue.split("\n").length))}
+                                />
+                                <div className="text-[10px] text-[#bbb] mt-1">Cmd+Enter to save, Escape to cancel</div>
+                              </div>
+                            ) : isHost ? (
+                              <div className="relative group/text">
+                                <p className="text-[14px] leading-[1.6] text-[#555] italic">
+                                  {hostExpanded || isTurnHit
+                                    ? highlightText(turn.text, debouncedQuery)
+                                    : summary
+                                    ? summary
+                                    : hasMore
+                                    ? highlightText(first, debouncedQuery)
+                                    : highlightText(turn.text, debouncedQuery)
+                                  }
+                                  {(hasMore || summary) && !isTurnHit && (
+                                    <button
+                                      onClick={() => setExpandedHostTurns((prev) => ({ ...prev, [key]: !prev[key] }))}
+                                      className="ml-1 text-[12px] text-[#b8860b] hover:underline transition-colors"
+                                      title={hostExpanded ? (summary ? "Show summary" : "Show less") : "Show full text"}
+                                    >
+                                      {hostExpanded ? "[less]" : "[more]"}
+                                    </button>
+                                  )}
+                                </p>
+                                <button
+                                  onClick={() => startEditingTurnText(turn.turn_index, turn.text)}
+                                  className="absolute top-0 right-0 p-1 text-[#ccc] hover:text-[#888] opacity-0 group-hover/text:opacity-100 transition-opacity"
+                                  title="Edit text"
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                  </svg>
+                                </button>
+                              </div>
                             ) : (
-                              <p className="text-[14px] leading-[1.6] text-[#333]">
-                                {highlightText(turn.text, debouncedQuery)}
-                              </p>
+                              <div className="relative group/text">
+                                <p className="text-[14px] leading-[1.6] text-[#333]">
+                                  {highlightText(turn.text, debouncedQuery)}
+                                </p>
+                                <button
+                                  onClick={() => startEditingTurnText(turn.turn_index, turn.text)}
+                                  className="absolute top-0 right-0 p-1 text-[#ccc] hover:text-[#888] opacity-0 group-hover/text:opacity-100 transition-opacity"
+                                  title="Edit text"
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                  </svg>
+                                </button>
+                              </div>
                             )}
                           </div>
                         );

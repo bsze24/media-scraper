@@ -26,13 +26,14 @@ export function isYouTubeSource(source: TranscriptSource): boolean {
 export type SpeakerRole =
   | "host"
   | "guest"
-  | "panelist"
-  | "moderator"
-  | "interviewer";
+  | "rowspace"
+  | "customer"
+  | "other";
 
 export interface Speaker {
   name: string;
   role: SpeakerRole;
+  title?: string;
   affiliation?: string;
 }
 

@@ -291,6 +291,18 @@ export async function writeTurns(
   if (error) throw error;
 }
 
+export async function writeSpeakers(
+  id: string,
+  speakers: import("@/types/appearance").Speaker[]
+): Promise<void> {
+  const supabase = createServerClient();
+  const { error } = await supabase
+    .from("appearances")
+    .update({ speakers })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 export async function writeSections(
   id: string,
   sections: import("@/types/scraper").SectionHeading[]

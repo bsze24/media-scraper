@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getAppearanceById } from "@lib/db/queries";
 import { formatDate } from "@lib/utils/format-date";
 import type { AppearanceRow } from "@lib/db/types";
+import type { SpeakerRole } from "@/types/appearance";
 import type { TranscriptViewerProps } from "./types";
 import { TranscriptViewer } from "./TranscriptViewer";
 
@@ -22,9 +23,9 @@ function extractYoutubeId(url: string): string | null {
 
 function transformAppearance(row: AppearanceRow): TranscriptViewerProps["appearance"] {
   // Build speaker role map
-  const speakerRoleMap = new Map<string, "guest" | "host">();
+  const speakerRoleMap = new Map<string, SpeakerRole>();
   for (const s of row.speakers) {
-    speakerRoleMap.set(s.name, s.role === "host" ? "host" : "guest");
+    speakerRoleMap.set(s.name, s.role);
   }
 
   // Build key_people lookup for title/affiliation enrichment
@@ -36,25 +37,24 @@ function transformAppearance(row: AppearanceRow): TranscriptViewerProps["appeara
     });
   }
 
-  // Enrich speakers with title/affiliation from entity_tags
+  // Enrich speakers with title/affiliation: prefer speaker-level fields, fall back to entity_tags
   const speakers = row.speakers.map((s) => {
     const kp = keyPeopleMap.get(s.name.toLowerCase());
     return {
       name: s.name,
-      role: (s.role === "host" ? "host" : "guest") as "guest" | "host",
-      title: kp?.title,
+      role: s.role,
+      title: s.title ?? kp?.title,
       affiliation: s.affiliation ?? kp?.affiliation,
     };
   });
 
   // Map turns with role from speakers
   const turns = (row.turns ?? []).map((t) => {
-    let role = speakerRoleMap.get(t.speaker);
-    if (!role) {
+    let role: SpeakerRole = speakerRoleMap.get(t.speaker) ?? "guest";
+    if (!speakerRoleMap.has(t.speaker)) {
       console.warn(
         `[transcript/${row.id}] Speaker "${t.speaker}" not found in speakers list, defaulting to "guest"`
       );
-      role = "guest";
     }
     return {
       speaker: t.speaker,
@@ -62,6 +62,7 @@ function transformAppearance(row: AppearanceRow): TranscriptViewerProps["appeara
       text: t.text,
       turn_index: t.turn_index,
       section_anchor: t.section_anchor,
+      corrected: t.corrected,
       timestamp_seconds: t.timestamp_seconds,
       attribution: t.attribution,
     };
