@@ -328,22 +328,35 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   // ---- Active turn (cursor) ----
   const [activeTurnIndex, setActiveTurnIndex] = useState<number | null>(null);
 
-  // Scroll active turn into view
-  useEffect(() => {
-    if (activeTurnIndex === null) return;
-    const el = document.querySelector(`[data-turn-index="${activeTurnIndex}"]`);
-    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [activeTurnIndex]);
-
-  // Auto-expand section containing active turn
+  // Auto-expand section containing active turn, then scroll into view.
+  // Single effect avoids ordering issue (scroll before section expands).
+  // expandedSections NOT in deps — prevents feedback loop where collapsing
+  // a section with the active turn immediately re-expands it.
   useEffect(() => {
     if (activeTurnIndex === null) return;
     const activeTurn = turns.find(t => t.turn_index === activeTurnIndex);
-    if (!activeTurn?.section_anchor) return;
-    if (!expandedSections[activeTurn.section_anchor]) {
-      setExpandedSections(prev => ({ ...prev, [activeTurn.section_anchor!]: true }));
+
+    // Expand section if needed (functional updater avoids stale closure)
+    let needsExpand = false;
+    if (activeTurn?.section_anchor) {
+      setExpandedSections(prev => {
+        if (prev[activeTurn.section_anchor!]) return prev;
+        needsExpand = true;
+        return { ...prev, [activeTurn.section_anchor!]: true };
+      });
     }
-  }, [activeTurnIndex, turns, expandedSections]);
+
+    // Scroll: if section just expanded, wait a frame for DOM to update
+    const doScroll = () => {
+      const el = document.querySelector(`[data-turn-index="${activeTurnIndex}"]`);
+      el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    };
+    if (needsExpand) {
+      requestAnimationFrame(doScroll);
+    } else {
+      doScroll();
+    }
+  }, [activeTurnIndex, turns]);
 
   // ---- Auto-follow / skip playback ----
   const [autoFollowEnabled, setAutoFollowEnabled] = useState(true);
