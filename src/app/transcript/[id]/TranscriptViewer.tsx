@@ -499,12 +499,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       try {
         await renameSpeaker(oldName, trimmed);
         // Update active speaker filter if the renamed speaker was selected
-        if (activeSpeaker === oldName) setActiveSpeaker(trimmed);
+        setActiveSpeaker((prev) => prev === oldName ? trimmed : prev);
       } finally {
         savingGuardRef.current = false;
       }
     },
-    [renameSpeaker, activeSpeaker]
+    [renameSpeaker]
   );
 
   // Speaker role change handler

@@ -171,15 +171,17 @@ export async function POST(
     );
   }
 
-  // Insert audit row (turn_index null for renames)
-  await supabase.from("corrections").insert({
-    appearance_id: id,
-    turn_index: null,
-    field: "speaker",
-    old_value: old_name,
-    new_value: new_name,
-    action: "corrected",
-  });
+  // Insert audit row only for actual name changes (not role-only updates)
+  if (nameChanged) {
+    await supabase.from("corrections").insert({
+      appearance_id: id,
+      turn_index: null,
+      field: "speaker",
+      old_value: old_name,
+      new_value: new_name,
+      action: "corrected",
+    });
+  }
 
   return NextResponse.json({
     speakers: updatedSpeakers,
