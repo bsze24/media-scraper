@@ -11,6 +11,7 @@ import type { TranscriptViewerProps } from "./types";
 import { RegenerateBulletsButton } from "./RegenerateBulletsButton";
 import { useAppearanceApi } from "./useAppearanceApi";
 import { SpeakerPanel } from "./SpeakerPanel";
+import type { SpeakerPanelHandle } from "./SpeakerPanel";
 import { TurnRenderer } from "./TurnRenderer";
 import { parseSearchQuery, matchesTurn, firstSentence } from "./helpers";
 
@@ -310,6 +311,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const [editingTurnTextValue, setEditingTurnTextValue] = useState("");
   const [turnSpeakerDropdown, setTurnSpeakerDropdown] = useState<number | null>(null);
   const speakersPanelRef = useRef<HTMLDivElement | null>(null);
+  const speakerPanelEditRef = useRef<SpeakerPanelHandle | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const panelInputRef = useRef<HTMLInputElement>(null);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -317,6 +320,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const ytPlayerRef = useRef<YTPlayer | null>(null);
   const pendingSeekRef = useRef<number | null>(null);
   const pendingPlayRef = useRef<boolean>(false);
+  const isPlayingRef = useRef(false);
+  const playToggleGuardRef = useRef(false);
 
   const seekToTime = useCallback((seconds: number) => {
     setCurrentTime(seconds); // immediate UI update
@@ -365,7 +370,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           onStateChange: (event: { data: number }) => {
             // YT.PlayerState: PLAYING=1, PAUSED=2, ENDED=0, BUFFERING=3
             // Treat buffering as "playing" — user intent is to play
-            setIsPlaying(event.data === 1 || event.data === 3);
+            const playing = event.data === 1 || event.data === 3;
+            isPlayingRef.current = playing;
+            setIsPlaying(playing);
           },
         },
       });
@@ -445,18 +452,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       setTimeout(() => panelInputRef.current?.focus(), 0);
     }
   }, [floatingPanel]);
-
-  // Escape to close panels + dropdowns
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setFloatingPanel(null);
-        setTurnSpeakerDropdown(null);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
 
   // Click outside to close speaker dropdown
   useEffect(() => {
@@ -609,6 +604,306 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     speakersPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
+  // EXTRACT: useKeyboardShortcuts — begin
+  // ---- Keyboard shortcuts state & derived values ----
+  const [showHelpOverlay, setShowHelpOverlay] = useState(false);
+
+  const activeTurn = useMemo(() => {
+    if (activeTurnIndex === null) return null;
+    return turns.find(t => t.turn_index === activeTurnIndex) ?? null;
+  }, [activeTurnIndex, turns]);
+
+  // Flat ordered list of turn indices in visual order: monologue → intro → sections
+  const navigableTurnIndices = useMemo(() => {
+    const indices: number[] = [];
+    if (isMonologue) {
+      for (const t of turns) indices.push(t.turn_index);
+    } else {
+      // Intro turns
+      const introTurns = turnsBySection.get(INTRO_ANCHOR) ?? [];
+      for (const t of introTurns) indices.push(t.turn_index);
+      // Section turns in section order
+      for (const s of sections) {
+        const sectionTurns = turnsBySection.get(s.anchor) ?? [];
+        for (const t of sectionTurns) indices.push(t.turn_index);
+      }
+    }
+    return indices;
+  }, [isMonologue, turns, turnsBySection, sections]);
+
+  // Map turn_index → section anchor for n/p navigation
+  const turnSectionMap = useMemo(() => {
+    const map = new Map<number, string>();
+    const introTurns = turnsBySection.get(INTRO_ANCHOR) ?? [];
+    for (const t of introTurns) map.set(t.turn_index, INTRO_ANCHOR);
+    for (const s of sections) {
+      const sectionTurns = turnsBySection.get(s.anchor) ?? [];
+      for (const t of sectionTurns) map.set(t.turn_index, s.anchor);
+    }
+    return map;
+  }, [turnsBySection, sections]);
+
+  // Section boundaries: first turn index for each section in order
+  const sectionFirstTurns = useMemo(() => {
+    const result: Array<{ anchor: string; firstTurnIndex: number }> = [];
+    const introTurns = turnsBySection.get(INTRO_ANCHOR) ?? [];
+    if (introTurns.length > 0) {
+      result.push({ anchor: INTRO_ANCHOR, firstTurnIndex: introTurns[0].turn_index });
+    }
+    for (const s of sections) {
+      const sectionTurns = turnsBySection.get(s.anchor) ?? [];
+      if (sectionTurns.length > 0) {
+        result.push({ anchor: s.anchor, firstTurnIndex: sectionTurns[0].turn_index });
+      }
+    }
+    return result;
+  }, [turnsBySection, sections]);
+
+  // Unified keydown listener
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const tagName = target.tagName.toLowerCase();
+      const isInput = tagName === "input" || tagName === "textarea" || target.isContentEditable;
+
+      // Escape always works
+      if (e.key === "Escape") {
+        // Priority chain:
+        // 1. Editing turn text
+        if (editingTurnText !== null) {
+          cancelEditTurnText();
+          return;
+        }
+        // 2. SpeakerPanel editing
+        if (speakerPanelEditRef.current?.cancelEditing()) {
+          return;
+        }
+        // 3. Speaker dropdown / floating panel
+        if (turnSpeakerDropdown !== null || floatingPanel !== null) {
+          setTurnSpeakerDropdown(null);
+          setFloatingPanel(null);
+          return;
+        }
+        // 4. Help overlay
+        if (showHelpOverlay) {
+          setShowHelpOverlay(false);
+          return;
+        }
+        // 5. Search focused
+        if (document.activeElement === searchInputRef.current) {
+          setSearchQuery("");
+          setDebouncedQuery("");
+          searchInputRef.current?.blur();
+          return;
+        }
+        // 6. Clear active turn
+        if (activeTurnIndex !== null) {
+          setActiveTurnIndex(null);
+          return;
+        }
+        return;
+      }
+
+      // Input guard — all other keys blocked when in input
+      if (isInput) return;
+
+      switch (e.key) {
+        // --- Navigation ---
+        case "j": {
+          const currentPos = activeTurnIndex !== null
+            ? navigableTurnIndices.indexOf(activeTurnIndex)
+            : -1;
+          if (currentPos === -1) {
+            // No active turn — activate first
+            if (navigableTurnIndices.length > 0) {
+              setActiveTurnIndex(navigableTurnIndices[0]);
+              setAutoFollowEnabled(false);
+            }
+          } else if (currentPos < navigableTurnIndices.length - 1) {
+            setActiveTurnIndex(navigableTurnIndices[currentPos + 1]);
+            setAutoFollowEnabled(false);
+          }
+          break;
+        }
+        case "k": {
+          const currentPos = activeTurnIndex !== null
+            ? navigableTurnIndices.indexOf(activeTurnIndex)
+            : -1;
+          if (currentPos === -1) {
+            // No active turn — activate last
+            if (navigableTurnIndices.length > 0) {
+              setActiveTurnIndex(navigableTurnIndices[navigableTurnIndices.length - 1]);
+              setAutoFollowEnabled(false);
+            }
+          } else if (currentPos > 0) {
+            setActiveTurnIndex(navigableTurnIndices[currentPos - 1]);
+            setAutoFollowEnabled(false);
+          }
+          break;
+        }
+        case "n": {
+          // Jump to first turn of next section
+          const currentAnchor = activeTurnIndex !== null
+            ? turnSectionMap.get(activeTurnIndex) ?? null
+            : null;
+          const currentSectionIdx = currentAnchor !== null
+            ? sectionFirstTurns.findIndex(s => s.anchor === currentAnchor)
+            : -1;
+          const nextIdx = currentSectionIdx + 1;
+          if (nextIdx < sectionFirstTurns.length) {
+            setActiveTurnIndex(sectionFirstTurns[nextIdx].firstTurnIndex);
+            setAutoFollowEnabled(false);
+          }
+          break;
+        }
+        case "p": {
+          // Jump to first turn of previous section
+          const currentAnchor = activeTurnIndex !== null
+            ? turnSectionMap.get(activeTurnIndex) ?? null
+            : null;
+          const currentSectionIdx = currentAnchor !== null
+            ? sectionFirstTurns.findIndex(s => s.anchor === currentAnchor)
+            : -1;
+          if (currentSectionIdx > 0) {
+            setActiveTurnIndex(sectionFirstTurns[currentSectionIdx - 1].firstTurnIndex);
+            setAutoFollowEnabled(false);
+          }
+          break;
+        }
+
+        // --- Playback ---
+        case " ": {
+          // Space — play/pause
+          e.preventDefault(); // prevent scroll and button activation
+          // Throttle: YouTube IFrame API uses postMessage — rapid playVideo/pauseVideo
+          // calls queue up and getPlayerState() blocks the main thread waiting for each
+          // response. Guard prevents firing faster than the iframe can process.
+          if (playToggleGuardRef.current) break;
+          playToggleGuardRef.current = true;
+          setTimeout(() => { playToggleGuardRef.current = false; }, 200);
+          const player = ytPlayerRef.current;
+          if (player) {
+            // Use ref instead of player.getPlayerState() — the synchronous IFrame
+            // bridge call blocks the main thread during rapid toggling.
+            if (isPlayingRef.current) {
+              player.pauseVideo();
+            } else {
+              player.playVideo();
+            }
+          } else {
+            pendingPlayRef.current = !pendingPlayRef.current;
+            isPlayingRef.current = pendingPlayRef.current;
+            setIsPlaying(pendingPlayRef.current);
+          }
+          break;
+        }
+        case "t": {
+          // Seek to active turn timestamp + re-enable auto-follow
+          if (!activeTurn || activeTurn.timestamp_seconds == null) break;
+          seekToTime(activeTurn.timestamp_seconds);
+          setAutoFollowEnabled(true);
+          break;
+        }
+
+        // --- Editing ---
+        case "e": {
+          // e — edit turn text
+          if (!activeTurn || isMonologue) break;
+          startEditingTurnText(activeTurn.turn_index, activeTurn.text);
+          break;
+        }
+        case "E": {
+          // Shift+E — edit speaker meta
+          if (!activeTurn) break;
+          speakerPanelEditRef.current?.startEditing(activeTurn.speaker, 'meta');
+          speakersPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          break;
+        }
+        case "a": {
+          if (e.shiftKey) break; // handled by 'A' case
+          // a — open speaker dropdown on active turn
+          if (!activeTurn || isMonologue) break;
+          if (allSpeakersGeneric) {
+            speakersPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          } else {
+            setTurnSpeakerDropdown(activeTurn.turn_index);
+          }
+          break;
+        }
+        case "A": {
+          // Shift+A — rename speaker globally
+          if (!e.shiftKey || !activeTurn) break;
+          speakerPanelEditRef.current?.startEditing(activeTurn.speaker, 'rename');
+          speakersPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          break;
+        }
+
+        // --- View ---
+        case "m": {
+          if (activeTurnIndex === null) break;
+          toggleTurnExpanded(activeTurnIndex);
+          break;
+        }
+        case "R": {
+          // Shift+R — reset view
+          if (!e.shiftKey) break;
+          handleResetView();
+          break;
+        }
+
+        // --- Speaker filter ---
+        case "1": case "2": case "3": case "4": case "5":
+        case "6": case "7": case "8": case "9": {
+          const idx = parseInt(e.key) - 1;
+          if (idx < speakers.length) {
+            handleSpeakerClick(speakers[idx].name);
+          }
+          break;
+        }
+
+        // --- Video mode ---
+        case "q": {
+          setVideoMode(prev => {
+            if (prev === 'collapsed') return 'pip';
+            if (prev === 'pip') return 'collapsed';
+            return 'pip'; // full → pip
+          });
+          break;
+        }
+        case "w": {
+          setVideoMode(prev => {
+            if (prev === 'collapsed') return 'full';
+            if (prev === 'full') return 'collapsed';
+            return 'full'; // pip → full
+          });
+          break;
+        }
+
+        // --- Search & Meta ---
+        case "/": {
+          e.preventDefault();
+          searchInputRef.current?.focus();
+          searchInputRef.current?.select();
+          break;
+        }
+        case "?": {
+          setShowHelpOverlay(prev => !prev);
+          break;
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [
+    activeTurnIndex, activeTurn, navigableTurnIndices, turnSectionMap,
+    sectionFirstTurns, editingTurnText, turnSpeakerDropdown, floatingPanel,
+    showHelpOverlay, isMonologue, allSpeakersGeneric, speakers,
+    cancelEditTurnText, startEditingTurnText, seekToTime,
+    toggleTurnExpanded, handleResetView, handleSpeakerClick,
+  ]);
+  // EXTRACT: useKeyboardShortcuts — end
+
   // ---- Data quality banner ----
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
@@ -676,6 +971,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           {/* Speakers */}
           <div ref={speakersPanelRef}>
             <SpeakerPanel
+              ref={speakerPanelEditRef}
               speakers={speakers}
               activeSpeaker={activeSpeaker}
               onSpeakerClick={handleSpeakerClick}
@@ -688,6 +984,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               onRenameSpeaker={renameSpeaker}
               onUpdateSpeaker={updateSpeaker}
               onActiveSpeakerUpdate={setActiveSpeaker}
+              showNumberBadges={speakers.length >= 2}
             />
           </div>
 
@@ -697,7 +994,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#bbb]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
-              <input 
+              <input
+                ref={searchInputRef}
                 type="text"
                 placeholder="Find in transcript..."
                 value={searchQuery}
@@ -1419,6 +1717,75 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           </div>
         );
       })()}
+
+      {/* Keyboard Shortcut Help Overlay */}
+      {showHelpOverlay && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center"
+          onClick={() => setShowHelpOverlay(false)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-2xl max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-[#e5e3df] flex items-center justify-between">
+              <span className="text-[14px] font-medium text-[#333]">Keyboard Shortcuts</span>
+              <button
+                onClick={() => setShowHelpOverlay(false)}
+                className="text-[#bbb] hover:text-[#666] text-lg leading-none"
+              >&times;</button>
+            </div>
+            <div className="px-5 py-4 space-y-4 text-[12px]">
+              {([
+                ["Navigation", [
+                  ["j", "Next turn"],
+                  ["k", "Previous turn"],
+                  ["n", "Next section"],
+                  ["p", "Previous section"],
+                ]],
+                ["Playback", [
+                  ["Space", "Play / pause"],
+                  ["t", "Seek to active turn + auto-follow"],
+                ]],
+                ["Editing", [
+                  ["e", "Edit turn text"],
+                  ["a", "Re-attribute turn speaker"],
+                  ["Shift+A", "Rename speaker globally"],
+                  ["Shift+E", "Edit speaker title"],
+                ]],
+                ["View", [
+                  ["m", "Toggle expand / collapse"],
+                  ["Shift+R", "Reset to defaults"],
+                ]],
+                ["Filter", [
+                  ["1–9", "Toggle speaker filter"],
+                ]],
+                ["Video", [
+                  ["q", "Toggle pip / audio-only"],
+                  ["w", "Toggle full / audio-only"],
+                ]],
+                ["Search", [
+                  ["/", "Focus search"],
+                  ["?", "Toggle this help"],
+                  ["Esc", "Close overlay / cancel edit / clear active"],
+                ]],
+              ] as [string, [string, string][]][]).map(([group, keys]) => (
+                <div key={group}>
+                  <div className="text-[10px] font-medium uppercase tracking-wider text-[#999] mb-1.5">{group}</div>
+                  <div className="space-y-1">
+                    {keys.map(([key, desc]) => (
+                      <div key={key} className="flex items-center gap-3">
+                        <kbd className="inline-flex items-center justify-center min-w-[28px] px-1.5 py-0.5 bg-[#f5f4f2] border border-[#e5e3df] rounded text-[11px] font-mono text-[#555]">{key}</kbd>
+                        <span className="text-[#666]">{desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
