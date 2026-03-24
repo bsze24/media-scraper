@@ -129,7 +129,7 @@ export async function POST(
     const transcriptRegex = new RegExp(`^${escapedOldName}:`, "gm");
     cleanedTranscript = cleanedTranscript.replace(
       transcriptRegex,
-      `${new_name}:`
+      () => `${new_name}:`
     );
   }
 

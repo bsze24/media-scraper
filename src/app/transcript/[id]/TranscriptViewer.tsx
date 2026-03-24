@@ -184,7 +184,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   // Check if all speakers are still generic labels
   const allSpeakersGeneric = useMemo(
-    () => speakers.every((s) => /^Speaker \d+$/.test(s.name)),
+    () => speakers.length > 0 && speakers.every((s) => /^Speaker \d+$/.test(s.name)),
     [speakers]
   );
 
