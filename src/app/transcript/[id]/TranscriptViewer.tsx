@@ -249,8 +249,22 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     allAnchors.forEach((a) => (m[a] = true));
     return m;
   });
+  // Role-based default: guest/customer/other expanded, host/rowspace collapsed.
+  const computeRoleDefaults = useCallback(() => {
+    const roleMap = new Map<string, string>();
+    for (const s of speakers) roleMap.set(s.name, s.role);
+    return new Set(
+      turns
+        .filter(t => {
+          const role = roleMap.get(t.speaker) ?? "guest";
+          return role !== "host" && role !== "rowspace";
+        })
+        .map(t => t.turn_index)
+    );
+  }, [speakers, turns]);
+
   // Unified expand/collapse: a turn is expanded iff its turn_index is in this set.
-  // Default: guest/customer/other expanded, host/rowspace collapsed.
+  // Always initialize with role-based defaults (SSR-safe), then override from URL on mount.
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(() => {
     const roleMap = new Map<string, string>();
     for (const s of appearance.speakers) roleMap.set(s.name, s.role);
@@ -264,6 +278,28 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     );
   });
 
+  // Track whether we're in highlight mode (URL has ?expanded= param)
+  const [isHighlightMode, setIsHighlightMode] = useState(false);
+
+  // On mount, read URL params and override expandedTurns if ?expanded= is present.
+  // useEffect avoids hydration mismatch (server doesn't have window.location).
+  const urlInitRef = useRef(false);
+  useEffect(() => {
+    if (urlInitRef.current) return;
+    urlInitRef.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const expandedParam = params.get("expanded");
+    if (expandedParam !== null) {
+      setIsHighlightMode(true);
+      if (expandedParam === "") {
+        setExpandedTurns(new Set<number>());
+      } else {
+        const indices = expandedParam.split(",").map(Number).filter(n => !isNaN(n));
+        setExpandedTurns(new Set(indices));
+      }
+    }
+  }, []);
+
   const toggleTurnExpanded = useCallback((turnIndex: number) => {
     setExpandedTurns(prev => {
       const next = new Set(prev);
@@ -271,7 +307,34 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       else next.add(turnIndex);
       return next;
     });
+    // Once user toggles anything, we're in highlight mode
+    setIsHighlightMode(true);
   }, []);
+
+  // Sync expandedTurns to URL via replaceState
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!isHighlightMode) return;
+    const indices = Array.from(expandedTurns).sort((a, b) => a - b).join(",");
+    const url = new URL(window.location.href);
+    url.searchParams.set("expanded", indices);
+    window.history.replaceState({}, "", url.toString());
+  }, [expandedTurns, isHighlightMode]);
+
+  // Reset view handler — returns to role-based defaults, exits highlight mode
+  const [resetConfirmation, setResetConfirmation] = useState(false);
+  const handleResetView = useCallback(() => {
+    setExpandedTurns(computeRoleDefaults());
+    setIsHighlightMode(false);
+    // Remove expanded param from URL
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("expanded");
+      window.history.replaceState({}, "", url.toString());
+    }
+    setResetConfirmation(true);
+    setTimeout(() => setResetConfirmation(false), 2000);
+  }, [computeRoleDefaults]);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [feedback, setFeedback] = useState<Record<number, BulletFeedback>>({});
@@ -1110,6 +1173,21 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               >
                 <span className="text-sm">&times;</span>
               </button>
+            </div>
+          )}
+
+          {/* Reset view — only shown in highlight mode */}
+          {isHighlightMode && (
+            <div className="mx-6 mt-2 flex items-center gap-2">
+              <button
+                onClick={handleResetView}
+                className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors"
+              >
+                Reset view
+              </button>
+              {resetConfirmation && (
+                <span className="text-[11px] text-green-600">View reset</span>
+              )}
             </div>
           )}
 
