@@ -179,7 +179,7 @@ export const SpeakerPanel = forwardRef<SpeakerPanelHandle, SpeakerPanelProps>(fu
             >
               <div className="flex items-center justify-between gap-1">
                 {showNumberBadges && idx < 9 && (
-                  <span className="text-[10px] font-mono text-[#bbb] w-3 shrink-0 text-center">{idx + 1}</span>
+                  <span className="text-[10px] font-mono text-[#bbb] shrink-0">[{idx + 1}]</span>
                 )}
                 {isEditing ? (
                   <input

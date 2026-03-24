@@ -804,6 +804,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           setAutoFollowEnabled(true);
           break;
         }
+        case "f": {
+          // Toggle follow at current video position — no seek
+          setAutoFollowEnabled(prev => !prev);
+          break;
+        }
 
         // --- Editing ---
         case "e": {
@@ -1237,14 +1242,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   {/* Auto-follow toggle */}
                   <button
                     onClick={() => setAutoFollowEnabled(prev => !prev)}
-                    className={`text-[10px] px-2 py-1 rounded transition-colors ${
+                    className={`text-[10px] px-2 py-1 rounded font-medium transition-colors ${
                       autoFollowEnabled
-                        ? 'bg-[#b8860b]/15 text-[#b8860b] hover:bg-[#b8860b]/25'
-                        : 'text-[#999] hover:text-[#666] hover:bg-[#f5f4f2]'
+                        ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                        : 'bg-red-100 text-red-600 hover:bg-red-200'
                     }`}
-                    title={autoFollowEnabled ? "Auto-follow: ON — skips collapsed turns" : "Auto-follow: OFF — plays everything"}
+                    title={autoFollowEnabled ? "Auto-follow: ON — skips collapsed turns [F]" : "Auto-follow: OFF — plays everything [F]"}
                   >
-                    {autoFollowEnabled ? "Follow ON" : "Follow OFF"}
+                    {autoFollowEnabled ? "[F] Follow ON" : "[F] Follow OFF"}
                   </button>
                   <span className="w-px h-4 bg-[#e5e3df]" />
                   {/* Mini PiP */}
@@ -1746,6 +1751,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                 ["Playback", [
                   ["Space", "Play / pause"],
                   ["t", "Seek to active turn + auto-follow"],
+                  ["f", "Toggle follow at current position"],
                 ]],
                 ["Editing", [
                   ["e", "Edit turn text"],
