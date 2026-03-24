@@ -20,7 +20,7 @@ export interface TranscriptViewerProps {
     }>;
     turns: Array<{
       speaker: string;
-      role: "host" | "guest" | "rowspace" | "customer" | "other";
+      role?: "host" | "guest" | "rowspace" | "customer" | "other";
       text: string;
       turn_index: number;
       section_anchor?: string;
