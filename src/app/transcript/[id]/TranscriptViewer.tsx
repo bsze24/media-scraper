@@ -597,6 +597,18 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     [correctTurn]
   );
 
+  // Stable callbacks for TurnRenderer (avoids defeating React.memo)
+  const toggleSpeakerDropdown = useCallback(
+    (turnIndex: number) => {
+      setTurnSpeakerDropdown(prev => prev === turnIndex ? null : turnIndex);
+    },
+    []
+  );
+
+  const scrollToSpeakerPanel = useCallback(() => {
+    speakersPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
   // ---- Data quality banner ----
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
@@ -1103,8 +1115,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                       speakers={speakers}
                       allSpeakersGeneric={allSpeakersGeneric}
                       onTurnSpeakerChange={handleTurnSpeakerChange}
-                      onToggleSpeakerDropdown={(idx) => setTurnSpeakerDropdown(turnSpeakerDropdown === idx ? null : idx)}
-                      onScrollToSpeakerPanel={() => speakersPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                      onToggleSpeakerDropdown={toggleSpeakerDropdown}
+                      onScrollToSpeakerPanel={scrollToSpeakerPanel}
                       searchQuery={debouncedQuery}
                     />
                   );
@@ -1204,8 +1216,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                             speakers={speakers}
                             allSpeakersGeneric={allSpeakersGeneric}
                             onTurnSpeakerChange={handleTurnSpeakerChange}
-                            onToggleSpeakerDropdown={(idx) => setTurnSpeakerDropdown(turnSpeakerDropdown === idx ? null : idx)}
-                            onScrollToSpeakerPanel={() => speakersPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                            onToggleSpeakerDropdown={toggleSpeakerDropdown}
+                            onScrollToSpeakerPanel={scrollToSpeakerPanel}
                             searchQuery={debouncedQuery}
                           />
                         );
