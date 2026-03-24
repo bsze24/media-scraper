@@ -700,7 +700,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                           onChange={(e) => setEditingSpeakerName(e.target.value)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") handleSpeakerRename(s.name, editingSpeakerName);
-                            if (e.key === "Escape") setEditingSpeaker(null);
+                            if (e.key === "Escape") { savingGuardRef.current = true; setEditingSpeaker(null); setTimeout(() => { savingGuardRef.current = false; }, 0); }
                           }}
                           onBlur={() => handleSpeakerRename(s.name, editingSpeakerName)}
                           disabled={saving}
@@ -739,7 +739,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                           onChange={(e) => setEditingSpeakerMetaValue(e.target.value)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") handleSpeakerMetaSave(s.name, s.title, s.affiliation);
-                            if (e.key === "Escape") setEditingSpeakerMeta(null);
+                            if (e.key === "Escape") { savingGuardRef.current = true; setEditingSpeakerMeta(null); setTimeout(() => { savingGuardRef.current = false; }, 0); }
                           }}
                           onBlur={() => handleSpeakerMetaSave(s.name, s.title, s.affiliation)}
                           disabled={saving}
@@ -1202,7 +1202,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                             value={editingTurnTextValue}
                             onChange={(e) => setEditingTurnTextValue(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === "Escape") setEditingTurnText(null);
+                              if (e.key === "Escape") { savingGuardRef.current = true; setEditingTurnText(null); setTimeout(() => { savingGuardRef.current = false; }, 0); }
                               if ((e.metaKey || e.ctrlKey) && e.key === "Enter") saveTurnTextEdit(turn.turn_index, turn.text);
                             }}
                             onBlur={() => saveTurnTextEdit(turn.turn_index, turn.text)}
@@ -1380,7 +1380,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                                   value={editingTurnTextValue}
                                   onChange={(e) => setEditingTurnTextValue(e.target.value)}
                                   onKeyDown={(e) => {
-                                    if (e.key === "Escape") setEditingTurnText(null);
+                                    if (e.key === "Escape") { savingGuardRef.current = true; setEditingTurnText(null); setTimeout(() => { savingGuardRef.current = false; }, 0); }
                                     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
                                       saveTurnTextEdit(turn.turn_index, turn.text);
                                     }

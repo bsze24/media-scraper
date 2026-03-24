@@ -58,9 +58,11 @@ function mergeCorrectedTurns(
   if (correctedByIndex.size === 0) {
     return { merged: newTurns, preserved: 0 };
   }
+  let matched = 0;
   const merged = newTurns.map((t) => {
     const corrected = correctedByIndex.get(t.turn_index);
     if (corrected) {
+      matched++;
       // Keep corrected speaker/text but take new timestamps/anchors
       return {
         ...t,
@@ -72,8 +74,9 @@ function mergeCorrectedTurns(
     }
     return t;
   });
-  console.log(`[reprocess] preserving ${correctedByIndex.size} human-corrected turns`);
-  return { merged, preserved: correctedByIndex.size };
+  const lost = correctedByIndex.size - matched;
+  console.log(`[reprocess] preserving ${matched} human-corrected turns${lost > 0 ? ` (${lost} corrections lost — turn_index not found in new turns)` : ""}`);
+  return { merged, preserved: matched };
 }
 
 export async function processAppearance(id: string): Promise<void> {
