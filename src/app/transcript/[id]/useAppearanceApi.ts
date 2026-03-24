@@ -61,15 +61,7 @@ async function apiFetch(
   return { ok: true, data };
 }
 
-export interface AppearanceState {
-  speakers: Speaker[];
-  turns: Turn[];
-  turnSummaries: Appearance["turn_summaries"];
-  prepBullets: PrepBullet[];
-  hasInferredAttribution: boolean;
-}
-
-export interface RenameResult {
+interface RenameResult {
   turnsUpdated: number;
   bulletsUpdated: number;
 }

@@ -57,6 +57,16 @@ export async function POST(
   }
 
   const speakers: Speaker[] = row.speakers ?? [];
+
+  // Reject if new_name already exists as a different speaker
+  const nameChanged = old_name !== new_name;
+  if (nameChanged && speakers.some((s) => s.name === new_name)) {
+    return NextResponse.json(
+      { error: `Speaker "${new_name}" already exists` },
+      { status: 400 }
+    );
+  }
+
   const turns: Turn[] = row.turns ?? [];
   const turnSummaries: Array<{
     speaker: string;
@@ -79,7 +89,6 @@ export async function POST(
 
   // 2. turns[] — update speaker, set attribution + corrected (skip if name unchanged)
   let turnsUpdated = 0;
-  const nameChanged = old_name !== new_name;
   const updatedTurns = nameChanged
     ? turns.map((t) => {
         if (t.speaker !== old_name) return t;
