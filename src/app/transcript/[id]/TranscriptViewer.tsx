@@ -337,25 +337,19 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     const activeTurn = turns.find(t => t.turn_index === activeTurnIndex);
 
     // Expand section if needed (functional updater avoids stale closure)
-    let needsExpand = false;
     if (activeTurn?.section_anchor) {
       setExpandedSections(prev => {
         if (prev[activeTurn.section_anchor!]) return prev;
-        needsExpand = true;
         return { ...prev, [activeTurn.section_anchor!]: true };
       });
     }
 
-    // Scroll: if section just expanded, wait a frame for DOM to update
-    const doScroll = () => {
+    // Always defer scroll one frame — ensures DOM is updated after any
+    // section expansion. The one-frame delay is imperceptible.
+    requestAnimationFrame(() => {
       const el = document.querySelector(`[data-turn-index="${activeTurnIndex}"]`);
       el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    };
-    if (needsExpand) {
-      requestAnimationFrame(doScroll);
-    } else {
-      doScroll();
-    }
+    });
   }, [activeTurnIndex, turns]);
 
   // ---- Auto-follow / skip playback ----
