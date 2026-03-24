@@ -717,7 +717,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const tagName = target.tagName.toLowerCase();
-      const isInput = tagName === "input" || tagName === "textarea" || target.isContentEditable;
+      const isInput = tagName === "input" || tagName === "textarea" || tagName === "select" || target.isContentEditable;
 
       // Escape always works
       if (e.key === "Escape") {
@@ -872,7 +872,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         }
         case "E": {
           // Shift+E — edit speaker meta
-          if (!activeTurn) break;
+          if (!e.shiftKey || !activeTurn) break;
           speakerPanelEditRef.current?.startEditing(activeTurn.speaker, 'meta');
           speakersPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
           break;
