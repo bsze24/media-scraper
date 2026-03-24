@@ -399,6 +399,22 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     };
   }, [youtube_id]);
 
+  // Reclaim focus when YouTube iframe captures it (click on player).
+  // Without this, keyboard shortcuts stop working until user clicks
+  // outside the iframe. Short delay lets the click register first.
+  useEffect(() => {
+    if (!youtube_id) return;
+    const handler = () => {
+      setTimeout(() => {
+        if (document.activeElement?.tagName === 'IFRAME') {
+          window.focus();
+        }
+      }, 100);
+    };
+    window.addEventListener('blur', handler);
+    return () => window.removeEventListener('blur', handler);
+  }, [youtube_id]);
+
   // Consolidated 250ms poll: time display + auto-follow skip logic
   useEffect(() => {
     if (!isPlaying) return;
