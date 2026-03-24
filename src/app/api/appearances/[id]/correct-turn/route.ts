@@ -53,17 +53,17 @@ export async function POST(
   }
 
   const turns: Turn[] = row.turns ?? [];
-  const turn = turns[turn_index];
-  if (!turn) {
+  const turnExists = turns.some((t) => t.turn_index === turn_index);
+  if (!turnExists) {
     return NextResponse.json(
-      { error: `Turn index ${turn_index} out of range` },
+      { error: `Turn with turn_index ${turn_index} not found` },
       { status: 400 }
     );
   }
 
-  // Update the specific field
-  const updatedTurns = turns.map((t, i) => {
-    if (i !== turn_index) return t;
+  // Update the specific field — match by turn_index property, not array position
+  const updatedTurns = turns.map((t) => {
+    if (t.turn_index !== turn_index) return t;
     return {
       ...t,
       [field]: new_value,

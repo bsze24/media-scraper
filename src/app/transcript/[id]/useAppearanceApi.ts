@@ -112,7 +112,7 @@ export function useAppearanceApi(appearanceId: string, initial: Appearance) {
   const recomputeInferred = useCallback((updatedTurns: Turn[]) => {
     setHasInferredAttribution(
       updatedTurns.some(
-        (t) => t.attribution === "inferred" || !t.attribution
+        (t) => t.attribution === "inferred"
       )
     );
   }, []);
