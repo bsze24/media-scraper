@@ -322,6 +322,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const pendingPlayRef = useRef<boolean>(false);
   const isPlayingRef = useRef(false);
   const playToggleGuardRef = useRef(false);
+  const lastPollTimeRef = useRef(NaN);
 
   const seekToTime = useCallback((seconds: number) => {
     setCurrentTime(seconds); // immediate UI update
@@ -410,6 +411,19 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       const d = player.getDuration();
       if (d > 0) setDuration(d);
 
+      // Detect manual seek: if time jumped >2s between polls and it wasn't
+      // our skip logic, the user scrubbed in the player — re-enable follow.
+      if (
+        !isNaN(lastPollTimeRef.current) &&
+        !skipInProgressRef.current &&
+        Math.abs(time - lastPollTimeRef.current) > 2
+      ) {
+        if (!autoFollowEnabled) {
+          setAutoFollowEnabled(true);
+        }
+      }
+      lastPollTimeRef.current = time;
+
       // Auto-follow: track active turn and skip collapsed regions
       if (!autoFollowEnabled || skipInProgressRef.current) return;
 
@@ -437,7 +451,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         }
       }
     }, 250);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      lastPollTimeRef.current = NaN; // reset so next start doesn't false-positive
+    };
   }, [isPlaying, autoFollowEnabled, expandedPlaylist]);
 
   // Debounce search
