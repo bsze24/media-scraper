@@ -249,7 +249,29 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     allAnchors.forEach((a) => (m[a] = true));
     return m;
   });
-  const [expandedHostTurns, setExpandedHostTurns] = useState<Record<string, boolean>>({});
+  // Unified expand/collapse: a turn is expanded iff its turn_index is in this set.
+  // Default: guest/customer/other expanded, host/rowspace collapsed.
+  const [expandedTurns, setExpandedTurns] = useState<Set<number>>(() => {
+    const roleMap = new Map<string, string>();
+    for (const s of appearance.speakers) roleMap.set(s.name, s.role);
+    return new Set(
+      appearance.turns
+        .filter(t => {
+          const role = roleMap.get(t.speaker) ?? "guest";
+          return role !== "host" && role !== "rowspace";
+        })
+        .map(t => t.turn_index)
+    );
+  });
+
+  const toggleTurnExpanded = useCallback((turnIndex: number) => {
+    setExpandedTurns(prev => {
+      const next = new Set(prev);
+      if (next.has(turnIndex)) next.delete(turnIndex);
+      else next.add(turnIndex);
+      return next;
+    });
+  }, []);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [feedback, setFeedback] = useState<Record<number, BulletFeedback>>({});
@@ -1103,7 +1125,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   const idxInBucket = bucketTurns.indexOf(turn);
                   const turnKey = `${bucket}-${idxInBucket === -1 ? 0 : idxInBucket}`;
                   const isTurnHit = hasSearch && searchResults.turnKeys.has(turnKey);
-                  
+                  const isHost = isCollapsedRole(turn.speaker);
+                  const isExpanded = expandedTurns.has(turn.turn_index);
+                  const { first, hasMore } = firstSentence(turn.text);
+                  const summary = turn_summaries?.[turn.turn_index];
+                  const canCollapse = hasMore || !!summary;
+
                   return (
                     <div
                       key={turn.turn_index}
@@ -1113,7 +1140,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                     >
                       <div className="flex items-baseline gap-3 mb-1">
                         {turn.timestamp_seconds != null && (
-                          <button 
+                          <button
                             onClick={() => seekToTime(turn.timestamp_seconds!)}
                             className="text-[10px] font-mono text-[#999] hover:text-[#b8860b] transition-colors flex-shrink-0"
                             title="Jump to timestamp"
@@ -1125,9 +1152,29 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                           {turn.speaker}
                         </span>
                       </div>
-                      <p className="text-[14px] leading-[1.6] text-[#333]">
-                        {highlightText(turn.text, debouncedQuery)}
-                      </p>
+                      <div className="relative group/text">
+                        <p className={`text-[14px] leading-[1.6] ${
+                          !isExpanded && isHost ? 'text-[#555] italic' : 'text-[#333]'
+                        }`}>
+                          {isExpanded || isTurnHit
+                            ? highlightText(turn.text, debouncedQuery)
+                            : summary
+                            ? summary
+                            : hasMore
+                            ? highlightText(first, debouncedQuery)
+                            : highlightText(turn.text, debouncedQuery)
+                          }
+                          {canCollapse && !isTurnHit && (
+                            <button
+                              onClick={() => toggleTurnExpanded(turn.turn_index)}
+                              className="ml-1 text-[12px] text-[#b8860b] hover:underline transition-colors"
+                              title={isExpanded ? (summary ? "Show summary" : "Show less") : "Show full text"}
+                            >
+                              {isExpanded ? "[less]" : "[more]"}
+                            </button>
+                          )}
+                        </p>
+                      </div>
                     </div>
                   );
                 })}
@@ -1141,6 +1188,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   const isHost = isCollapsedRole(turn.speaker);
                   const dimmed = activeSpeaker && activeSpeaker !== turn.speaker;
                   const isTurnHit = hasSearch && searchResults.turnKeys.has(`${INTRO_ANCHOR}-${ti}`);
+                  const isExpanded = expandedTurns.has(turn.turn_index);
+                  const { first, hasMore } = firstSentence(turn.text);
+                  const summary = turn_summaries?.[turn.turn_index];
+                  const canCollapse = hasMore || !!summary;
 
                   const speakerInfo = speakers.find(s => s.name === turn.speaker);
                   return (
@@ -1217,8 +1268,26 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         </div>
                       ) : (
                         <div className="relative group/text">
-                          <p className={`text-[14px] leading-[1.6] ${isHost ? 'text-[#555] italic' : 'text-[#333]'}`}>
-                            {highlightText(turn.text, debouncedQuery)}
+                          <p className={`text-[14px] leading-[1.6] ${
+                            !isExpanded && isHost ? 'text-[#555] italic' : 'text-[#333]'
+                          }`}>
+                            {isExpanded || isTurnHit
+                              ? highlightText(turn.text, debouncedQuery)
+                              : summary
+                              ? summary
+                              : hasMore
+                              ? highlightText(first, debouncedQuery)
+                              : highlightText(turn.text, debouncedQuery)
+                            }
+                            {canCollapse && !isTurnHit && (
+                              <button
+                                onClick={() => toggleTurnExpanded(turn.turn_index)}
+                                className="ml-1 text-[12px] text-[#b8860b] hover:underline transition-colors"
+                                title={isExpanded ? (summary ? "Show summary" : "Show less") : "Show full text"}
+                              >
+                                {isExpanded ? "[less]" : "[more]"}
+                              </button>
+                            )}
                           </p>
                           <button
                             onClick={() => startEditingTurnText(turn.turn_index, turn.text)}
@@ -1300,10 +1369,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                       {sectionTurns.map((turn, ti) => {
                         const isHost = isCollapsedRole(turn.speaker);
                         const key = `${section.anchor}-${ti}`;
-                        const hostExpanded = expandedHostTurns[key];
+                        const isExpanded = expandedTurns.has(turn.turn_index);
                         const isTurnHit = hasSearch && searchResults.turnKeys.has(key);
                         const { first, hasMore } = firstSentence(turn.text);
                         const summary = turn_summaries?.[turn.turn_index];
+                        const canCollapse = hasMore || !!summary;
                         const dimmed = activeSpeaker && activeSpeaker !== turn.speaker;
                         const speakerInfo = speakers.find(s => s.name === turn.speaker);
                         const isCitedTurn = citedTurnIndices.has(turn.turn_index);
@@ -1395,10 +1465,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                                 />
                                 <div className="text-[10px] text-[#bbb] mt-1">Cmd+Enter to save, Escape to cancel</div>
                               </div>
-                            ) : isHost ? (
+                            ) : (
                               <div className="relative group/text">
-                                <p className="text-[14px] leading-[1.6] text-[#555] italic">
-                                  {hostExpanded || isTurnHit
+                                <p className={`text-[14px] leading-[1.6] ${
+                                  !isExpanded && isHost ? 'text-[#555] italic' : 'text-[#333]'
+                                }`}>
+                                  {isExpanded || isTurnHit
                                     ? highlightText(turn.text, debouncedQuery)
                                     : summary
                                     ? summary
@@ -1406,30 +1478,15 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                                     ? highlightText(first, debouncedQuery)
                                     : highlightText(turn.text, debouncedQuery)
                                   }
-                                  {(hasMore || summary) && !isTurnHit && (
+                                  {canCollapse && !isTurnHit && (
                                     <button
-                                      onClick={() => setExpandedHostTurns((prev) => ({ ...prev, [key]: !prev[key] }))}
+                                      onClick={() => toggleTurnExpanded(turn.turn_index)}
                                       className="ml-1 text-[12px] text-[#b8860b] hover:underline transition-colors"
-                                      title={hostExpanded ? (summary ? "Show summary" : "Show less") : "Show full text"}
+                                      title={isExpanded ? (summary ? "Show summary" : "Show less") : "Show full text"}
                                     >
-                                      {hostExpanded ? "[less]" : "[more]"}
+                                      {isExpanded ? "[less]" : "[more]"}
                                     </button>
                                   )}
-                                </p>
-                                <button
-                                  onClick={() => startEditingTurnText(turn.turn_index, turn.text)}
-                                  className="absolute top-0 right-0 p-1 text-[#ccc] hover:text-[#888] opacity-0 group-hover/text:opacity-100 transition-opacity"
-                                  title="Edit text"
-                                >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                  </svg>
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="relative group/text">
-                                <p className="text-[14px] leading-[1.6] text-[#333]">
-                                  {highlightText(turn.text, debouncedQuery)}
                                 </p>
                                 <button
                                   onClick={() => startEditingTurnText(turn.turn_index, turn.text)}
