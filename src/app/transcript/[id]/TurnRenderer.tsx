@@ -27,13 +27,13 @@ export interface TurnRendererProps {
   onSeekToTime: (seconds: number) => void;
   // Speaker info
   speakerInfo: Speaker | undefined;
-  // Editing text
+  // Editing text (null handlers = editing disabled, e.g. monologue)
   isEditingText: boolean;
   editingTextValue: string;
-  onStartEditText: (turnIndex: number, text: string) => void;
-  onSaveEditText: (turnIndex: number, text: string) => void;
-  onCancelEditText: () => void;
-  onEditTextChange: (value: string) => void;
+  onStartEditText: ((turnIndex: number, text: string) => void) | null;
+  onSaveEditText: ((turnIndex: number, text: string) => void) | null;
+  onCancelEditText: (() => void) | null;
+  onEditTextChange: ((value: string) => void) | null;
   saving: boolean;
   // Speaker re-attribution (null = no dropdown support, e.g. monologue)
   showSpeakerDropdown: boolean;
@@ -152,7 +152,7 @@ export const TurnRenderer = React.memo(function TurnRenderer({
       </div>
 
       {/* Text content — with edit capability */}
-      {isEditingText ? (
+      {isEditingText && onSaveEditText && onCancelEditText && onEditTextChange ? (
         <div>
           <textarea
             autoFocus
@@ -192,15 +192,17 @@ export const TurnRenderer = React.memo(function TurnRenderer({
               </button>
             )}
           </p>
-          <button
-            onClick={() => onStartEditText(turn.turn_index, turn.text)}
-            className="absolute top-0 right-0 p-1 text-[#ccc] hover:text-[#888] opacity-0 group-hover/text:opacity-100 transition-opacity"
-            title="Edit text"
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-            </svg>
-          </button>
+          {onStartEditText && (
+            <button
+              onClick={() => onStartEditText(turn.turn_index, turn.text)}
+              className="absolute top-0 right-0 p-1 text-[#ccc] hover:text-[#888] opacity-0 group-hover/text:opacity-100 transition-opacity"
+              title="Edit text"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+            </button>
+          )}
         </div>
       )}
     </div>

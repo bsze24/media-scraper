@@ -1048,13 +1048,13 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                       onSetActive={setActiveTurnIndex}
                       onSeekToTime={seekToTime}
                       speakerInfo={undefined}
-                      isEditingText={editingTurnText === turn.turn_index}
-                      editingTextValue={editingTurnTextValue}
-                      onStartEditText={startEditingTurnText}
-                      onSaveEditText={saveTurnTextEdit}
-                      onCancelEditText={cancelEditTurnText}
-                      onEditTextChange={setEditingTurnTextValue}
-                      saving={saving}
+                      isEditingText={false}
+                      editingTextValue=""
+                      onStartEditText={null}
+                      onSaveEditText={null}
+                      onCancelEditText={null}
+                      onEditTextChange={null}
+                      saving={false}
                       showSpeakerDropdown={false}
                       speakers={null}
                       allSpeakersGeneric={false}
