@@ -6,105 +6,22 @@ import {
   useCallback,
   useMemo,
   useEffect,
-  type ReactNode,
 } from "react";
 import type { TranscriptViewerProps } from "./types";
 import { RegenerateBulletsButton } from "./RegenerateBulletsButton";
 import { useAppearanceApi } from "./useAppearanceApi";
+import { SpeakerPanel } from "./SpeakerPanel";
+import { TurnRenderer } from "./TurnRenderer";
+import { parseSearchQuery, matchesTurn, firstSentence } from "./helpers";
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers (local to TranscriptViewer)
 // ---------------------------------------------------------------------------
-
-interface SearchTerm {
-  text: string;
-  type: "word" | "exact" | "exclude";
-}
-
-function parseSearchQuery(raw: string): SearchTerm[] {
-  const terms: SearchTerm[] = [];
-  const regex = /(-?)"([^"]+)"|(-?)(\S+)/g;
-  let match;
-  while ((match = regex.exec(raw)) !== null) {
-    const neg = match[1] || match[3];
-    const text = match[2] || match[4];
-    if (!text || text.length < 2) continue;
-    if (neg) {
-      terms.push({ text, type: "exclude" });
-    } else if (match[2] !== undefined) {
-      terms.push({ text, type: "exact" });
-    } else {
-      terms.push({ text, type: "word" });
-    }
-  }
-  return terms;
-}
-
-function buildTermRegex(term: SearchTerm): RegExp {
-  const escaped = term.text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  if (term.type === "exact") {
-    return new RegExp(escaped, "gi");
-  }
-  return new RegExp(`\\b${escaped}`, "gi");
-}
-
-function matchesTurn(text: string, terms: SearchTerm[]): boolean {
-  for (const term of terms) {
-    const re = buildTermRegex(term);
-    const found = re.test(text);
-    if (term.type === "exclude" && found) return false;
-    if (term.type !== "exclude" && !found) return false;
-  }
-  return true;
-}
-
-function buildHighlightRegex(terms: SearchTerm[]): RegExp | null {
-  const positive = terms.filter((t) => t.type !== "exclude");
-  if (positive.length === 0) return null;
-  const parts = positive.map((t) => {
-    const escaped = t.text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return t.type === "exact" ? escaped : `\\b${escaped}`;
-  });
-  return new RegExp(`(${parts.join("|")})`, "gi");
-}
-
-function highlightText(text: string, query: string): ReactNode {
-  if (!query || query.length < 2) return text;
-  const terms = parseSearchQuery(query);
-  const re = buildHighlightRegex(terms);
-  if (!re) return text;
-  const parts = text.split(re);
-  return parts.map((p, i) =>
-    i % 2 === 1 ? (
-      <mark key={i} className="rounded-sm bg-yellow-200 px-0.5">
-        {p}
-      </mark>
-    ) : (
-      p
-    )
-  );
-}
-
-function formatTimestamp(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
 
 function sectionSourceLabel(source?: string): string | null {
   if (source === "derived") return "(auto)";
   if (source === "inferred") return "(auto)";
   return null;
-}
-
-function firstSentence(text: string): { first: string; hasMore: boolean } {
-  const dotIdx = text.indexOf(". ");
-  if (dotIdx > 0 && dotIdx < text.length - 2) {
-    return { first: text.slice(0, dotIdx + 1), hasMore: true };
-  }
-  return { first: text, hasMore: false };
 }
 
 function formatPlayerTime(seconds: number): string {
@@ -389,8 +306,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const [relatedExpanded, setRelatedExpanded] = useState(false);
 
   // ---- Editing state ----
-  const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
-  const [editingSpeakerName, setEditingSpeakerName] = useState("");
   const [editingTurnText, setEditingTurnText] = useState<number | null>(null);
   const [editingTurnTextValue, setEditingTurnTextValue] = useState("");
   const [turnSpeakerDropdown, setTurnSpeakerDropdown] = useState<number | null>(null);
@@ -537,7 +452,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       if (e.key === "Escape") {
         setFloatingPanel(null);
         setTurnSpeakerDropdown(null);
-        setEditingSpeaker(null);
       }
     };
     window.addEventListener("keydown", handler);
@@ -639,71 +553,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   // Guard against Enter→blur double-fire on inputs
   const savingGuardRef = useRef(false);
 
-  // Speaker rename handler
-  const handleSpeakerRename = useCallback(
-    async (oldName: string, newName: string) => {
-      if (savingGuardRef.current) return;
-      const trimmed = newName.trim();
-      if (!trimmed || trimmed === oldName) {
-        setEditingSpeaker(null);
-        return;
-      }
-      savingGuardRef.current = true;
-      setEditingSpeaker(null);
-      try {
-        await renameSpeaker(oldName, trimmed);
-        // Update active speaker filter if the renamed speaker was selected
-        setActiveSpeaker((prev) => prev === oldName ? trimmed : prev);
-      } finally {
-        savingGuardRef.current = false;
-      }
-    },
-    [renameSpeaker]
-  );
-
-  // Speaker role change handler
-  const handleRoleChange = useCallback(
-    async (speakerName: string, role: string) => {
-      await updateSpeaker(speakerName, { role });
-    },
-    [updateSpeaker]
-  );
-
-  // Speaker title/affiliation edit
-  const [editingSpeakerMeta, setEditingSpeakerMeta] = useState<string | null>(null);
-  const [editingSpeakerMetaValue, setEditingSpeakerMetaValue] = useState("");
-
-  const handleSpeakerMetaSave = useCallback(
-    async (speakerName: string, currentTitle?: string, currentAffiliation?: string) => {
-      if (savingGuardRef.current) return;
-      const raw = editingSpeakerMetaValue.trim();
-      savingGuardRef.current = true;
-      setEditingSpeakerMeta(null);
-      // Parse "Title, Affiliation" format
-      const commaIdx = raw.indexOf(",");
-      let newTitle: string;
-      let newAffiliation: string;
-      if (commaIdx >= 0) {
-        newTitle = raw.slice(0, commaIdx).trim();
-        newAffiliation = raw.slice(commaIdx + 1).trim();
-      } else {
-        newTitle = raw;
-        newAffiliation = "";
-      }
-      // Skip if unchanged
-      if (newTitle === (currentTitle ?? "") && newAffiliation === (currentAffiliation ?? "")) {
-        savingGuardRef.current = false;
-        return;
-      }
-      try {
-        await updateSpeaker(speakerName, { title: newTitle, affiliation: newAffiliation });
-      } finally {
-        savingGuardRef.current = false;
-      }
-    },
-    [updateSpeaker, editingSpeakerMetaValue]
-  );
-
   // Turn text edit handlers
   const startEditingTurnText = useCallback(
     (turnIndex: number, currentText: string) => {
@@ -712,6 +561,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     },
     []
   );
+
+  const cancelEditTurnText = useCallback(() => {
+    savingGuardRef.current = true;
+    setEditingTurnText(null);
+    setTimeout(() => { savingGuardRef.current = false; }, 0);
+  }, []);
 
   const saveTurnTextEdit = useCallback(
     async (turnIndex: number, originalText: string) => {
@@ -741,6 +596,18 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     },
     [correctTurn]
   );
+
+  // Stable callbacks for TurnRenderer (avoids defeating React.memo)
+  const toggleSpeakerDropdown = useCallback(
+    (turnIndex: number) => {
+      setTurnSpeakerDropdown(prev => prev === turnIndex ? null : turnIndex);
+    },
+    []
+  );
+
+  const scrollToSpeakerPanel = useCallback(() => {
+    speakersPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
 
   // ---- Data quality banner ----
   const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -781,8 +648,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   const showBanner = !bannerDismissed && bannerConditions.length > 0;
 
-  const ROLE_OPTIONS = ["host", "guest", "rowspace", "customer", "other"] as const;
-
   // ---- Render ----
   return (
     <div className="h-screen flex flex-col bg-[#faf9f7] text-[#1a1a1a] overflow-hidden max-md:h-auto max-md:min-h-screen max-md:overflow-visible">
@@ -809,130 +674,21 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         {/* Left Sidebar */}
         <aside className="h-full bg-[#faf9f7] flex flex-col border-r border-[#e5e3df] overflow-y-auto max-md:h-auto max-md:overflow-visible max-md:order-first max-md:border-r-0 max-md:border-b">
           {/* Speakers */}
-          <div ref={speakersPanelRef} className="px-3 py-3 border-b border-[#e5e3df]">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Speakers</span>
-              {has_inferred_attribution && (
-                <span className="text-[9px] text-[#bbb] italic" title="Speaker labels were auto-generated and may not be accurate">
-                  (auto)
-                </span>
-              )}
-            </div>
-            {/* Confirmation / Error banners */}
-            {confirmation && (
-              <div className="mb-2 px-2 py-1.5 bg-green-50 border border-green-200 text-[11px] text-green-700 flex items-center justify-between">
-                <span>{confirmation}</span>
-                <button onClick={clearConfirmation} className="text-green-400 hover:text-green-600 ml-2">&times;</button>
-              </div>
-            )}
-            {apiError && (
-              <div className="mb-2 px-2 py-1.5 bg-red-50 border border-red-200 text-[11px] text-red-700 flex items-center justify-between">
-                <span>{apiError}</span>
-                <button onClick={clearError} className="text-red-400 hover:text-red-600 ml-2">&times;</button>
-              </div>
-            )}
-            <div className="space-y-2">
-              {speakers.map((s) => {
-                const isHost = s.role === "host" || s.role === "rowspace";
-                const isEditing = editingSpeaker === s.name;
-
-                return (
-                  <div
-                    key={s.name}
-                    className={`w-full p-2 border transition-colors ${
-                      isHost
-                        ? activeSpeaker === s.name
-                          ? 'bg-[#f5f4f2] border-[#ccc]'
-                          : 'bg-[#f5f4f2] border-[#e5e3df] hover:border-[#ccc]'
-                        : activeSpeaker === s.name
-                        ? 'bg-white border-[#b8860b]/30'
-                        : 'bg-white border-[#e5e3df] hover:border-[#b8860b]/30'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      {isEditing ? (
-                        <input
-                          autoFocus
-                          value={editingSpeakerName}
-                          onChange={(e) => setEditingSpeakerName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleSpeakerRename(s.name, editingSpeakerName);
-                            if (e.key === "Escape") { savingGuardRef.current = true; setEditingSpeaker(null); setTimeout(() => { savingGuardRef.current = false; }, 0); }
-                          }}
-                          onBlur={() => handleSpeakerRename(s.name, editingSpeakerName)}
-                          disabled={saving}
-                          className="flex-1 text-[12px] font-medium text-[#333] bg-white border border-[#b8860b]/50 px-1.5 py-0.5 outline-none focus:border-[#b8860b]"
-                        />
-                      ) : (
-                        <button
-                          onClick={() => handleSpeakerClick(s.name)}
-                          className="flex-1 text-left"
-                        >
-                          <div className={`text-[12px] font-medium ${isHost ? 'text-[#555]' : activeSpeaker === s.name ? 'text-[#b8860b]' : 'text-[#555]'}`}>
-                            {s.name}
-                          </div>
-                        </button>
-                      )}
-                      {!isEditing && (
-                        <button
-                          onClick={() => {
-                            setEditingSpeaker(s.name);
-                            setEditingSpeakerName(s.name);
-                          }}
-                          className="p-0.5 text-[#ccc] hover:text-[#888] transition-colors"
-                          title="Rename speaker"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex items-center justify-between mt-1">
-                      {editingSpeakerMeta === s.name ? (
-                        <input
-                          autoFocus
-                          value={editingSpeakerMetaValue}
-                          onChange={(e) => setEditingSpeakerMetaValue(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleSpeakerMetaSave(s.name, s.title, s.affiliation);
-                            if (e.key === "Escape") { savingGuardRef.current = true; setEditingSpeakerMeta(null); setTimeout(() => { savingGuardRef.current = false; }, 0); }
-                          }}
-                          onBlur={() => handleSpeakerMetaSave(s.name, s.title, s.affiliation)}
-                          disabled={saving}
-                          placeholder="Title, Affiliation"
-                          className="flex-1 text-[10px] text-[#888] bg-white border border-[#b8860b]/50 px-1.5 py-0.5 outline-none focus:border-[#b8860b]"
-                        />
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setEditingSpeakerMeta(s.name);
-                            setEditingSpeakerMetaValue(
-                              [s.title, s.affiliation].filter(Boolean).join(", ")
-                            );
-                          }}
-                          className="text-[10px] text-[#888] hover:text-[#b8860b] transition-colors text-left"
-                        >
-                          {[s.title, s.affiliation].filter(Boolean).join(", ") || (
-                            <span className="text-[#ccc] italic">+ Add title</span>
-                          )}
-                        </button>
-                      )}
-                      <select
-                        value={s.role}
-                        onChange={(e) => handleRoleChange(s.name, e.target.value)}
-                        disabled={saving}
-                        className="text-[10px] text-[#999] bg-transparent border-none outline-none cursor-pointer hover:text-[#b8860b] transition-colors"
-                      >
-                        {ROLE_OPTIONS.map((r) => (
-                          <option key={r} value={r}>{r}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          <div ref={speakersPanelRef}>
+            <SpeakerPanel
+              speakers={speakers}
+              activeSpeaker={activeSpeaker}
+              onSpeakerClick={handleSpeakerClick}
+              hasInferredAttribution={has_inferred_attribution}
+              saving={saving}
+              confirmation={confirmation}
+              apiError={apiError}
+              clearConfirmation={clearConfirmation}
+              clearError={clearError}
+              onRenameSpeaker={renameSpeaker}
+              onUpdateSpeaker={updateSpeaker}
+              onActiveSpeakerUpdate={setActiveSpeaker}
+            />
           </div>
 
           {/* Search */}
@@ -1284,66 +1040,41 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   const bucketTurns = turnsBySection.get(bucket) ?? [];
                   const idxInBucket = bucketTurns.indexOf(turn);
                   const turnKey = `${bucket}-${idxInBucket === -1 ? 0 : idxInBucket}`;
-                  const isTurnHit = hasSearch && searchResults.turnKeys.has(turnKey);
-                  const isHost = isCollapsedRole(turn.speaker);
-                  const isExpanded = expandedTurns.has(turn.turn_index);
-                  const { first, hasMore } = firstSentence(turn.text);
                   const summary = turn_summaries?.[turn.turn_index];
-                  const canCollapse = hasMore || !!summary;
-
-                  const isActive = activeTurnIndex === turn.turn_index;
+                  const { first, hasMore } = firstSentence(turn.text);
 
                   return (
-                    <div
+                    <TurnRenderer
                       key={turn.turn_index}
-                      data-turn-index={turn.turn_index}
-                      onClick={() => setActiveTurnIndex(turn.turn_index)}
-                      className={`group relative py-3 px-4 transition-all scroll-mt-20 border-l-[3px] ${
-                        isActive
-                          ? 'bg-[#b8860b]/5 border-[#b8860b]'
-                          : isTurnHit
-                          ? 'bg-[#eff6ff] border-[#5a8fc7]'
-                          : 'hover:bg-[#faf9f7] border-transparent'
-                      }`}
-                    >
-                      <div className="flex items-baseline gap-3 mb-1">
-                        {turn.timestamp_seconds != null && (
-                          <button
-                            onClick={() => seekToTime(turn.timestamp_seconds!)}
-                            className="text-[10px] font-mono text-[#999] hover:text-[#b8860b] transition-colors flex-shrink-0"
-                            title="Jump to timestamp"
-                          >
-                            {formatTimestamp(turn.timestamp_seconds)}
-                          </button>
-                        )}
-                        <span className="text-[13px] font-medium text-[#b8860b]">
-                          {turn.speaker}
-                        </span>
-                      </div>
-                      <div className="relative group/text">
-                        <p className={`text-[14px] leading-[1.6] ${
-                          !isExpanded && isHost ? 'text-[#555] italic' : 'text-[#333]'
-                        }`}>
-                          {isExpanded || isTurnHit
-                            ? highlightText(turn.text, debouncedQuery)
-                            : summary
-                            ? summary
-                            : hasMore
-                            ? highlightText(first, debouncedQuery)
-                            : highlightText(turn.text, debouncedQuery)
-                          }
-                          {canCollapse && !isTurnHit && (
-                            <button
-                              onClick={() => toggleTurnExpanded(turn.turn_index)}
-                              className="ml-1 text-[12px] text-[#b8860b] hover:underline transition-colors"
-                              title={isExpanded ? (summary ? "Show summary" : "Show less") : "Show full text"}
-                            >
-                              {isExpanded ? "[less]" : "[more]"}
-                            </button>
-                          )}
-                        </p>
-                      </div>
-                    </div>
+                      turn={turn}
+                      isExpanded={expandedTurns.has(turn.turn_index)}
+                      isActive={activeTurnIndex === turn.turn_index}
+                      isTurnHit={hasSearch && searchResults.turnKeys.has(turnKey)}
+                      isCitedTurn={false}
+                      isDimmed={false}
+                      isHost={isCollapsedRole(turn.speaker)}
+                      collapsedText={summary || (hasMore ? first : turn.text)}
+                      collapsedIsSummary={!!summary}
+                      canCollapse={hasMore || !!summary}
+                      onToggleExpanded={toggleTurnExpanded}
+                      onSetActive={setActiveTurnIndex}
+                      onSeekToTime={seekToTime}
+                      speakerInfo={undefined}
+                      isEditingText={false}
+                      editingTextValue=""
+                      onStartEditText={null}
+                      onSaveEditText={null}
+                      onCancelEditText={null}
+                      onEditTextChange={null}
+                      saving={false}
+                      showSpeakerDropdown={false}
+                      speakers={null}
+                      allSpeakersGeneric={false}
+                      onTurnSpeakerChange={null}
+                      onToggleSpeakerDropdown={null}
+                      onScrollToSpeakerPanel={null}
+                      searchQuery={debouncedQuery}
+                    />
                   );
                 })}
               </div>
@@ -1353,127 +1084,41 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             {!isMonologue && (turnsBySection.get(INTRO_ANCHOR)?.length ?? 0) > 0 && (
               <div className="mb-4">
                 {turnsBySection.get(INTRO_ANCHOR)!.map((turn, ti) => {
-                  const isHost = isCollapsedRole(turn.speaker);
-                  const dimmed = activeSpeaker && activeSpeaker !== turn.speaker;
-                  const isTurnHit = hasSearch && searchResults.turnKeys.has(`${INTRO_ANCHOR}-${ti}`);
-                  const isExpanded = expandedTurns.has(turn.turn_index);
-                  const { first, hasMore } = firstSentence(turn.text);
                   const summary = turn_summaries?.[turn.turn_index];
-                  const canCollapse = hasMore || !!summary;
+                  const { first, hasMore } = firstSentence(turn.text);
 
-                  const speakerInfo = speakers.find(s => s.name === turn.speaker);
-                  const isActive = activeTurnIndex === turn.turn_index;
                   return (
-                    <div
+                    <TurnRenderer
                       key={ti}
-                      data-turn-index={turn.turn_index}
-                      onClick={() => setActiveTurnIndex(turn.turn_index)}
-                      className={`group relative py-3 px-4 transition-all scroll-mt-20 border-l-[3px] ${
-                        isActive
-                          ? 'bg-[#b8860b]/5 border-[#b8860b]'
-                          : isTurnHit
-                          ? 'bg-[#eff6ff] border-[#5a8fc7]'
-                          : 'hover:bg-[#faf9f7] border-transparent'
-                      }`}
-                      style={dimmed ? { opacity: 0.3 } : undefined}
-                    >
-                      <div className="flex items-baseline gap-3 mb-1">
-                        {turn.timestamp_seconds != null && (
-                          <button
-                            onClick={() => seekToTime(turn.timestamp_seconds!)}
-                            className="text-[10px] font-mono text-[#999] hover:text-[#b8860b] transition-colors flex-shrink-0"
-                            title="Jump to timestamp"
-                          >
-                            {formatTimestamp(turn.timestamp_seconds)}
-                          </button>
-                        )}
-                        <span className="relative">
-                          <button
-                            onClick={() => {
-                              if (allSpeakersGeneric) {
-                                speakersPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                              } else {
-                                setTurnSpeakerDropdown(turnSpeakerDropdown === turn.turn_index ? null : turn.turn_index);
-                              }
-                            }}
-                            className={`text-[13px] font-medium ${isHost ? 'text-[#666]' : 'text-[#b8860b]'} hover:underline`}
-                          >
-                            {turn.speaker}
-                          </button>
-                          {turnSpeakerDropdown === turn.turn_index && !allSpeakersGeneric && (
-                            <div data-speaker-dropdown className="absolute left-0 top-full z-50 mt-1 bg-white border border-[#e5e3df] shadow-lg py-1 min-w-[140px]">
-                              {speakers.map((sp) => (
-                                <button
-                                  key={sp.name}
-                                  onClick={() => handleTurnSpeakerChange(turn.turn_index, turn.speaker, sp.name)}
-                                  className={`w-full text-left px-3 py-1.5 text-[12px] hover:bg-[#f5f4f2] transition-colors ${
-                                    sp.name === turn.speaker ? 'text-[#b8860b] font-medium' : 'text-[#555]'
-                                  }`}
-                                >
-                                  {sp.name}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </span>
-                        {speakerInfo && (
-                          <span className="text-[10px] text-[#999]">
-                            {[speakerInfo.title, speakerInfo.affiliation].filter(Boolean).join(", ")}
-                          </span>
-                        )}
-                      </div>
-                      {editingTurnText === turn.turn_index ? (
-                        <div>
-                          <textarea
-                            autoFocus
-                            value={editingTurnTextValue}
-                            onChange={(e) => setEditingTurnTextValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Escape") { savingGuardRef.current = true; setEditingTurnText(null); setTimeout(() => { savingGuardRef.current = false; }, 0); }
-                              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") saveTurnTextEdit(turn.turn_index, turn.text);
-                            }}
-                            onBlur={() => saveTurnTextEdit(turn.turn_index, turn.text)}
-                            disabled={saving}
-                            className="w-full text-[14px] leading-[1.6] text-[#333] bg-white border border-[#b8860b]/50 p-2 outline-none focus:border-[#b8860b] resize-none max-h-[300px] overflow-y-auto"
-                            rows={Math.min(10, Math.max(2, editingTurnTextValue.split("\n").length))}
-                          />
-                          <div className="text-[10px] text-[#bbb] mt-1">Cmd+Enter to save, Escape to cancel</div>
-                        </div>
-                      ) : (
-                        <div className="relative group/text">
-                          <p className={`text-[14px] leading-[1.6] ${
-                            !isExpanded && isHost ? 'text-[#555] italic' : 'text-[#333]'
-                          }`}>
-                            {isExpanded || isTurnHit
-                              ? highlightText(turn.text, debouncedQuery)
-                              : summary
-                              ? summary
-                              : hasMore
-                              ? highlightText(first, debouncedQuery)
-                              : highlightText(turn.text, debouncedQuery)
-                            }
-                            {canCollapse && !isTurnHit && (
-                              <button
-                                onClick={() => toggleTurnExpanded(turn.turn_index)}
-                                className="ml-1 text-[12px] text-[#b8860b] hover:underline transition-colors"
-                                title={isExpanded ? (summary ? "Show summary" : "Show less") : "Show full text"}
-                              >
-                                {isExpanded ? "[less]" : "[more]"}
-                              </button>
-                            )}
-                          </p>
-                          <button
-                            onClick={() => startEditingTurnText(turn.turn_index, turn.text)}
-                            className="absolute top-0 right-0 p-1 text-[#ccc] hover:text-[#888] opacity-0 group-hover/text:opacity-100 transition-opacity"
-                            title="Edit text"
-                          >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                      turn={turn}
+                      isExpanded={expandedTurns.has(turn.turn_index)}
+                      isActive={activeTurnIndex === turn.turn_index}
+                      isTurnHit={hasSearch && searchResults.turnKeys.has(`${INTRO_ANCHOR}-${ti}`)}
+                      isCitedTurn={false}
+                      isDimmed={!!activeSpeaker && activeSpeaker !== turn.speaker}
+                      isHost={isCollapsedRole(turn.speaker)}
+                      collapsedText={summary || (hasMore ? first : turn.text)}
+                      collapsedIsSummary={!!summary}
+                      canCollapse={hasMore || !!summary}
+                      onToggleExpanded={toggleTurnExpanded}
+                      onSetActive={setActiveTurnIndex}
+                      onSeekToTime={seekToTime}
+                      speakerInfo={speakers.find(s => s.name === turn.speaker)}
+                      isEditingText={editingTurnText === turn.turn_index}
+                      editingTextValue={editingTurnTextValue}
+                      onStartEditText={startEditingTurnText}
+                      onSaveEditText={saveTurnTextEdit}
+                      onCancelEditText={cancelEditTurnText}
+                      onEditTextChange={setEditingTurnTextValue}
+                      saving={saving}
+                      showSpeakerDropdown={turnSpeakerDropdown === turn.turn_index}
+                      speakers={speakers}
+                      allSpeakersGeneric={allSpeakersGeneric}
+                      onTurnSpeakerChange={handleTurnSpeakerChange}
+                      onToggleSpeakerDropdown={toggleSpeakerDropdown}
+                      onScrollToSpeakerPanel={scrollToSpeakerPanel}
+                      searchQuery={debouncedQuery}
+                    />
                   );
                 })}
               </div>
@@ -1540,144 +1185,41 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   {isOpen && (
                     <div className="border-l border-[#e5e3df] ml-1">
                       {sectionTurns.map((turn, ti) => {
-                        const isHost = isCollapsedRole(turn.speaker);
-                        const key = `${section.anchor}-${ti}`;
-                        const isExpanded = expandedTurns.has(turn.turn_index);
-                        const isTurnHit = hasSearch && searchResults.turnKeys.has(key);
-                        const { first, hasMore } = firstSentence(turn.text);
                         const summary = turn_summaries?.[turn.turn_index];
-                        const canCollapse = hasMore || !!summary;
-                        const dimmed = activeSpeaker && activeSpeaker !== turn.speaker;
-                        const speakerInfo = speakers.find(s => s.name === turn.speaker);
-                        const isCitedTurn = citedTurnIndices.has(turn.turn_index);
-                        const isActive = activeTurnIndex === turn.turn_index;
+                        const { first, hasMore } = firstSentence(turn.text);
 
                         return (
-                          <div
+                          <TurnRenderer
                             key={ti}
-                            data-turn-index={turn.turn_index}
-                            onClick={() => setActiveTurnIndex(turn.turn_index)}
-                            className={`group relative py-3 px-4 transition-all scroll-mt-20 border-l-[3px] ${
-                              isActive
-                                ? 'bg-[#b8860b]/5 border-[#b8860b]'
-                                : isTurnHit
-                                ? 'bg-[#eff6ff] border-[#5a8fc7]'
-                                : isCitedTurn
-                                ? 'bg-[#b8860b]/5 border-[#b8860b]/40'
-                                : 'hover:bg-[#faf9f7] border-transparent'
-                            }`}
-                            style={dimmed ? { opacity: 0.3 } : undefined}
-                          >
-                            {/* Header: timestamp + name/title + cited badge */}
-                            <div className="flex items-baseline gap-3 mb-1">
-                              {turn.timestamp_seconds != null && (
-                                <button
-                                  onClick={() => seekToTime(turn.timestamp_seconds!)}
-                                  className="text-[10px] font-mono text-[#999] hover:text-[#b8860b] transition-colors flex-shrink-0"
-                                  title="Jump to timestamp"
-                                >
-                                  {formatTimestamp(turn.timestamp_seconds)}
-                                </button>
-                              )}
-                              {/* Speaker name — clickable for re-attribution */}
-                              <span className="relative">
-                                <button
-                                  onClick={() => {
-                                    if (allSpeakersGeneric) {
-                                      // Nudge to rename first
-                                      speakersPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                                    } else {
-                                      setTurnSpeakerDropdown(turnSpeakerDropdown === turn.turn_index ? null : turn.turn_index);
-                                    }
-                                  }}
-                                  className={`text-[13px] font-medium ${isHost ? 'text-[#666]' : 'text-[#b8860b]'} hover:underline`}
-                                >
-                                  {turn.speaker}
-                                </button>
-                                {turnSpeakerDropdown === turn.turn_index && !allSpeakersGeneric && (
-                                  <div data-speaker-dropdown className="absolute left-0 top-full z-50 mt-1 bg-white border border-[#e5e3df] shadow-lg py-1 min-w-[140px]">
-                                    {speakers.map((sp) => (
-                                      <button
-                                        key={sp.name}
-                                        onClick={() => handleTurnSpeakerChange(turn.turn_index, turn.speaker, sp.name)}
-                                        className={`w-full text-left px-3 py-1.5 text-[12px] hover:bg-[#f5f4f2] transition-colors ${
-                                          sp.name === turn.speaker ? 'text-[#b8860b] font-medium' : 'text-[#555]'
-                                        }`}
-                                      >
-                                        {sp.name}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                              </span>
-                              {speakerInfo && (
-                                <span className="text-[10px] text-[#999]">
-                                  {[speakerInfo.title, speakerInfo.affiliation].filter(Boolean).join(", ")}
-                                </span>
-                              )}
-                              {isCitedTurn && (
-                                <span className="flex items-center gap-1 text-[9px] text-[#b8860b]/70">
-                                  <span className="w-1 h-1 rounded-full bg-[#b8860b]" />
-                                  cited
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Text content — with edit capability */}
-                            {editingTurnText === turn.turn_index ? (
-                              <div>
-                                <textarea
-                                  autoFocus
-                                  value={editingTurnTextValue}
-                                  onChange={(e) => setEditingTurnTextValue(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Escape") { savingGuardRef.current = true; setEditingTurnText(null); setTimeout(() => { savingGuardRef.current = false; }, 0); }
-                                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                                      saveTurnTextEdit(turn.turn_index, turn.text);
-                                    }
-                                  }}
-                                  onBlur={() => saveTurnTextEdit(turn.turn_index, turn.text)}
-                                  disabled={saving}
-                                  className="w-full text-[14px] leading-[1.6] text-[#333] bg-white border border-[#b8860b]/50 p-2 outline-none focus:border-[#b8860b] resize-none max-h-[300px] overflow-y-auto"
-                                  rows={Math.min(10, Math.max(2, editingTurnTextValue.split("\n").length))}
-                                />
-                                <div className="text-[10px] text-[#bbb] mt-1">Cmd+Enter to save, Escape to cancel</div>
-                              </div>
-                            ) : (
-                              <div className="relative group/text">
-                                <p className={`text-[14px] leading-[1.6] ${
-                                  !isExpanded && isHost ? 'text-[#555] italic' : 'text-[#333]'
-                                }`}>
-                                  {isExpanded || isTurnHit
-                                    ? highlightText(turn.text, debouncedQuery)
-                                    : summary
-                                    ? summary
-                                    : hasMore
-                                    ? highlightText(first, debouncedQuery)
-                                    : highlightText(turn.text, debouncedQuery)
-                                  }
-                                  {canCollapse && !isTurnHit && (
-                                    <button
-                                      onClick={() => toggleTurnExpanded(turn.turn_index)}
-                                      className="ml-1 text-[12px] text-[#b8860b] hover:underline transition-colors"
-                                      title={isExpanded ? (summary ? "Show summary" : "Show less") : "Show full text"}
-                                    >
-                                      {isExpanded ? "[less]" : "[more]"}
-                                    </button>
-                                  )}
-                                </p>
-                                <button
-                                  onClick={() => startEditingTurnText(turn.turn_index, turn.text)}
-                                  className="absolute top-0 right-0 p-1 text-[#ccc] hover:text-[#888] opacity-0 group-hover/text:opacity-100 transition-opacity"
-                                  title="Edit text"
-                                >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                  </svg>
-                                </button>
-                              </div>
-                            )}
-                          </div>
+                            turn={turn}
+                            isExpanded={expandedTurns.has(turn.turn_index)}
+                            isActive={activeTurnIndex === turn.turn_index}
+                            isTurnHit={hasSearch && searchResults.turnKeys.has(`${section.anchor}-${ti}`)}
+                            isCitedTurn={citedTurnIndices.has(turn.turn_index)}
+                            isDimmed={!!activeSpeaker && activeSpeaker !== turn.speaker}
+                            isHost={isCollapsedRole(turn.speaker)}
+                            collapsedText={summary || (hasMore ? first : turn.text)}
+                            collapsedIsSummary={!!summary}
+                            canCollapse={hasMore || !!summary}
+                            onToggleExpanded={toggleTurnExpanded}
+                            onSetActive={setActiveTurnIndex}
+                            onSeekToTime={seekToTime}
+                            speakerInfo={speakers.find(s => s.name === turn.speaker)}
+                            isEditingText={editingTurnText === turn.turn_index}
+                            editingTextValue={editingTurnTextValue}
+                            onStartEditText={startEditingTurnText}
+                            onSaveEditText={saveTurnTextEdit}
+                            onCancelEditText={cancelEditTurnText}
+                            onEditTextChange={setEditingTurnTextValue}
+                            saving={saving}
+                            showSpeakerDropdown={turnSpeakerDropdown === turn.turn_index}
+                            speakers={speakers}
+                            allSpeakersGeneric={allSpeakersGeneric}
+                            onTurnSpeakerChange={handleTurnSpeakerChange}
+                            onToggleSpeakerDropdown={toggleSpeakerDropdown}
+                            onScrollToSpeakerPanel={scrollToSpeakerPanel}
+                            searchQuery={debouncedQuery}
+                          />
                         );
                       })}
                     </div>
