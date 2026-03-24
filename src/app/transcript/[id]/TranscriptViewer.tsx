@@ -325,6 +325,26 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     setResetConfirmation(true);
     setTimeout(() => setResetConfirmation(false), 2000);
   }, [computeRoleDefaults]);
+  // ---- Active turn (cursor) ----
+  const [activeTurnIndex, setActiveTurnIndex] = useState<number | null>(null);
+
+  // Scroll active turn into view
+  useEffect(() => {
+    if (activeTurnIndex === null) return;
+    const el = document.querySelector(`[data-turn-index="${activeTurnIndex}"]`);
+    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [activeTurnIndex]);
+
+  // Auto-expand section containing active turn
+  useEffect(() => {
+    if (activeTurnIndex === null) return;
+    const activeTurn = turns.find(t => t.turn_index === activeTurnIndex);
+    if (!activeTurn?.section_anchor) return;
+    if (!expandedSections[activeTurn.section_anchor]) {
+      setExpandedSections(prev => ({ ...prev, [activeTurn.section_anchor!]: true }));
+    }
+  }, [activeTurnIndex, turns, expandedSections]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [feedback, setFeedback] = useState<Record<number, BulletFeedback>>({});
@@ -1199,11 +1219,19 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   const summary = turn_summaries?.[turn.turn_index];
                   const canCollapse = hasMore || !!summary;
 
+                  const isActive = activeTurnIndex === turn.turn_index;
+
                   return (
                     <div
                       key={turn.turn_index}
-                      className={`group relative py-3 px-4 transition-all hover:bg-[#faf9f7] border-l-2 border-transparent ${
-                        isTurnHit ? 'bg-[#eff6ff] border-l-[#5a8fc7]' : ''
+                      data-turn-index={turn.turn_index}
+                      onClick={() => setActiveTurnIndex(turn.turn_index)}
+                      className={`group relative py-3 px-4 transition-all scroll-mt-20 border-l-[3px] ${
+                        isActive
+                          ? 'bg-[#b8860b]/5 border-[#b8860b]'
+                          : isTurnHit
+                          ? 'bg-[#eff6ff] border-[#5a8fc7]'
+                          : 'hover:bg-[#faf9f7] border-transparent'
                       }`}
                     >
                       <div className="flex items-baseline gap-3 mb-1">
@@ -1262,12 +1290,17 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   const canCollapse = hasMore || !!summary;
 
                   const speakerInfo = speakers.find(s => s.name === turn.speaker);
+                  const isActive = activeTurnIndex === turn.turn_index;
                   return (
                     <div
                       key={ti}
-                      className={`group relative py-3 px-4 transition-all border-l-2 ${
-                        isTurnHit
-                          ? 'bg-[#eff6ff] border-l-[#5a8fc7]'
+                      data-turn-index={turn.turn_index}
+                      onClick={() => setActiveTurnIndex(turn.turn_index)}
+                      className={`group relative py-3 px-4 transition-all scroll-mt-20 border-l-[3px] ${
+                        isActive
+                          ? 'bg-[#b8860b]/5 border-[#b8860b]'
+                          : isTurnHit
+                          ? 'bg-[#eff6ff] border-[#5a8fc7]'
                           : 'hover:bg-[#faf9f7] border-transparent'
                       }`}
                       style={dimmed ? { opacity: 0.3 } : undefined}
@@ -1445,15 +1478,20 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         const dimmed = activeSpeaker && activeSpeaker !== turn.speaker;
                         const speakerInfo = speakers.find(s => s.name === turn.speaker);
                         const isCitedTurn = citedTurnIndices.has(turn.turn_index);
+                        const isActive = activeTurnIndex === turn.turn_index;
 
                         return (
                           <div
                             key={ti}
-                            className={`group relative py-3 px-4 transition-all border-l-2 ${
-                              isTurnHit
-                                ? 'bg-[#eff6ff] border-l-[#5a8fc7]'
+                            data-turn-index={turn.turn_index}
+                            onClick={() => setActiveTurnIndex(turn.turn_index)}
+                            className={`group relative py-3 px-4 transition-all scroll-mt-20 border-l-[3px] ${
+                              isActive
+                                ? 'bg-[#b8860b]/5 border-[#b8860b]'
+                                : isTurnHit
+                                ? 'bg-[#eff6ff] border-[#5a8fc7]'
                                 : isCitedTurn
-                                ? 'bg-[#b8860b]/5 border-l-[#b8860b]/40'
+                                ? 'bg-[#b8860b]/5 border-[#b8860b]/40'
                                 : 'hover:bg-[#faf9f7] border-transparent'
                             }`}
                             style={dimmed ? { opacity: 0.3 } : undefined}
