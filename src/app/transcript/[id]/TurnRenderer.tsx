@@ -14,7 +14,6 @@ export interface TurnRendererProps {
   isActive: boolean;
   isTurnHit: boolean;
   isCitedTurn: boolean;
-  isDimmed: boolean;
   isHost: boolean;
   // Collapse
   collapsedText: string;
@@ -52,7 +51,6 @@ export const TurnRenderer = React.memo(function TurnRenderer({
   isActive,
   isTurnHit,
   isCitedTurn,
-  isDimmed,
   isHost,
   collapsedText,
   collapsedIsSummary,
@@ -89,7 +87,6 @@ export const TurnRenderer = React.memo(function TurnRenderer({
           ? 'bg-[#b8860b]/5 border-[#b8860b]/40'
           : 'hover:bg-[#faf9f7] border-transparent'
       }`}
-      style={isDimmed ? { opacity: 0.3 } : undefined}
     >
       {/* Header: timestamp + speaker name/title + cited badge */}
       <div className="flex items-baseline gap-3 mb-1">
