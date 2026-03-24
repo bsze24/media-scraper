@@ -9,7 +9,7 @@ const bodySchema = z.object({
   old_name: z.string().min(1),
   new_name: z.string().min(1),
   role: z
-    .enum(["host", "guest", "panelist", "moderator", "interviewer"])
+    .enum(["host", "guest", "rowspace", "customer", "other"])
     .optional(),
 });
 

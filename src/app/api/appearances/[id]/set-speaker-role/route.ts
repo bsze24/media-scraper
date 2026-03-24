@@ -6,7 +6,9 @@ import type { Speaker } from "@/types/appearance";
 
 const bodySchema = z.object({
   speaker_name: z.string().min(1),
-  role: z.enum(["host", "guest", "panelist", "moderator", "interviewer"]),
+  role: z.enum(["host", "guest", "rowspace", "customer", "other"]).optional(),
+  title: z.string().optional(),
+  affiliation: z.string().optional(),
 });
 
 export async function POST(
@@ -32,7 +34,12 @@ export async function POST(
     );
   }
 
-  const { speaker_name, role } = parsed.data;
+  const { speaker_name, role, title, affiliation } = parsed.data;
+
+  // Must provide at least one field to update
+  if (role === undefined && title === undefined && affiliation === undefined) {
+    return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+  }
 
   const supabase = createServerClient();
   const { data: row, error: fetchError } = await supabase
@@ -54,15 +61,23 @@ export async function POST(
     );
   }
 
-  // No-op if same role
-  if (speaker.role === role) {
+  // No-op check
+  const roleUnchanged = role === undefined || speaker.role === role;
+  const titleUnchanged = title === undefined || (speaker.title ?? "") === title;
+  const affiliationUnchanged = affiliation === undefined || (speaker.affiliation ?? "") === affiliation;
+  if (roleUnchanged && titleUnchanged && affiliationUnchanged) {
     return NextResponse.json({ no_op: true });
   }
 
-  const oldRole = speaker.role;
-  const updatedSpeakers = speakers.map((s) =>
-    s.name === speaker_name ? { ...s, role } : s
-  );
+  const updatedSpeakers = speakers.map((s) => {
+    if (s.name !== speaker_name) return s;
+    const updated = { ...s };
+    if (role !== undefined) updated.role = role;
+    // Empty string clears the field
+    if (title !== undefined) updated.title = title || undefined;
+    if (affiliation !== undefined) updated.affiliation = affiliation || undefined;
+    return updated;
+  });
 
   const { error: updateError } = await supabase
     .from("appearances")
@@ -77,15 +92,17 @@ export async function POST(
     );
   }
 
-  // Insert audit row
-  await supabase.from("corrections").insert({
-    appearance_id: id,
-    turn_index: null,
-    field: "role",
-    old_value: oldRole,
-    new_value: role,
-    action: "corrected",
-  });
+  // Insert audit row for role change
+  if (role !== undefined && speaker.role !== role) {
+    await supabase.from("corrections").insert({
+      appearance_id: id,
+      turn_index: null,
+      field: "role",
+      old_value: speaker.role,
+      new_value: role,
+      action: "corrected",
+    });
+  }
 
   return NextResponse.json({ speakers: updatedSpeakers });
 }

@@ -37,13 +37,13 @@ function transformAppearance(row: AppearanceRow): TranscriptViewerProps["appeara
     });
   }
 
-  // Enrich speakers with title/affiliation from entity_tags
+  // Enrich speakers with title/affiliation: prefer speaker-level fields, fall back to entity_tags
   const speakers = row.speakers.map((s) => {
     const kp = keyPeopleMap.get(s.name.toLowerCase());
     return {
       name: s.name,
       role: s.role,
-      title: kp?.title,
+      title: s.title ?? kp?.title,
       affiliation: s.affiliation ?? kp?.affiliation,
     };
   });
