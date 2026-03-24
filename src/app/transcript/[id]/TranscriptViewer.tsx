@@ -621,7 +621,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     }
 
     return conditions;
-  }, [speakers, has_inferred_attribution, youtube_id, turns]);
+  }, [speakers, youtube_id, turns]);
 
   const showBanner = !bannerDismissed && bannerConditions.length > 0;
 
