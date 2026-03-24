@@ -601,7 +601,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       });
     }
 
-    const allInferred = turns.length > 0 && turns.every((t) => t.attribution === "inferred" || !t.attribution);
+    const allInferred = turns.length > 0 && turns.every((t) => t.attribution === "inferred");
     if (allInferred) {
       conditions.push({
         key: "inferred-attribution",

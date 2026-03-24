@@ -193,25 +193,25 @@ export function useAppearanceApi(appearanceId: string, initial: Appearance) {
         }
         if (data.no_op) return true;
         const rawSpeakers = data.speakers as Array<{ name: string; role: string; title?: string; affiliation?: string }>;
-        // Update entityTags cache when title/affiliation changes so
-        // future enrichment doesn't restore stale LLM values
+        // Compute updated entityTags synchronously so enrichSpeakers
+        // uses the fresh values (not the stale closure)
+        let currentEntityTags = entityTags;
         if (fields.title !== undefined || fields.affiliation !== undefined) {
-          setEntityTags((prev) => {
-            const updated = { ...prev, key_people: [...(prev.key_people ?? [])] };
-            const idx = updated.key_people!.findIndex(
-              (p) => p.name.toLowerCase() === speakerName.toLowerCase()
-            );
-            const entry = {
-              name: speakerName,
-              title: fields.title ?? rawSpeakers.find((s) => s.name === speakerName)?.title ?? "",
-              fund_affiliation: fields.affiliation ?? rawSpeakers.find((s) => s.name === speakerName)?.affiliation ?? "",
-            };
-            if (idx >= 0) updated.key_people![idx] = entry;
-            else updated.key_people!.push(entry);
-            return updated;
-          });
+          const updated = { ...entityTags, key_people: [...(entityTags.key_people ?? [])] };
+          const idx = updated.key_people!.findIndex(
+            (p) => p.name.toLowerCase() === speakerName.toLowerCase()
+          );
+          const entry = {
+            name: speakerName,
+            title: fields.title ?? rawSpeakers.find((s) => s.name === speakerName)?.title ?? "",
+            fund_affiliation: fields.affiliation ?? rawSpeakers.find((s) => s.name === speakerName)?.affiliation ?? "",
+          };
+          if (idx >= 0) updated.key_people![idx] = entry;
+          else updated.key_people!.push(entry);
+          currentEntityTags = updated;
+          setEntityTags(updated);
         }
-        const newSpeakers = enrichSpeakers(rawSpeakers, entityTags);
+        const newSpeakers = enrichSpeakers(rawSpeakers, currentEntityTags);
         setSpeakers(newSpeakers);
         return true;
       } finally {
