@@ -192,10 +192,26 @@ export function useAppearanceApi(appearanceId: string, initial: Appearance) {
           return false;
         }
         if (data.no_op) return true;
-        const newSpeakers = enrichSpeakers(
-          data.speakers as Array<{ name: string; role: string; title?: string; affiliation?: string }>,
-          entityTags
-        );
+        const rawSpeakers = data.speakers as Array<{ name: string; role: string; title?: string; affiliation?: string }>;
+        // Update entityTags cache when title/affiliation changes so
+        // future enrichment doesn't restore stale LLM values
+        if (fields.title !== undefined || fields.affiliation !== undefined) {
+          setEntityTags((prev) => {
+            const updated = { ...prev, key_people: [...(prev.key_people ?? [])] };
+            const idx = updated.key_people!.findIndex(
+              (p) => p.name.toLowerCase() === speakerName.toLowerCase()
+            );
+            const entry = {
+              name: speakerName,
+              title: fields.title ?? rawSpeakers.find((s) => s.name === speakerName)?.title ?? "",
+              fund_affiliation: fields.affiliation ?? rawSpeakers.find((s) => s.name === speakerName)?.affiliation ?? "",
+            };
+            if (idx >= 0) updated.key_people![idx] = entry;
+            else updated.key_people!.push(entry);
+            return updated;
+          });
+        }
+        const newSpeakers = enrichSpeakers(rawSpeakers, entityTags);
         setSpeakers(newSpeakers);
         return true;
       } finally {

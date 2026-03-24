@@ -601,7 +601,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       });
     }
 
-    if (has_inferred_attribution) {
+    const allInferred = turns.length > 0 && turns.every((t) => t.attribution === "inferred" || !t.attribution);
+    if (allInferred) {
       conditions.push({
         key: "inferred-attribution",
         text: "All speaker attributions are auto-generated",
