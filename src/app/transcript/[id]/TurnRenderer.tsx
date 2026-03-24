@@ -186,7 +186,7 @@ export const TurnRenderer = React.memo(function TurnRenderer({
               <button
                 onClick={() => onToggleExpanded(turn.turn_index)}
                 className="ml-1 text-[12px] text-[#b8860b] hover:underline transition-colors"
-                title={isExpanded ? "Show less" : "Show full text"}
+                title={isExpanded ? (collapsedIsSummary ? "Show summary" : "Show less") : "Show full text"}
               >
                 {isExpanded ? "[less]" : "[more]"}
               </button>
