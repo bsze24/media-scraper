@@ -687,12 +687,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const [showHelpOverlay, setShowHelpOverlay] = useState(false);
 
   // EXTRACT: KeyboardShortcutsBar — begin
-  const [shortcutsBarVisible, setShortcutsBarVisible] = useState(true);
-  // SSR-safe: read localStorage on mount (server doesn't have localStorage)
+  // null = not yet hydrated (prevents flash for users who dismissed the bar)
+  const [shortcutsBarVisible, setShortcutsBarVisible] = useState<boolean | null>(null);
+  // SSR-safe: read localStorage on mount
   useEffect(() => {
-    if (localStorage.getItem("hideShortcutsBar") === "true") {
-      setShortcutsBarVisible(false);
-    }
+    setShortcutsBarVisible(localStorage.getItem("hideShortcutsBar") !== "true");
   }, []);
 
   const activeTurn = useMemo(() => {
@@ -750,7 +749,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const contextBarShortcuts = useMemo(() => {
     // Priority order: most specific state wins
     if (editingTurnText !== null) {
-      return [['Esc', 'Cancel edit'], ['\u2318\u21B5', 'Save']] as [string, string][];
+      const modKey = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent) ? '\u2318' : 'Ctrl';
+      return [['Esc', 'Cancel edit'], [`${modKey}\u21B5`, 'Save']] as [string, string][];
     }
     if (turnSpeakerDropdown !== null) {
       return [['Esc', 'Close']] as [string, string][];
@@ -1463,7 +1463,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           )}
 
           {/* Transcript Content */}
-          <div className={`flex-1 px-6 py-5 space-y-1 ${shortcutsBarVisible ? 'md:pb-14' : ''}`}>
+          <div className={`flex-1 px-6 py-5 space-y-1 ${shortcutsBarVisible === true ? 'md:pb-14' : ''}`}>
             {/* Monologue mode */}
             {isMonologue && turns.length > 0 && (
               <div ref={monologueRef}>
