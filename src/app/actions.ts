@@ -127,8 +127,9 @@ export async function deleteAppearance(id: string): Promise<void> {
   await requireAdmin();
   const row = await getAppearanceById(id);
   if (!row) throw new Error("Not found");
-  if (row.processing_status === "complete") {
-    throw new Error("Cannot delete completed appearances");
+  const blocked = new Set(["complete", "extracting", "cleaning", "analyzing"]);
+  if (blocked.has(row.processing_status)) {
+    throw new Error("Cannot delete completed or in-flight appearances");
   }
   await dbDeleteAppearance(id);
 }
