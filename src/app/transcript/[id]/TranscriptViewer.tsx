@@ -299,7 +299,16 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const [feedback, setFeedback] = useState<Record<number, BulletFeedback>>({});
   const [floatingPanel, setFloatingPanel] = useState<{ idx: number } | null>(null);
   const [panelDraft, setPanelDraft] = useState("");
-  const [videoMode, setVideoMode] = useState<'collapsed' | 'pip' | 'full'>(youtube_id ? 'full' : 'collapsed');
+  // Podcasts are audio-first (collapsed). Personal uploads default to full video.
+  const AUDIO_FIRST_SOURCES = new Set([
+    "Invest Like the Best",
+    "Invest Like the Best with Patrick O'Shaughnessy",
+    "Capital Allocators with Ted Seides",
+    "Alt Goes Mainstream (AGM)",
+  ]);
+  const [videoMode, setVideoMode] = useState<'collapsed' | 'pip' | 'full'>(
+    youtube_id && !AUDIO_FIRST_SOURCES.has(source_name) ? 'full' : 'collapsed'
+  );
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
