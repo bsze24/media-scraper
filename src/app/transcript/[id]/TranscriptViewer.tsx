@@ -943,6 +943,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     const shortcuts: [string, string][] = [
       ['j/k', 'Navigate'],
       ['m', 'Toggle'],
+      ['x', 'Hide'],
     ];
     if (!isMonologue) {
       shortcuts.push(['e', 'Edit']);
@@ -1160,6 +1161,60 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           toggleTurnExpanded(activeTurnIndex);
           break;
         }
+        case "x": {
+          if (e.shiftKey) break; // handled by 'X' case
+          // x — toggle hide on active turn
+          if (activeTurnIndex === null) break;
+          const isCurrentlyHidden = hiddenTurns.has(activeTurnIndex);
+          toggleTurnHidden(activeTurnIndex);
+          if (!isCurrentlyHidden) {
+            // Hiding the active turn — move to next non-hidden turn
+            const currentPos = navigableTurnIndices.indexOf(activeTurnIndex);
+            // navigableTurnIndices already excludes hidden, but the current turn
+            // hasn't been removed yet (state update is async). Find the next
+            // turn that isn't the one we just hid.
+            const remaining = navigableTurnIndices.filter(idx => idx !== activeTurnIndex);
+            if (remaining.length === 0) {
+              setActiveTurnIndex(null);
+            } else {
+              // Prefer forward, fall back to backward
+              const nextForward = remaining.find(idx => {
+                const origPos = navigableTurnIndices.indexOf(idx);
+                return origPos > currentPos;
+              });
+              setActiveTurnIndex(nextForward ?? remaining[remaining.length - 1]);
+            }
+            // If video is playing the turn we just hid, seek to next playable turn
+            if (isPlayingRef.current && youtube_id) {
+              const player = ytPlayerRef.current;
+              if (player) {
+                const time = player.getCurrentTime();
+                const currentItem = expandedPlaylist.find(
+                  item => item.turnIndex === activeTurnIndex && time >= item.start && time < item.end
+                );
+                if (currentItem) {
+                  // Find next playable turn (not the one we're hiding)
+                  const nextItem = expandedPlaylist.find(
+                    item => item.turnIndex !== activeTurnIndex && item.start > currentItem.start
+                  );
+                  if (nextItem) {
+                    skipInProgressRef.current = true;
+                    player.seekTo(nextItem.start, true);
+                    setCurrentTime(nextItem.start);
+                    setTimeout(() => { skipInProgressRef.current = false; }, 500);
+                  }
+                }
+              }
+            }
+          }
+          break;
+        }
+        case "X": {
+          // Shift+X — unhide all
+          if (!e.shiftKey) break;
+          setHiddenTurns(new Set());
+          break;
+        }
         case "R": {
           // Shift+R — reset view
           if (!e.shiftKey) break;
@@ -1216,7 +1271,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     sectionFirstTurns, editingTurnText, turnSpeakerDropdown, floatingPanel,
     showHelpOverlay, isMonologue, allSpeakersGeneric, speakers,
     cancelEditTurnText, startEditingTurnText, seekToTime, cyclePlaybackRate,
-    toggleTurnExpanded, handleResetView, handleSpeakerClick, highlightedQuote,
+    toggleTurnExpanded, toggleTurnHidden, handleResetView, handleSpeakerClick,
+    highlightedQuote, hiddenTurns, expandedPlaylist, youtube_id,
   ]);
   // EXTRACT: useKeyboardShortcuts — end
 
@@ -2181,6 +2237,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                 ]],
                 ["View", [
                   ["m", "Toggle expand / collapse"],
+                  ["x", "Toggle hide turn"],
+                  ["\u21E7X", "Unhide all turns"],
                   ["\u21E7R", "Reset to defaults"],
                 ]],
                 ["Filter", [
