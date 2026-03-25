@@ -5,6 +5,7 @@ import { getAppearanceById } from "@lib/db/queries";
 import { formatDate } from "@lib/utils/format-date";
 import { formatDuration } from "@lib/utils/format-duration";
 import type { AppearanceRow } from "@lib/db/types";
+import { isYouTubeSource } from "@/types/appearance";
 import type { SpeakerRole } from "@/types/appearance";
 import type { TranscriptViewerProps } from "./types";
 import { TranscriptViewer } from "./TranscriptViewer";
@@ -86,8 +87,7 @@ function transformAppearance(row: AppearanceRow): TranscriptViewerProps["appeara
 
   // Extract youtube_id if source is YouTube
   const youtubeId =
-    row.transcript_source === "youtube_captions" ||
-    row.transcript_source === "youtube_whisper"
+    isYouTubeSource(row.transcript_source)
       ? extractYoutubeId(row.source_url)
       : null;
 
@@ -191,8 +191,7 @@ export async function generateMetadata({
   }
 
   const youtubeId =
-    row.transcript_source === "youtube_captions" ||
-    row.transcript_source === "youtube_whisper"
+    isYouTubeSource(row.transcript_source)
       ? extractYoutubeId(row.source_url)
       : null;
 
