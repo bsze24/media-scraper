@@ -382,7 +382,7 @@ export default function Home() {
 
         {/* Appearances Table */}
         {appearances.length > 0 && (
-          <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+          <section className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-zinc-200 bg-zinc-50 text-left">
