@@ -414,10 +414,17 @@ export default function Home() {
                         {a.id.slice(0, 8)}
                       </td>
                       <td
-                        className="truncate px-3 py-2 font-mono text-xs text-zinc-700"
+                        className="truncate px-3 py-2 font-mono text-xs"
                         title={a.source_url}
                       >
-                        {truncateUrl(a.source_url, 30)}
+                        <a
+                          href={isComplete ? `/transcript/${a.id}` : a.source_url}
+                          target={isComplete ? undefined : "_blank"}
+                          rel={isComplete ? undefined : "noopener noreferrer"}
+                          className="text-blue-600 hover:underline"
+                        >
+                          {truncateUrl(a.source_url, 30)}
+                        </a>
                       </td>
                       <td className="truncate px-3 py-2 text-xs text-zinc-500" title={a.source_name ?? ""}>
                         {a.source_name ?? "\u2014"}
