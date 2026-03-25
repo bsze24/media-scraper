@@ -1,6 +1,6 @@
 "use client";
 
-import {
+import React, {
   useState,
   useRef,
   useCallback,
@@ -191,6 +191,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   // Uses computeRoleDefaults directly — at init time, speakers/turns state equals appearance props.
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(computeRoleDefaults);
 
+  // Hidden turns — view-layer only, synced to URL ?hidden= param
+  const [hiddenTurns, setHiddenTurns] = useState<Set<number>>(new Set);
+
   // Track whether we're in highlight mode (URL has ?expanded= param)
   const [isHighlightMode, setIsHighlightMode] = useState(false);
 
@@ -210,6 +213,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         const indices = expandedParam.split(",").map(Number).filter(n => !isNaN(n));
         setExpandedTurns(new Set(indices));
       }
+    }
+    const hiddenParam = params.get("hidden");
+    if (hiddenParam !== null && hiddenParam !== "") {
+      const indices = hiddenParam.split(",").map(Number).filter(n => !isNaN(n));
+      setHiddenTurns(new Set(indices));
     }
   }, []);
 
@@ -234,15 +242,52 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     window.history.replaceState({}, "", url.toString());
   }, [expandedTurns, isHighlightMode]);
 
+  // Sync hiddenTurns to URL via replaceState
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (hiddenTurns.size > 0) {
+      const indices = Array.from(hiddenTurns).sort((a, b) => a - b).join(",");
+      url.searchParams.set("hidden", indices);
+    } else {
+      url.searchParams.delete("hidden");
+    }
+    window.history.replaceState({}, "", url.toString());
+  }, [hiddenTurns]);
+
+  // Toggle a turn's hidden state
+  const toggleTurnHidden = useCallback((turnIndex: number) => {
+    setHiddenTurns(prev => {
+      const next = new Set(prev);
+      if (next.has(turnIndex)) {
+        next.delete(turnIndex);
+      } else {
+        next.add(turnIndex);
+      }
+      return next;
+    });
+  }, []);
+
+  // Unhide a group of turns (for placeholder click)
+  const unhideGroup = useCallback((turnIndices: number[]) => {
+    setHiddenTurns(prev => {
+      const next = new Set(prev);
+      for (const idx of turnIndices) next.delete(idx);
+      return next;
+    });
+  }, []);
+
   // Reset view handler — returns to role-based defaults, exits highlight mode
   const [resetConfirmation, setResetConfirmation] = useState(false);
   const handleResetView = useCallback(() => {
     setExpandedTurns(computeRoleDefaults());
+    setHiddenTurns(new Set());
     setIsHighlightMode(false);
-    // Remove expanded param from URL
+    // Remove expanded and hidden params from URL
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       url.searchParams.delete("expanded");
+      url.searchParams.delete("hidden");
       window.history.replaceState({}, "", url.toString());
     }
     setResetConfirmation(true);
@@ -281,9 +326,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   // Ordered list of expanded turns with timestamps — the "highlight reel" playlist.
   // end = next sequential turn's timestamp (regardless of expanded), defining airtime.
+  // Hidden turns are excluded — they don't play even if expanded.
   const expandedPlaylist = useMemo(() => {
     const withTimestamps = turns
-      .filter(t => expandedTurns.has(t.turn_index) && t.timestamp_seconds != null)
+      .filter(t => expandedTurns.has(t.turn_index) && !hiddenTurns.has(t.turn_index) && t.timestamp_seconds != null)
       .sort((a, b) => a.timestamp_seconds! - b.timestamp_seconds!);
 
     return withTimestamps.map((turn) => {
@@ -297,7 +343,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         end: nextTurn?.timestamp_seconds ?? Infinity,
       };
     });
-  }, [turns, expandedTurns]);
+  }, [turns, expandedTurns, hiddenTurns]);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -637,7 +683,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       const sectionTurns = turnsBySection.get(anchor) ?? [];
       let count = 0;
       sectionTurns.forEach((turn, ti) => {
-        if (matchesTurn(turn.text, searchTerms)) {
+        // Exclude hidden turns from search results
+        if (!hiddenTurns.has(turn.turn_index) && matchesTurn(turn.text, searchTerms)) {
           anchors.add(anchor);
           turnKeys.add(`${anchor}-${ti}`);
           count++;
@@ -647,7 +694,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     }
 
     return { anchors, turnKeys, countBySection };
-  }, [searchTerms, sections, turnsBySection]);
+  }, [searchTerms, sections, turnsBySection, hiddenTurns]);
 
   const hasSearch = searchTerms.length > 0;
 
@@ -816,22 +863,29 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   }, [activeTurnIndex, turns]);
 
   // Flat ordered list of turn indices in visual order: monologue → intro → sections
+  // Hidden turns are excluded — j/k navigation skips them.
   const navigableTurnIndices = useMemo(() => {
     const indices: number[] = [];
     if (isMonologue) {
-      for (const t of turns) indices.push(t.turn_index);
+      for (const t of turns) {
+        if (!hiddenTurns.has(t.turn_index)) indices.push(t.turn_index);
+      }
     } else {
       // Intro turns
       const introTurns = turnsBySection.get(INTRO_ANCHOR) ?? [];
-      for (const t of introTurns) indices.push(t.turn_index);
+      for (const t of introTurns) {
+        if (!hiddenTurns.has(t.turn_index)) indices.push(t.turn_index);
+      }
       // Section turns in section order
       for (const s of sections) {
         const sectionTurns = turnsBySection.get(s.anchor) ?? [];
-        for (const t of sectionTurns) indices.push(t.turn_index);
+        for (const t of sectionTurns) {
+          if (!hiddenTurns.has(t.turn_index)) indices.push(t.turn_index);
+        }
       }
     }
     return indices;
-  }, [isMonologue, turns, turnsBySection, sections]);
+  }, [isMonologue, turns, turnsBySection, sections, hiddenTurns]);
 
   // Map turn_index → section anchor for n/p navigation
   const turnSectionMap = useMemo(() => {
@@ -845,21 +899,23 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     return map;
   }, [turnsBySection, sections]);
 
-  // Section boundaries: first turn index for each section in order
+  // Section boundaries: first non-hidden turn index for each section in order
   const sectionFirstTurns = useMemo(() => {
     const result: Array<{ anchor: string; firstTurnIndex: number }> = [];
     const introTurns = turnsBySection.get(INTRO_ANCHOR) ?? [];
-    if (introTurns.length > 0) {
-      result.push({ anchor: INTRO_ANCHOR, firstTurnIndex: introTurns[0].turn_index });
+    const firstVisibleIntro = introTurns.find(t => !hiddenTurns.has(t.turn_index));
+    if (firstVisibleIntro) {
+      result.push({ anchor: INTRO_ANCHOR, firstTurnIndex: firstVisibleIntro.turn_index });
     }
     for (const s of sections) {
       const sectionTurns = turnsBySection.get(s.anchor) ?? [];
-      if (sectionTurns.length > 0) {
-        result.push({ anchor: s.anchor, firstTurnIndex: sectionTurns[0].turn_index });
+      const firstVisible = sectionTurns.find(t => !hiddenTurns.has(t.turn_index));
+      if (firstVisible) {
+        result.push({ anchor: s.anchor, firstTurnIndex: firstVisible.turn_index });
       }
     }
     return result;
-  }, [turnsBySection, sections]);
+  }, [turnsBySection, sections, hiddenTurns]);
 
   // Context-aware shortcuts for the bottom bar
   const contextBarShortcuts = useMemo(() => {
@@ -1202,6 +1258,51 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   }, [speakers, youtube_id, turns]);
 
   const showBanner = !bannerDismissed && bannerConditions.length > 0;
+
+  // Compute placeholder groups for hidden turns.
+  // Groups consecutive hidden turn indices and maps them to the turn_index
+  // of the next visible turn (or -1 for trailing hidden turns).
+  // Used by all three rendering paths (monologue, intro, section-bucketed).
+  const computePlaceholderGroups = useCallback(
+    (turnsList: typeof turns) => {
+      const groups: Array<{ hiddenIndices: number[]; beforeTurnIndex: number }> = [];
+      let currentGroup: number[] = [];
+
+      for (const t of turnsList) {
+        if (hiddenTurns.has(t.turn_index)) {
+          currentGroup.push(t.turn_index);
+        } else {
+          if (currentGroup.length > 0) {
+            groups.push({ hiddenIndices: currentGroup, beforeTurnIndex: t.turn_index });
+            currentGroup = [];
+          }
+        }
+      }
+      // Trailing hidden turns (no visible turn after them)
+      if (currentGroup.length > 0) {
+        groups.push({ hiddenIndices: currentGroup, beforeTurnIndex: -1 });
+      }
+      return groups;
+    },
+    [hiddenTurns]
+  );
+
+  // Placeholder bar for hidden turns
+  const renderPlaceholder = useCallback(
+    (hiddenIndices: number[], key: string) => {
+      const count = hiddenIndices.length;
+      return (
+        <div
+          key={key}
+          onClick={() => unhideGroup(hiddenIndices)}
+          className="flex items-center justify-center py-2 px-4 my-1 border border-dashed border-[#d5d3cf] bg-[#faf9f7] text-[12px] text-[#999] cursor-pointer hover:bg-[#f5f4f2] hover:border-[#b8860b]/40 hover:text-[#888] transition-colors"
+        >
+          {count} hidden turn{count !== 1 ? "s" : ""}
+        </div>
+      );
+    },
+    [unhideGroup]
+  );
 
   // ---- Render ----
   return (
@@ -1567,99 +1668,136 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           {/* Transcript Content */}
           <div className={`flex-1 px-6 py-5 space-y-1 ${shortcutsBarVisible === true ? 'md:pb-14' : ''}`}>
             {/* Monologue mode */}
-            {isMonologue && turns.length > 0 && (
-              <div ref={monologueRef}>
-                {turns.map((turn) => {
-                  const bucket = turn.section_anchor && turnsBySection.has(turn.section_anchor)
-                    ? turn.section_anchor : INTRO_ANCHOR;
-                  const bucketTurns = turnsBySection.get(bucket) ?? [];
-                  const idxInBucket = bucketTurns.indexOf(turn);
-                  const turnKey = `${bucket}-${idxInBucket === -1 ? 0 : idxInBucket}`;
-                  const summary = turn_summaries?.[turn.turn_index];
-                  const { first, hasMore } = firstSentence(turn.text);
+            {isMonologue && turns.length > 0 && (() => {
+              const placeholderGroups = computePlaceholderGroups(turns);
+              const placeholderBeforeMap = new Map<number, typeof placeholderGroups[number]>();
+              let trailingGroup: typeof placeholderGroups[number] | null = null;
+              for (const g of placeholderGroups) {
+                if (g.beforeTurnIndex === -1) {
+                  trailingGroup = g;
+                } else {
+                  placeholderBeforeMap.set(g.beforeTurnIndex, g);
+                }
+              }
 
-                  return (
-                    <TurnRenderer
-                      key={turn.turn_index}
-                      turn={turn}
-                      isExpanded={expandedTurns.has(turn.turn_index)}
-                      isActive={activeTurnIndex === turn.turn_index}
-                      isTurnHit={hasSearch && searchResults.turnKeys.has(turnKey)}
-                      isCitedTurn={false}
-                      isSpeakerFiltered={activeSpeaker === turn.speaker}
-                      isHost={isCollapsedRole(turn.speaker)}
-                      collapsedText={summary || (hasMore ? first : turn.text)}
-                      collapsedIsSummary={!!summary}
-                      canCollapse={hasMore || !!summary}
-                      onToggleExpanded={toggleTurnExpanded}
-                      onSetActive={handleSetActiveTurn}
-                      onSeekToTime={seekToTime}
-                      speakerInfo={undefined}
-                      isEditingText={false}
-                      editingTextValue=""
-                      onStartEditText={null}
-                      onSaveEditText={null}
-                      onCancelEditText={null}
-                      onEditTextChange={null}
-                      saving={false}
-                      showSpeakerDropdown={false}
-                      speakers={null}
-                      allSpeakersGeneric={false}
-                      onTurnSpeakerChange={null}
-                      onToggleSpeakerDropdown={null}
-                      onScrollToSpeakerPanel={null}
-                      searchQuery={debouncedQuery}
-                      highlightedQuote={activeTurnIndex === turn.turn_index ? highlightedQuote : null}
-                    />
-                  );
-                })}
-              </div>
-            )}
+              return (
+                <div ref={monologueRef}>
+                  {turns.map((turn) => {
+                    if (hiddenTurns.has(turn.turn_index)) return null;
+                    const bucket = turn.section_anchor && turnsBySection.has(turn.section_anchor)
+                      ? turn.section_anchor : INTRO_ANCHOR;
+                    const bucketTurns = turnsBySection.get(bucket) ?? [];
+                    const idxInBucket = bucketTurns.indexOf(turn);
+                    const turnKey = `${bucket}-${idxInBucket === -1 ? 0 : idxInBucket}`;
+                    const summary = turn_summaries?.[turn.turn_index];
+                    const { first, hasMore } = firstSentence(turn.text);
+                    const placeholderBefore = placeholderBeforeMap.get(turn.turn_index);
+
+                    return (
+                      <React.Fragment key={turn.turn_index}>
+                        {placeholderBefore && renderPlaceholder(placeholderBefore.hiddenIndices, `ph-mono-${turn.turn_index}`)}
+                        <TurnRenderer
+                          turn={turn}
+                          isExpanded={expandedTurns.has(turn.turn_index)}
+                          isActive={activeTurnIndex === turn.turn_index}
+                          isTurnHit={hasSearch && searchResults.turnKeys.has(turnKey)}
+                          isCitedTurn={false}
+                          isSpeakerFiltered={activeSpeaker === turn.speaker}
+                          isHost={isCollapsedRole(turn.speaker)}
+                          collapsedText={summary || (hasMore ? first : turn.text)}
+                          collapsedIsSummary={!!summary}
+                          canCollapse={hasMore || !!summary}
+                          onToggleExpanded={toggleTurnExpanded}
+                          onSetActive={handleSetActiveTurn}
+                          onSeekToTime={seekToTime}
+                          speakerInfo={undefined}
+                          isEditingText={false}
+                          editingTextValue=""
+                          onStartEditText={null}
+                          onSaveEditText={null}
+                          onCancelEditText={null}
+                          onEditTextChange={null}
+                          saving={false}
+                          showSpeakerDropdown={false}
+                          speakers={null}
+                          allSpeakersGeneric={false}
+                          onTurnSpeakerChange={null}
+                          onToggleSpeakerDropdown={null}
+                          onScrollToSpeakerPanel={null}
+                          searchQuery={debouncedQuery}
+                          highlightedQuote={activeTurnIndex === turn.turn_index ? highlightedQuote : null}
+                        />
+                      </React.Fragment>
+                    );
+                  })}
+                  {trailingGroup && renderPlaceholder(trailingGroup.hiddenIndices, "ph-mono-trailing")}
+                </div>
+              );
+            })()}
 
             {/* Multi-speaker mode: Intro turns */}
-            {!isMonologue && (turnsBySection.get(INTRO_ANCHOR)?.length ?? 0) > 0 && (
-              <div className="mb-4">
-                {turnsBySection.get(INTRO_ANCHOR)!.map((turn, ti) => {
-                  const summary = turn_summaries?.[turn.turn_index];
-                  const { first, hasMore } = firstSentence(turn.text);
+            {!isMonologue && (turnsBySection.get(INTRO_ANCHOR)?.length ?? 0) > 0 && (() => {
+              const introTurns = turnsBySection.get(INTRO_ANCHOR)!;
+              const placeholderGroups = computePlaceholderGroups(introTurns);
+              const placeholderBeforeMap = new Map<number, typeof placeholderGroups[number]>();
+              let trailingGroup: typeof placeholderGroups[number] | null = null;
+              for (const g of placeholderGroups) {
+                if (g.beforeTurnIndex === -1) {
+                  trailingGroup = g;
+                } else {
+                  placeholderBeforeMap.set(g.beforeTurnIndex, g);
+                }
+              }
 
-                  return (
-                    <TurnRenderer
-                      key={ti}
-                      turn={turn}
-                      isExpanded={expandedTurns.has(turn.turn_index)}
-                      isActive={activeTurnIndex === turn.turn_index}
-                      isTurnHit={hasSearch && searchResults.turnKeys.has(`${INTRO_ANCHOR}-${ti}`)}
-                      isCitedTurn={false}
-                      isSpeakerFiltered={activeSpeaker === turn.speaker}
-                      isHost={isCollapsedRole(turn.speaker)}
-                      collapsedText={summary || (hasMore ? first : turn.text)}
-                      collapsedIsSummary={!!summary}
-                      canCollapse={hasMore || !!summary}
-                      onToggleExpanded={toggleTurnExpanded}
-                      onSetActive={handleSetActiveTurn}
-                      onSeekToTime={seekToTime}
-                      speakerInfo={speakers.find(s => s.name === turn.speaker)}
-                      isEditingText={editingTurnText === turn.turn_index}
-                      editingTextValue={editingTurnTextValue}
-                      onStartEditText={startEditingTurnText}
-                      onSaveEditText={saveTurnTextEdit}
-                      onCancelEditText={cancelEditTurnText}
-                      onEditTextChange={setEditingTurnTextValue}
-                      saving={saving}
-                      showSpeakerDropdown={turnSpeakerDropdown === turn.turn_index}
-                      speakers={speakers}
-                      allSpeakersGeneric={allSpeakersGeneric}
-                      onTurnSpeakerChange={handleTurnSpeakerChange}
-                      onToggleSpeakerDropdown={toggleSpeakerDropdown}
-                      onScrollToSpeakerPanel={scrollToSpeakerPanel}
-                      searchQuery={debouncedQuery}
-                      highlightedQuote={activeTurnIndex === turn.turn_index ? highlightedQuote : null}
-                    />
-                  );
-                })}
-              </div>
-            )}
+              return (
+                <div className="mb-4">
+                  {introTurns.map((turn, ti) => {
+                    if (hiddenTurns.has(turn.turn_index)) return null;
+                    const summary = turn_summaries?.[turn.turn_index];
+                    const { first, hasMore } = firstSentence(turn.text);
+                    const placeholderBefore = placeholderBeforeMap.get(turn.turn_index);
+
+                    return (
+                      <React.Fragment key={ti}>
+                        {placeholderBefore && renderPlaceholder(placeholderBefore.hiddenIndices, `ph-intro-${turn.turn_index}`)}
+                        <TurnRenderer
+                          turn={turn}
+                          isExpanded={expandedTurns.has(turn.turn_index)}
+                          isActive={activeTurnIndex === turn.turn_index}
+                          isTurnHit={hasSearch && searchResults.turnKeys.has(`${INTRO_ANCHOR}-${ti}`)}
+                          isCitedTurn={false}
+                          isSpeakerFiltered={activeSpeaker === turn.speaker}
+                          isHost={isCollapsedRole(turn.speaker)}
+                          collapsedText={summary || (hasMore ? first : turn.text)}
+                          collapsedIsSummary={!!summary}
+                          canCollapse={hasMore || !!summary}
+                          onToggleExpanded={toggleTurnExpanded}
+                          onSetActive={handleSetActiveTurn}
+                          onSeekToTime={seekToTime}
+                          speakerInfo={speakers.find(s => s.name === turn.speaker)}
+                          isEditingText={editingTurnText === turn.turn_index}
+                          editingTextValue={editingTurnTextValue}
+                          onStartEditText={startEditingTurnText}
+                          onSaveEditText={saveTurnTextEdit}
+                          onCancelEditText={cancelEditTurnText}
+                          onEditTextChange={setEditingTurnTextValue}
+                          saving={saving}
+                          showSpeakerDropdown={turnSpeakerDropdown === turn.turn_index}
+                          speakers={speakers}
+                          allSpeakersGeneric={allSpeakersGeneric}
+                          onTurnSpeakerChange={handleTurnSpeakerChange}
+                          onToggleSpeakerDropdown={toggleSpeakerDropdown}
+                          onScrollToSpeakerPanel={scrollToSpeakerPanel}
+                          searchQuery={debouncedQuery}
+                          highlightedQuote={activeTurnIndex === turn.turn_index ? highlightedQuote : null}
+                        />
+                      </React.Fragment>
+                    );
+                  })}
+                  {trailingGroup && renderPlaceholder(trailingGroup.hiddenIndices, "ph-intro-trailing")}
+                </div>
+              );
+            })()}
 
             {/* Multi-speaker mode: Sections */}
             {!isMonologue && sections.map((section) => {
@@ -1719,49 +1857,75 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   </button>
 
                   {/* Section Turns */}
-                  {isOpen && (
-                    <div className="border-l border-[#e5e3df] ml-1">
-                      {sectionTurns.map((turn, ti) => {
-                        const summary = turn_summaries?.[turn.turn_index];
-                        const { first, hasMore } = firstSentence(turn.text);
+                  {isOpen && (() => {
+                    const placeholderGroups = computePlaceholderGroups(sectionTurns);
+                    const placeholderBeforeMap = new Map<number, typeof placeholderGroups[number]>();
+                    let trailingGroup: typeof placeholderGroups[number] | null = null;
+                    for (const g of placeholderGroups) {
+                      if (g.beforeTurnIndex === -1) {
+                        trailingGroup = g;
+                      } else {
+                        placeholderBeforeMap.set(g.beforeTurnIndex, g);
+                      }
+                    }
+                    // If ALL turns in section are hidden, show placeholder only
+                    const allHidden = sectionTurns.length > 0 && sectionTurns.every(t => hiddenTurns.has(t.turn_index));
 
-                        return (
-                          <TurnRenderer
-                            key={ti}
-                            turn={turn}
-                            isExpanded={expandedTurns.has(turn.turn_index)}
-                            isActive={activeTurnIndex === turn.turn_index}
-                            isTurnHit={hasSearch && searchResults.turnKeys.has(`${section.anchor}-${ti}`)}
-                            isCitedTurn={citedTurnIndices.has(turn.turn_index)}
-                            isSpeakerFiltered={activeSpeaker === turn.speaker}
-                            isHost={isCollapsedRole(turn.speaker)}
-                            collapsedText={summary || (hasMore ? first : turn.text)}
-                            collapsedIsSummary={!!summary}
-                            canCollapse={hasMore || !!summary}
-                            onToggleExpanded={toggleTurnExpanded}
-                            onSetActive={handleSetActiveTurn}
-                            onSeekToTime={seekToTime}
-                            speakerInfo={speakers.find(s => s.name === turn.speaker)}
-                            isEditingText={editingTurnText === turn.turn_index}
-                            editingTextValue={editingTurnTextValue}
-                            onStartEditText={startEditingTurnText}
-                            onSaveEditText={saveTurnTextEdit}
-                            onCancelEditText={cancelEditTurnText}
-                            onEditTextChange={setEditingTurnTextValue}
-                            saving={saving}
-                            showSpeakerDropdown={turnSpeakerDropdown === turn.turn_index}
-                            speakers={speakers}
-                            allSpeakersGeneric={allSpeakersGeneric}
-                            onTurnSpeakerChange={handleTurnSpeakerChange}
-                            onToggleSpeakerDropdown={toggleSpeakerDropdown}
-                            onScrollToSpeakerPanel={scrollToSpeakerPanel}
-                            searchQuery={debouncedQuery}
-                      highlightedQuote={activeTurnIndex === turn.turn_index ? highlightedQuote : null}
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
+                    return (
+                      <div className="border-l border-[#e5e3df] ml-1">
+                        {allHidden ? (
+                          renderPlaceholder(sectionTurns.map(t => t.turn_index), `ph-section-all-${section.anchor}`)
+                        ) : (
+                          <>
+                            {sectionTurns.map((turn, ti) => {
+                              if (hiddenTurns.has(turn.turn_index)) return null;
+                              const summary = turn_summaries?.[turn.turn_index];
+                              const { first, hasMore } = firstSentence(turn.text);
+                              const placeholderBefore = placeholderBeforeMap.get(turn.turn_index);
+
+                              return (
+                                <React.Fragment key={ti}>
+                                  {placeholderBefore && renderPlaceholder(placeholderBefore.hiddenIndices, `ph-section-${section.anchor}-${turn.turn_index}`)}
+                                  <TurnRenderer
+                                    turn={turn}
+                                    isExpanded={expandedTurns.has(turn.turn_index)}
+                                    isActive={activeTurnIndex === turn.turn_index}
+                                    isTurnHit={hasSearch && searchResults.turnKeys.has(`${section.anchor}-${ti}`)}
+                                    isCitedTurn={citedTurnIndices.has(turn.turn_index)}
+                                    isSpeakerFiltered={activeSpeaker === turn.speaker}
+                                    isHost={isCollapsedRole(turn.speaker)}
+                                    collapsedText={summary || (hasMore ? first : turn.text)}
+                                    collapsedIsSummary={!!summary}
+                                    canCollapse={hasMore || !!summary}
+                                    onToggleExpanded={toggleTurnExpanded}
+                                    onSetActive={handleSetActiveTurn}
+                                    onSeekToTime={seekToTime}
+                                    speakerInfo={speakers.find(s => s.name === turn.speaker)}
+                                    isEditingText={editingTurnText === turn.turn_index}
+                                    editingTextValue={editingTurnTextValue}
+                                    onStartEditText={startEditingTurnText}
+                                    onSaveEditText={saveTurnTextEdit}
+                                    onCancelEditText={cancelEditTurnText}
+                                    onEditTextChange={setEditingTurnTextValue}
+                                    saving={saving}
+                                    showSpeakerDropdown={turnSpeakerDropdown === turn.turn_index}
+                                    speakers={speakers}
+                                    allSpeakersGeneric={allSpeakersGeneric}
+                                    onTurnSpeakerChange={handleTurnSpeakerChange}
+                                    onToggleSpeakerDropdown={toggleSpeakerDropdown}
+                                    onScrollToSpeakerPanel={scrollToSpeakerPanel}
+                                    searchQuery={debouncedQuery}
+                                    highlightedQuote={activeTurnIndex === turn.turn_index ? highlightedQuote : null}
+                                  />
+                                </React.Fragment>
+                              );
+                            })}
+                            {trailingGroup && renderPlaceholder(trailingGroup.hiddenIndices, `ph-section-${section.anchor}-trailing`)}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}

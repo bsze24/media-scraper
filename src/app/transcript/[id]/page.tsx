@@ -121,10 +121,10 @@ export async function generateMetadata({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ expanded?: string }>;
+  searchParams: Promise<{ expanded?: string; hidden?: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const { expanded } = await searchParams;
+  const { expanded, hidden } = await searchParams;
   const row = await getCachedAppearance(id);
 
   if (!row || row.processing_status !== "complete") {
@@ -133,15 +133,21 @@ export async function generateMetadata({
 
   const title = row.title ?? "Untitled";
 
+  // Parse hidden turn indices (if any)
+  const hiddenSet = hidden != null && hidden !== ""
+    ? new Set(hidden.split(",").map(Number).filter(n => !isNaN(n)))
+    : new Set<number>();
+
   let description: string;
   if (expanded != null) {
-    // Highlight mode — find first guest/customer turn from expanded indices
+    // Highlight mode — find first guest/customer turn from expanded indices (excluding hidden)
     const indices = expanded === ""
       ? new Set<number>()
       : new Set(expanded.split(",").map(Number).filter(n => !isNaN(n)));
     const speakerRoleMap = new Map<string, string>();
     for (const s of row.speakers) speakerRoleMap.set(s.name, s.role);
-    const expandedTurns = (row.turns ?? []).filter(t => indices.has(t.turn_index));
+    // Filter out hidden turns from expanded set
+    const expandedTurns = (row.turns ?? []).filter(t => indices.has(t.turn_index) && !hiddenSet.has(t.turn_index));
     const quoteTurn = expandedTurns.find(t => {
       const role = speakerRoleMap.get(t.speaker) ?? "guest";
       return role === "guest" || role === "customer";
@@ -149,8 +155,9 @@ export async function generateMetadata({
     const quoteText = quoteTurn
       ? `"${quoteTurn.text.slice(0, 150)}${quoteTurn.text.length > 150 ? "…" : ""}"`
       : "";
-    const count = indices.size;
-    // Compute highlight duration from turn timestamps
+    // Count only non-hidden expanded turns
+    const count = expandedTurns.length;
+    // Compute highlight duration from turn timestamps (excluding hidden)
     const allTurns = row.turns ?? [];
     const sortedExpanded = expandedTurns
       .filter(t => t.timestamp_seconds != null)
