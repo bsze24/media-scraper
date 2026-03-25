@@ -36,6 +36,7 @@ Deployed on Vercel.
 - Entity tags and prep bullets stored as JSONB in Postgres.
 - Full-text search via tsvector generated column on cleaned_transcript.
 - Prompts live in lib/prompts/ as exported strings — never inline in pipeline functions.
+- Never call synchronous IFrame bridge methods (e.g., `getPlayerState()`) in keyboard handlers — they block the main thread under rapid key repeat. Use refs synced via callbacks (e.g., `onStateChange`) instead.
 
 ## File structure
 lib/          — scrapers, pipeline, prompts, db, queue, api (server-side logic)
