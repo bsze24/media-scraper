@@ -334,6 +334,17 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     return fullSec > 0 ? ` · ${formatDuration(fullSec)} full call` : '';
   }, [turns, duration]);
 
+  // Shared reel info block — reset button + duration. Used in all control strip variants.
+  const reelInfoBlock = isHighlightMode ? (
+    <>
+      <button onClick={handleResetView} className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors">Reset view</button>
+      {resetConfirmation && <span className="text-[11px] text-green-600">View reset</span>}
+      {highlightDurationSec > 0 && (
+        <span className="text-[11px] text-[#888]">{formatDuration(highlightDurationSec)} highlight{fullCallLabel}</span>
+      )}
+    </>
+  ) : null;
+
   // ---- Quote highlight (from prep bullet click) ----
   const [highlightedQuote, setHighlightedQuote] = useState<string | null>(null);
 
@@ -1358,16 +1369,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               {videoMode === 'full' && (
                 <div className="bg-[#faf9f7]/95 backdrop-blur border-b border-[#e5e3df] px-3 py-2 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    {isHighlightMode && (
-                      <>
-                        <button onClick={handleResetView} className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors">Reset view</button>
-                        {resetConfirmation && <span className="text-[11px] text-green-600">View reset</span>}
-                        {highlightDurationSec > 0 && (
-                          <span className="text-[11px] text-[#888]">{formatDuration(highlightDurationSec)} highlight{fullCallLabel}</span>
-                        )}
-                        <span className="w-px h-3 bg-[#e5e3df]" />
-                      </>
-                    )}
+                    {reelInfoBlock}
+                    {isHighlightMode && <span className="w-px h-3 bg-[#e5e3df]" />}
                   </div>
                   <div className="flex items-center gap-2 text-[#888]">
                     <button
@@ -1472,14 +1475,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                 </div>
               </div>
               {/* Reel info row inside audio bar */}
-              {isHighlightMode && (
-                <div className="px-3 pb-2 flex items-center gap-2">
-                  <button onClick={handleResetView} className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors">Reset view</button>
-                  {resetConfirmation && <span className="text-[11px] text-green-600">View reset</span>}
-                  {highlightDurationSec > 0 && (
-                    <span className="text-[11px] text-[#888]">{formatDuration(highlightDurationSec)} highlight{fullCallLabel}</span>
-                  )}
-                </div>
+              {reelInfoBlock && (
+                <div className="px-3 pb-2 flex items-center gap-2">{reelInfoBlock}</div>
               )}
             </div>
           )}
@@ -1489,16 +1486,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             <div className="sticky top-0 z-40 bg-[#faf9f7]/95 backdrop-blur border-b border-[#e5e3df]">
               <div className="px-3 py-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  {isHighlightMode && (
-                    <>
-                      <button onClick={handleResetView} className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors">Reset view</button>
-                      {resetConfirmation && <span className="text-[11px] text-green-600">View reset</span>}
-                      {highlightDurationSec > 0 && (
-                        <span className="text-[11px] text-[#888]">{formatDuration(highlightDurationSec)} highlight{fullCallLabel}</span>
-                      )}
-                      <span className="w-px h-3 bg-[#e5e3df]" />
-                    </>
-                  )}
+                  {reelInfoBlock}
+                  {isHighlightMode && <span className="w-px h-3 bg-[#e5e3df]" />}
                 </div>
                 <div className="flex items-center gap-2 text-[#888]">
                   <button
@@ -1521,14 +1510,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           {/* No video — show reset view bar when in highlight mode, otherwise "no video" message */}
           {!youtube_id && (
             <div className="sticky top-0 z-40 bg-[#faf9f7]/95 backdrop-blur p-3 border-b border-[#e5e3df]">
-              {isHighlightMode ? (
-                <div className="flex items-center gap-2">
-                  <button onClick={handleResetView} className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors">Reset view</button>
-                  {resetConfirmation && <span className="text-[11px] text-green-600">View reset</span>}
-                  {highlightDurationSec > 0 && (
-                    <span className="text-[11px] text-[#888]">{formatDuration(highlightDurationSec)} highlight{fullCallLabel}</span>
-                  )}
-                </div>
+              {reelInfoBlock ? (
+                <div className="flex items-center gap-2">{reelInfoBlock}</div>
               ) : (
                 <div className="text-center text-[11px] text-[#888]">
                   No video available for this episode
