@@ -190,6 +190,12 @@ export async function generateMetadata({
       : `${turnCount} turns`;
   }
 
+  const youtubeId =
+    row.transcript_source === "youtube_captions" ||
+    row.transcript_source === "youtube_whisper"
+      ? extractYoutubeId(row.source_url)
+      : null;
+
   return {
     title,
     openGraph: {
@@ -197,6 +203,12 @@ export async function generateMetadata({
       description,
       type: "article",
       siteName: "bz-bot 🤖",
+      images: youtubeId
+        ? [`https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg`]
+        : undefined,
+    },
+    twitter: {
+      card: youtubeId ? "summary_large_image" : "summary",
     },
   };
 }
