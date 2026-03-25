@@ -253,34 +253,26 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     setIsHighlightMode(true);
   }, []);
 
-  // Sync expandedTurns to URL via replaceState
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!isHighlightMode) return;
-    if (suppressUrlSyncRef.current) return;
-    const indices = Array.from(expandedTurns).sort((a, b) => a - b).join(",");
-    const url = new URL(window.location.href);
-    url.searchParams.set("expanded", indices);
-    window.history.replaceState({}, "", url.toString());
-  }, [expandedTurns, isHighlightMode]);
-
-  // Sync hiddenTurns to URL via replaceState
-  // Guard: skip until URL-init effect has run, otherwise the initial empty set
-  // would delete ?hidden= from the URL before it's read.
-  // Also skip when loaded from saved view (keep URL clean).
+  // Sync expandedTurns + hiddenTurns to URL via replaceState.
+  // Combined into one effect so both params are always written together —
+  // prevents stale ?hidden= when only expandedTurns changes.
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!urlInitRef.current) return;
-    if (suppressUrlSyncRef.current) { suppressUrlSyncRef.current = false; return; }
+    if (suppressUrlSyncRef.current) return;
     const url = new URL(window.location.href);
+    if (isHighlightMode) {
+      const expanded = Array.from(expandedTurns).sort((a, b) => a - b).join(",");
+      url.searchParams.set("expanded", expanded);
+    }
     if (hiddenTurns.size > 0) {
-      const indices = Array.from(hiddenTurns).sort((a, b) => a - b).join(",");
-      url.searchParams.set("hidden", indices);
+      const hidden = Array.from(hiddenTurns).sort((a, b) => a - b).join(",");
+      url.searchParams.set("hidden", hidden);
     } else {
       url.searchParams.delete("hidden");
     }
     window.history.replaceState({}, "", url.toString());
-  }, [hiddenTurns]);
+  }, [expandedTurns, hiddenTurns, isHighlightMode]);
 
   // Toggle a turn's hidden state
   const toggleTurnHidden = useCallback((turnIndex: number) => {
