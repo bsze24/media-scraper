@@ -1463,7 +1463,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           )}
 
           {/* Transcript Content */}
-          <div className={`flex-1 px-6 py-5 space-y-1 ${shortcutsBarVisible ? 'pb-14' : ''}`}>
+          <div className={`flex-1 px-6 py-5 space-y-1 ${shortcutsBarVisible ? 'md:pb-14' : ''}`}>
             {/* Monologue mode */}
             {isMonologue && turns.length > 0 && (
               <div ref={monologueRef}>
