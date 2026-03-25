@@ -113,6 +113,7 @@ function transformAppearance(row: AppearanceRow): TranscriptViewerProps["appeara
     prep_bullets: prepBullets,
     bullets_generated_at: row.bullets_generated_at,
     transcript_char_count: row.cleaned_transcript?.length ?? 0,
+    default_view_params: row.default_view_params ?? null,
   };
 }
 
@@ -133,17 +134,22 @@ export async function generateMetadata({
 
   const title = row.title ?? "Untitled";
 
+  // Priority: URL params > saved default view > none
+  const savedParams = row.default_view_params ? new URLSearchParams(row.default_view_params) : null;
+  const effectiveExpanded = expanded ?? savedParams?.get("expanded") ?? undefined;
+  const effectiveHidden = hidden ?? savedParams?.get("hidden") ?? undefined;
+
   // Parse hidden turn indices (if any)
-  const hiddenSet = hidden != null && hidden !== ""
-    ? new Set(hidden.split(",").map(Number).filter(n => !isNaN(n)))
+  const hiddenSet = effectiveHidden != null && effectiveHidden !== ""
+    ? new Set(effectiveHidden.split(",").map(Number).filter(n => !isNaN(n)))
     : new Set<number>();
 
   let description: string;
-  if (expanded != null) {
+  if (effectiveExpanded != null) {
     // Highlight mode — find first guest/customer turn from expanded indices (excluding hidden)
-    const indices = expanded === ""
+    const indices = effectiveExpanded === ""
       ? new Set<number>()
-      : new Set(expanded.split(",").map(Number).filter(n => !isNaN(n)));
+      : new Set(effectiveExpanded.split(",").map(Number).filter(n => !isNaN(n)));
     const speakerRoleMap = new Map<string, string>();
     for (const s of row.speakers) speakerRoleMap.set(s.name, s.role);
     // Filter out hidden turns from expanded set

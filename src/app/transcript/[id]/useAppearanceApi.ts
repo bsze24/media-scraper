@@ -43,11 +43,12 @@ function getAdminToken(): string | null {
 
 async function apiFetch(
   url: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  method: "POST" | "PATCH" = "POST"
 ): Promise<{ ok: boolean; data: Record<string, unknown>; error?: string }> {
   const token = getAdminToken();
   const res = await fetch(url, {
-    method: "POST",
+    method,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { "x-admin-token": token } : {}),
@@ -248,12 +249,40 @@ export function useAppearanceApi(appearanceId: string, initial: Appearance) {
     [appearanceId, recomputeInferred]
   );
 
+  const [defaultViewParams, setDefaultViewParams] = useState<string | null>(
+    initial.default_view_params ?? null
+  );
+
+  const saveDefaultView = useCallback(
+    async (params: string | null): Promise<boolean> => {
+      setSaving(true);
+      setError(null);
+      try {
+        const { ok, error: apiError } = await apiFetch(
+          `/api/appearances/${appearanceId}/save-view`,
+          { params },
+          "PATCH"
+        );
+        if (!ok) {
+          setError(apiError ?? "Save failed");
+          return false;
+        }
+        setDefaultViewParams(params);
+        return true;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [appearanceId]
+  );
+
   return {
     speakers,
     turns,
     turnSummaries,
     prepBullets,
     hasInferredAttribution,
+    defaultViewParams,
     saving,
     error,
     confirmation,
@@ -262,5 +291,6 @@ export function useAppearanceApi(appearanceId: string, initial: Appearance) {
     renameSpeaker,
     updateSpeaker,
     correctTurn,
+    saveDefaultView,
   };
 }

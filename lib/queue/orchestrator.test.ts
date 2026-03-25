@@ -117,6 +117,7 @@ function makeRow(overrides: Partial<AppearanceRow> = {}): AppearanceRow {
     processing_status: "queued",
     processing_detail: null,
     processing_error: null,
+    default_view_params: null,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,

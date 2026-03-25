@@ -40,5 +40,6 @@ export interface TranscriptViewerProps {
     turn_summaries: Record<number, string> | null; // turn_index → summary text
     bullets_generated_at: string | null;
     transcript_char_count: number;
+    default_view_params: string | null;
   };
 }

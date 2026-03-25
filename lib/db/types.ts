@@ -30,6 +30,7 @@ export interface AppearanceRow {
   processing_detail: string | null;
   prompt_context_snapshot: string | null;
   bullets_generated_at: string | null;
+  default_view_params: string | null;
   processing_error: string | null;
   created_at: string;
   updated_at: string;

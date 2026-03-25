@@ -80,9 +80,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     confirmation,
     clearError,
     clearConfirmation,
+    defaultViewParams,
     renameSpeaker,
     updateSpeaker,
     correctTurn,
+    saveDefaultView,
   } = useAppearanceApi(appearance.id, appearance);
 
   // Derive role from current speakers state
@@ -198,12 +200,24 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const [isHighlightMode, setIsHighlightMode] = useState(false);
 
   // On mount, read URL params and override expandedTurns if ?expanded= is present.
+  // Priority: URL params > saved default view > role-based defaults.
   // useEffect avoids hydration mismatch (server doesn't have window.location).
   const urlInitRef = useRef(false);
   useEffect(() => {
     if (urlInitRef.current) return;
     urlInitRef.current = true;
-    const params = new URLSearchParams(window.location.search);
+    const urlParams = new URLSearchParams(window.location.search);
+    const hasUrlParams = urlParams.has("expanded") || urlParams.has("hidden");
+
+    // Source: URL params if present, otherwise saved default view
+    const params = hasUrlParams
+      ? urlParams
+      : defaultViewParams
+        ? new URLSearchParams(defaultViewParams)
+        : null;
+
+    if (!params) return; // No URL params and no saved view — keep role-based defaults
+
     const expandedParam = params.get("expanded");
     if (expandedParam !== null) {
       setIsHighlightMode(true);
@@ -219,7 +233,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       const indices = hiddenParam.split(",").map(Number).filter(n => !isNaN(n));
       setHiddenTurns(new Set(indices));
     }
-  }, []);
+    // Don't replaceState when loading from saved view — keep URL clean
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleTurnExpanded = useCallback((turnIndex: number) => {
     setExpandedTurns(prev => {
@@ -445,7 +460,42 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     return `~${formatDuration(effective)} at ${playbackRate}x (${formatDuration(highlightDurationSec)} at 1x)`;
   }, [highlightDurationSec, playbackRate, youtube_id]);
 
-  // Shared reel info block — reset button + duration. Used in all control strip variants.
+  // ---- Save default view ----
+  const [saveViewConfirmation, setSaveViewConfirmation] = useState(false);
+
+  const buildParamsString = useCallback(() => {
+    const parts: string[] = [];
+    if (isHighlightMode) {
+      const expanded = Array.from(expandedTurns).sort((a, b) => a - b).join(",");
+      parts.push(`expanded=${expanded}`);
+    }
+    if (hiddenTurns.size > 0) {
+      const hidden = Array.from(hiddenTurns).sort((a, b) => a - b).join(",");
+      parts.push(`hidden=${hidden}`);
+    }
+    return parts.join("&") || null;
+  }, [expandedTurns, hiddenTurns, isHighlightMode]);
+
+  const currentParams = buildParamsString();
+  const hasChangesFromDefaults = isHighlightMode || hiddenTurns.size > 0;
+  const savedMatchesCurrent = defaultViewParams === currentParams;
+
+  const handleSaveView = useCallback(async () => {
+    const params = buildParamsString();
+    if (!params) return;
+    const success = await saveDefaultView(params);
+    if (success) {
+      setSaveViewConfirmation(true);
+      setTimeout(() => setSaveViewConfirmation(false), 1500);
+    }
+  }, [buildParamsString, saveDefaultView]);
+
+  const handleClearSavedView = useCallback(async () => {
+    await saveDefaultView(null);
+    handleResetView();
+  }, [saveDefaultView, handleResetView]);
+
+  // Shared reel info block — reset button + duration + save view. Used in all control strip variants.
   const reelInfoBlock = isHighlightMode ? (
     <>
       <button onClick={handleResetView} className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors">Reset view</button>
@@ -453,6 +503,18 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       {highlightDurationLabel && (
         <span className="text-[11px] text-[#888]">{highlightDurationLabel} highlight{fullCallLabel}</span>
       )}
+      {saveViewConfirmation ? (
+        <span className="text-[11px] text-green-600">Saved ✓</span>
+      ) : savedMatchesCurrent && defaultViewParams ? (
+        <span className="text-[11px] text-[#999]">
+          ✓ Saved
+          <button onClick={handleClearSavedView} className="ml-1.5 text-[10px] text-[#bbb] hover:text-[#b8860b] transition-colors underline">Clear</button>
+        </span>
+      ) : hasChangesFromDefaults && !saving ? (
+        <button onClick={handleSaveView} className="text-[11px] text-[#888] hover:text-[#b8860b] transition-colors">
+          {defaultViewParams ? "Update view" : "Save view"}
+        </button>
+      ) : null}
     </>
   ) : null;
 
@@ -1027,6 +1089,15 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         return;
       }
 
+      // Cmd+S / Ctrl+S — save current view as default (works even from inputs)
+      if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        if (isHighlightMode || hiddenTurns.size > 0) {
+          handleSaveView();
+        }
+        return;
+      }
+
       // Input guard — all other keys blocked when in input
       if (isInput) return;
 
@@ -1298,6 +1369,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     cancelEditTurnText, startEditingTurnText, seekToTime, cyclePlaybackRate,
     toggleTurnExpanded, toggleTurnHidden, handleResetView, handleSpeakerClick,
     highlightedQuote, hiddenTurns, expandedPlaylist, youtube_id,
+    handleSaveView, isHighlightMode,
   ]);
   // EXTRACT: useKeyboardShortcuts — end
 
@@ -2265,6 +2337,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   ["x", "Toggle hide turn"],
                   ["\u21E7X", "Unhide all turns"],
                   ["\u21E7R", "Reset to defaults"],
+                  ["\u2318S", "Save view as default"],
                 ]],
                 ["Filter", [
                   ["1\u20139", "Toggle speaker filter"],
