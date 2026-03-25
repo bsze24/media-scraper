@@ -290,6 +290,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   // Unhide a group of turns (for placeholder click)
   const unhideGroup = useCallback((turnIndices: number[]) => {
+    suppressUrlSyncRef.current = false; // User interaction — resume URL sync
     setHiddenTurns(prev => {
       const next = new Set(prev);
       for (const idx of turnIndices) next.delete(idx);
@@ -1310,6 +1311,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         case "X": {
           // Shift+X — unhide all
           if (!e.shiftKey) break;
+          suppressUrlSyncRef.current = false;
           setHiddenTurns(new Set());
           break;
         }
@@ -2150,6 +2152,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                               if (matchingTurn) {
                                 setActiveTurnIndex(matchingTurn.turn_index);
                                 // Ensure turn is expanded so the highlight is visible
+                                suppressUrlSyncRef.current = false;
                                 setExpandedTurns(prev => {
                                   if (prev.has(matchingTurn.turn_index)) return prev;
                                   const next = new Set(prev);
