@@ -1,11 +1,16 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
 import type { TranscriptViewerProps } from "./types";
 
 type Speaker = TranscriptViewerProps["appearance"]["speakers"][number];
 
 const ROLE_OPTIONS = ["host", "guest", "rowspace", "customer", "other"] as const;
+
+export interface SpeakerPanelHandle {
+  startEditing(speakerName: string, mode: 'rename' | 'meta'): void;
+  cancelEditing(): boolean;
+}
 
 export interface SpeakerPanelProps {
   speakers: Speaker[];
@@ -20,9 +25,10 @@ export interface SpeakerPanelProps {
   onRenameSpeaker: (oldName: string, newName: string) => Promise<{ turnsUpdated: number; bulletsUpdated: number } | null>;
   onUpdateSpeaker: (speakerName: string, fields: { role?: string; title?: string; affiliation?: string }) => Promise<boolean>;
   onActiveSpeakerUpdate: (updater: (prev: string | null) => string | null) => void;
+  showNumberBadges: boolean;
 }
 
-export function SpeakerPanel({
+export const SpeakerPanel = forwardRef<SpeakerPanelHandle, SpeakerPanelProps>(function SpeakerPanel({
   speakers,
   activeSpeaker,
   onSpeakerClick,
@@ -35,13 +41,40 @@ export function SpeakerPanel({
   onRenameSpeaker,
   onUpdateSpeaker,
   onActiveSpeakerUpdate,
-}: SpeakerPanelProps) {
+  showNumberBadges,
+}, ref) {
   // Local editing state — only SpeakerPanel reads/writes these
   const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
   const [editingSpeakerName, setEditingSpeakerName] = useState("");
   const [editingSpeakerMeta, setEditingSpeakerMeta] = useState<string | null>(null);
   const [editingSpeakerMetaValue, setEditingSpeakerMetaValue] = useState("");
   const savingGuardRef = useRef(false);
+
+  useImperativeHandle(ref, () => ({
+    startEditing(speakerName: string, mode: 'rename' | 'meta') {
+      if (mode === 'rename') {
+        setEditingSpeaker(speakerName);
+        setEditingSpeakerName(speakerName);
+      } else {
+        const speaker = speakers.find(s => s.name === speakerName);
+        setEditingSpeakerMeta(speakerName);
+        setEditingSpeakerMetaValue(
+          [speaker?.title, speaker?.affiliation].filter(Boolean).join(", ")
+        );
+      }
+    },
+    cancelEditing() {
+      if (editingSpeaker) {
+        setEditingSpeaker(null);
+        return true;
+      }
+      if (editingSpeakerMeta) {
+        setEditingSpeakerMeta(null);
+        return true;
+      }
+      return false;
+    },
+  }));
 
   const handleSpeakerRename = useCallback(
     async (oldName: string, newName: string) => {
@@ -123,7 +156,7 @@ export function SpeakerPanel({
         </div>
       )}
       <div className="space-y-2">
-        {speakers.map((s) => {
+        {speakers.map((s, idx) => {
           const isHost = s.role === "host" || s.role === "rowspace";
           const isEditing = editingSpeaker === s.name;
 
@@ -141,6 +174,9 @@ export function SpeakerPanel({
               }`}
             >
               <div className="flex items-center justify-between gap-1">
+                {showNumberBadges && idx < 9 && (
+                  <span className="text-[10px] font-mono text-[#bbb] shrink-0">[{idx + 1}]</span>
+                )}
                 {isEditing ? (
                   <input
                     autoFocus
@@ -226,4 +262,4 @@ export function SpeakerPanel({
       </div>
     </div>
   );
-}
+});

@@ -73,6 +73,25 @@ export function highlightText(text: string, query: string): ReactNode {
   );
 }
 
+export function highlightQuote(text: string, quote: string): ReactNode {
+  if (!quote) return text;
+  // Match the first 80 chars of the quote (same prefix used for turn matching)
+  const prefix = quote.slice(0, 80);
+  const idx = text.indexOf(prefix);
+  if (idx === -1) return text;
+  // Find the full extent of the quote in the text
+  const endIdx = quote.length <= text.length - idx && text.slice(idx, idx + quote.length) === quote
+    ? idx + quote.length
+    : idx + prefix.length;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="rounded-sm bg-[#b8860b]/20 px-0.5">{text.slice(idx, endIdx)}</mark>
+      {text.slice(endIdx)}
+    </>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Formatting
 // ---------------------------------------------------------------------------

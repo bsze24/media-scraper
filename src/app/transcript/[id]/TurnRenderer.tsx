@@ -2,7 +2,7 @@
 
 import React from "react";
 import type { TranscriptViewerProps } from "./types";
-import { highlightText, formatTimestamp } from "./helpers";
+import { highlightText, highlightQuote, formatTimestamp } from "./helpers";
 
 type Turn = TranscriptViewerProps["appearance"]["turns"][number];
 type Speaker = TranscriptViewerProps["appearance"]["speakers"][number];
@@ -14,7 +14,6 @@ export interface TurnRendererProps {
   isActive: boolean;
   isTurnHit: boolean;
   isCitedTurn: boolean;
-  isDimmed: boolean;
   isHost: boolean;
   // Collapse
   collapsedText: string;
@@ -42,8 +41,9 @@ export interface TurnRendererProps {
   onTurnSpeakerChange: ((turnIndex: number, oldSpeaker: string, newSpeaker: string) => void) | null;
   onToggleSpeakerDropdown: ((turnIndex: number) => void) | null;
   onScrollToSpeakerPanel: (() => void) | null;
-  // Search
+  // Search & quote highlight
   searchQuery: string;
+  highlightedQuote: string | null;
 }
 
 export const TurnRenderer = React.memo(function TurnRenderer({
@@ -52,7 +52,6 @@ export const TurnRenderer = React.memo(function TurnRenderer({
   isActive,
   isTurnHit,
   isCitedTurn,
-  isDimmed,
   isHost,
   collapsedText,
   collapsedIsSummary,
@@ -75,6 +74,7 @@ export const TurnRenderer = React.memo(function TurnRenderer({
   onToggleSpeakerDropdown,
   onScrollToSpeakerPanel,
   searchQuery,
+  highlightedQuote,
 }: TurnRendererProps) {
   return (
     <div
@@ -89,7 +89,6 @@ export const TurnRenderer = React.memo(function TurnRenderer({
           ? 'bg-[#b8860b]/5 border-[#b8860b]/40'
           : 'hover:bg-[#faf9f7] border-transparent'
       }`}
-      style={isDimmed ? { opacity: 0.3 } : undefined}
     >
       {/* Header: timestamp + speaker name/title + cited badge */}
       <div className="flex items-baseline gap-3 mb-1">
@@ -176,7 +175,9 @@ export const TurnRenderer = React.memo(function TurnRenderer({
           <p className={`text-[14px] leading-[1.6] ${
             !isExpanded && isHost ? 'text-[#555] italic' : 'text-[#333]'
           }`}>
-            {isExpanded || isTurnHit
+            {highlightedQuote && isExpanded
+              ? highlightQuote(turn.text, highlightedQuote)
+              : isExpanded || isTurnHit
               ? highlightText(turn.text, searchQuery)
               : collapsedIsSummary
               ? collapsedText
