@@ -1276,7 +1276,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             <div
               className={
                 videoMode === 'full'
-                  ? "sticky top-0 z-40 bg-[#0a0a0a]"
+                  ? "flex-shrink-0 bg-[#0a0a0a]"
                   : videoMode === 'pip'
                   ? `fixed z-50 w-[300px] shadow-2xl rounded overflow-hidden bg-[#0a0a0a] ${floatingPanel !== null ? "bottom-4 left-4" : "bottom-4 right-4"}`
                   : "absolute -left-[9999px] w-1 h-1 overflow-hidden"
