@@ -723,7 +723,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   // accounting for sticky headers (video player, control strip) that vary by mode.
   const scrollIntoViewWithOffset = useCallback((el: Element) => {
     const container = scrollContainerRef.current;
-    if (!container) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    // Fall back to native scrollIntoView when container is missing or not scrollable
+    // (mobile viewports use overflow:visible on the section, so scrollTo is a no-op)
+    if (!container || container.scrollHeight <= container.clientHeight) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
     // Measure total height of sticky children at the top of the scroll container
     let stickyBottom = 0;
     for (const child of Array.from(container.children)) {
