@@ -2079,7 +2079,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                                 });
                                 setHighlightedQuote(firstQuote.quote);
                               } else if (isMonologue) {
-                                monologueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                if (monologueRef.current) scrollIntoViewWithOffset(monologueRef.current);
                               } else if (firstQuote.section_anchor) {
                                 scrollToSection(firstQuote.section_anchor);
                               }
