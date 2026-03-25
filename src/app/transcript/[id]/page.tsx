@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { getAppearanceById } from "@lib/db/queries";
 import { formatDate } from "@lib/utils/format-date";
 import type { AppearanceRow } from "@lib/db/types";
@@ -107,6 +108,63 @@ function transformAppearance(row: AppearanceRow): TranscriptViewerProps["appeara
     prep_bullets: prepBullets,
     bullets_generated_at: row.bullets_generated_at,
     transcript_char_count: row.cleaned_transcript?.length ?? 0,
+  };
+}
+
+export async function generateMetadata({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ expanded?: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const { expanded } = await searchParams;
+  const row = await getAppearanceById(id);
+
+  if (!row || row.processing_status !== "complete") {
+    return { title: "Meeting Prep Tool" };
+  }
+
+  const title = row.title ?? "Untitled";
+
+  let description: string;
+  if (expanded != null) {
+    // Highlight mode — find first guest/customer turn from expanded indices
+    const indices = expanded === ""
+      ? new Set<number>()
+      : new Set(expanded.split(",").map(Number).filter(n => !isNaN(n)));
+    const speakerRoleMap = new Map<string, string>();
+    for (const s of row.speakers) speakerRoleMap.set(s.name, s.role);
+    const expandedTurns = (row.turns ?? []).filter(t => indices.has(t.turn_index));
+    const quoteTurn = expandedTurns.find(t => {
+      const role = speakerRoleMap.get(t.speaker) ?? "guest";
+      return role === "guest" || role === "customer";
+    });
+    const quoteText = quoteTurn
+      ? `"${quoteTurn.text.slice(0, 150)}${quoteTurn.text.length > 150 ? "…" : ""}"`
+      : "";
+    const count = indices.size;
+    description = quoteText
+      ? `${quoteText} — ${count} highlighted moment${count !== 1 ? "s" : ""}`
+      : `${count} highlighted moment${count !== 1 ? "s" : ""}`;
+  } else {
+    // Default mode — list speakers + turn count
+    const names = row.speakers.map(s => s.name).join(", ");
+    const turnCount = (row.turns ?? []).length;
+    description = names
+      ? `${names} · ${turnCount} turns`
+      : `${turnCount} turns`;
+  }
+
+  return {
+    title,
+    openGraph: {
+      title,
+      description,
+      type: "article",
+      siteName: "bz-bot 🤖",
+    },
   };
 }
 
