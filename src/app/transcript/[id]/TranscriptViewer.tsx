@@ -299,7 +299,16 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const [feedback, setFeedback] = useState<Record<number, BulletFeedback>>({});
   const [floatingPanel, setFloatingPanel] = useState<{ idx: number } | null>(null);
   const [panelDraft, setPanelDraft] = useState("");
-  const [videoMode, setVideoMode] = useState<'collapsed' | 'pip' | 'full'>(youtube_id ? 'full' : 'collapsed');
+  // Podcasts are audio-first (collapsed). Personal uploads default to full video.
+  const AUDIO_FIRST_SOURCES = new Set([
+    "Invest Like the Best",
+    "Invest Like the Best with Patrick O'Shaughnessy",
+    "Capital Allocators with Ted Seides",
+    "Alt Goes Mainstream (AGM)",
+  ]);
+  const [videoMode, setVideoMode] = useState<'collapsed' | 'pip' | 'full'>(
+    youtube_id && !AUDIO_FIRST_SOURCES.has(source_name) ? 'full' : 'collapsed'
+  );
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -599,6 +608,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           m[a] = (turnsBySection.get(a) ?? []).some((t) => t.speaker === name);
         });
         setExpandedSections(m);
+        // Scroll to first turn for this speaker
+        const firstTurn = turns.find(t => t.speaker === name);
+        if (firstTurn) {
+          requestAnimationFrame(() => {
+            const el = document.querySelector(`[data-turn-index="${firstTurn.turn_index}"]`);
+            el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
+        }
       }
     },
     [activeSpeaker, allAnchors, turnsBySection, turns, expandedTurns, isHighlightMode]
@@ -1268,7 +1285,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             <div
               className={
                 videoMode === 'full'
-                  ? "sticky top-0 z-40 bg-[#0a0a0a]"
+                  ? "flex-shrink-0 bg-[#0a0a0a]"
                   : videoMode === 'pip'
                   ? `fixed z-50 w-[300px] shadow-2xl rounded overflow-hidden bg-[#0a0a0a] ${floatingPanel !== null ? "bottom-4 left-4" : "bottom-4 right-4"}`
                   : "absolute -left-[9999px] w-1 h-1 overflow-hidden"
@@ -1484,7 +1501,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                       isActive={activeTurnIndex === turn.turn_index}
                       isTurnHit={hasSearch && searchResults.turnKeys.has(turnKey)}
                       isCitedTurn={false}
-
+                      isSpeakerFiltered={activeSpeaker === turn.speaker}
                       isHost={isCollapsedRole(turn.speaker)}
                       collapsedText={summary || (hasMore ? first : turn.text)}
                       collapsedIsSummary={!!summary}
@@ -1529,7 +1546,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                       isActive={activeTurnIndex === turn.turn_index}
                       isTurnHit={hasSearch && searchResults.turnKeys.has(`${INTRO_ANCHOR}-${ti}`)}
                       isCitedTurn={false}
-
+                      isSpeakerFiltered={activeSpeaker === turn.speaker}
                       isHost={isCollapsedRole(turn.speaker)}
                       collapsedText={summary || (hasMore ? first : turn.text)}
                       collapsedIsSummary={!!summary}
@@ -1631,7 +1648,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                             isActive={activeTurnIndex === turn.turn_index}
                             isTurnHit={hasSearch && searchResults.turnKeys.has(`${section.anchor}-${ti}`)}
                             isCitedTurn={citedTurnIndices.has(turn.turn_index)}
-      
+                            isSpeakerFiltered={activeSpeaker === turn.speaker}
                             isHost={isCollapsedRole(turn.speaker)}
                             collapsedText={summary || (hasMore ? first : turn.text)}
                             collapsedIsSummary={!!summary}
