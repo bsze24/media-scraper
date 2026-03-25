@@ -203,6 +203,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   // Priority: URL params > saved default view > role-based defaults.
   // useEffect avoids hydration mismatch (server doesn't have window.location).
   const urlInitRef = useRef(false);
+  // When loading from saved view (not URL params), suppress URL sync effects
+  // so the URL stays clean. Cleared on first user interaction.
+  const suppressUrlSyncRef = useRef(false);
   useEffect(() => {
     if (urlInitRef.current) return;
     urlInitRef.current = true;
@@ -217,6 +220,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         : null;
 
     if (!params) return; // No URL params and no saved view — keep role-based defaults
+
+    // Suppress URL sync when loading from saved view (not URL params)
+    if (!hasUrlParams) suppressUrlSyncRef.current = true;
 
     const expandedParam = params.get("expanded");
     if (expandedParam !== null) {
@@ -233,10 +239,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       const indices = hiddenParam.split(",").map(Number).filter(n => !isNaN(n));
       setHiddenTurns(new Set(indices));
     }
-    // Don't replaceState when loading from saved view — keep URL clean
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleTurnExpanded = useCallback((turnIndex: number) => {
+    suppressUrlSyncRef.current = false; // User interaction — resume URL sync
     setExpandedTurns(prev => {
       const next = new Set(prev);
       if (next.has(turnIndex)) next.delete(turnIndex);
@@ -251,6 +257,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!isHighlightMode) return;
+    if (suppressUrlSyncRef.current) return;
     const indices = Array.from(expandedTurns).sort((a, b) => a - b).join(",");
     const url = new URL(window.location.href);
     url.searchParams.set("expanded", indices);
@@ -260,9 +267,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   // Sync hiddenTurns to URL via replaceState
   // Guard: skip until URL-init effect has run, otherwise the initial empty set
   // would delete ?hidden= from the URL before it's read.
+  // Also skip when loaded from saved view (keep URL clean).
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!urlInitRef.current) return;
+    if (suppressUrlSyncRef.current) { suppressUrlSyncRef.current = false; return; }
     const url = new URL(window.location.href);
     if (hiddenTurns.size > 0) {
       const indices = Array.from(hiddenTurns).sort((a, b) => a - b).join(",");
@@ -275,6 +284,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   // Toggle a turn's hidden state
   const toggleTurnHidden = useCallback((turnIndex: number) => {
+    suppressUrlSyncRef.current = false; // User interaction — resume URL sync
     setHiddenTurns(prev => {
       const next = new Set(prev);
       if (next.has(turnIndex)) {
@@ -491,8 +501,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   }, [buildParamsString, saveDefaultView]);
 
   const handleClearSavedView = useCallback(async () => {
-    await saveDefaultView(null);
-    handleResetView();
+    const success = await saveDefaultView(null);
+    if (success) handleResetView();
   }, [saveDefaultView, handleResetView]);
 
   // Shared reel info block — reset button + duration + save view. Used in all control strip variants.
