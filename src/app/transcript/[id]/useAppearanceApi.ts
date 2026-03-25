@@ -128,7 +128,8 @@ export function useAppearanceApi(appearanceId: string, initial: Appearance) {
           { old_name: oldName, new_name: newName }
         );
         if (!ok) {
-          setError(apiError ?? "Rename failed");
+          const msg = apiError ?? "Rename failed";
+          setError(msg.includes("not found") ? `${msg} — data may have changed, try refreshing the page` : msg);
           return null;
         }
         if (data.no_op) return null;
@@ -179,7 +180,8 @@ export function useAppearanceApi(appearanceId: string, initial: Appearance) {
           { speaker_name: speakerName, ...fields }
         );
         if (!ok) {
-          setError(apiError ?? "Update failed");
+          const msg = apiError ?? "Update failed";
+          setError(msg.includes("not found") ? `${msg} — data may have changed, try refreshing the page` : msg);
           return false;
         }
         if (data.no_op) return true;
@@ -230,7 +232,8 @@ export function useAppearanceApi(appearanceId: string, initial: Appearance) {
           { turn_index: turnIndex, field, old_value: oldValue, new_value: newValue }
         );
         if (!ok) {
-          setError(apiError ?? "Correction failed");
+          const msg = apiError ?? "Correction failed";
+          setError(msg.includes("not found") ? `${msg} — data may have changed, try refreshing the page` : msg);
           return false;
         }
         if (data.no_op) return true;

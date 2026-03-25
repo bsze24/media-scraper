@@ -299,7 +299,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const [feedback, setFeedback] = useState<Record<number, BulletFeedback>>({});
   const [floatingPanel, setFloatingPanel] = useState<{ idx: number } | null>(null);
   const [panelDraft, setPanelDraft] = useState("");
-  const [videoMode, setVideoMode] = useState<'collapsed' | 'pip' | 'full'>('collapsed');
+  const [videoMode, setVideoMode] = useState<'collapsed' | 'pip' | 'full'>(youtube_id ? 'full' : 'collapsed');
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -686,6 +686,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   // ---- Keyboard shortcuts state & derived values ----
   const [showHelpOverlay, setShowHelpOverlay] = useState(false);
 
+  // EXTRACT: KeyboardShortcutsBar — begin
+  // null = not yet hydrated (prevents flash for users who dismissed the bar)
+  const [shortcutsBarVisible, setShortcutsBarVisible] = useState<boolean | null>(null);
+  // SSR-safe: read localStorage on mount
+  useEffect(() => {
+    setShortcutsBarVisible(localStorage.getItem("hideShortcutsBar") !== "true");
+  }, []);
+
   const activeTurn = useMemo(() => {
     if (activeTurnIndex === null) return null;
     return turns.find(t => t.turn_index === activeTurnIndex) ?? null;
@@ -736,6 +744,45 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     }
     return result;
   }, [turnsBySection, sections]);
+
+  // Context-aware shortcuts for the bottom bar
+  const contextBarShortcuts = useMemo(() => {
+    // Priority order: most specific state wins
+    if (editingTurnText !== null) {
+      const modKey = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent) ? '\u2318' : 'Ctrl';
+      return [['Esc', 'Cancel edit'], [`${modKey}\u21B5`, 'Save']] as [string, string][];
+    }
+    if (turnSpeakerDropdown !== null) {
+      return [['Esc', 'Close']] as [string, string][];
+    }
+    // No active turn (landing state)
+    if (activeTurnIndex === null) {
+      const shortcuts: [string, string][] = [
+        ['j', 'Start navigating'],
+        ['/', 'Search'],
+        ['?', 'All shortcuts'],
+      ];
+      if (speakers.length >= 2) {
+        shortcuts.push(['1\u20139', 'Filter speaker']);
+      }
+      return shortcuts;
+    }
+    // Active turn exists — show contextual actions
+    const shortcuts: [string, string][] = [
+      ['j/k', 'Navigate'],
+      ['m', 'Toggle'],
+    ];
+    if (!isMonologue) {
+      shortcuts.push(['e', 'Edit']);
+    }
+    if (activeTurn?.timestamp_seconds != null && youtube_id) {
+      shortcuts.push(['t', 'Seek + follow']);
+    }
+    shortcuts.push(['n/p', 'Section']);
+    shortcuts.push(['?', 'More']);
+    return shortcuts;
+  }, [editingTurnText, turnSpeakerDropdown, activeTurnIndex, activeTurn, isMonologue, youtube_id, speakers.length]);
+  // EXTRACT: KeyboardShortcutsBar — end
 
   // Unified keydown listener
   useEffect(() => {
@@ -1416,7 +1463,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           )}
 
           {/* Transcript Content */}
-          <div className="flex-1 px-6 py-5 space-y-1">
+          <div className={`flex-1 px-6 py-5 space-y-1 ${shortcutsBarVisible === true ? 'md:pb-14' : ''}`}>
             {/* Monologue mode */}
             {isMonologue && turns.length > 0 && (
               <div ref={monologueRef}>
@@ -1826,7 +1873,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         );
       })()}
 
-      {/* Keyboard Shortcut Help Overlay */}
+      {/* Keyboard Shortcut Help Modal */}
       {showHelpOverlay && (
         <div
           className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center"
@@ -1851,32 +1898,36 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   ["n", "Next section"],
                   ["p", "Previous section"],
                 ]],
-                ["Playback", [
-                  ["Space", "Play / pause"],
-                  ["t", "Seek to active turn + auto-follow"],
-                  ["f", "Toggle follow at current position"],
-                ]],
+                ...(youtube_id ? [
+                  ["Playback", [
+                    ["Space", "Play / pause"],
+                    ["t", "Seek to active turn + auto-follow"],
+                    ["f", "Toggle auto-follow"],
+                  ]],
+                ] as [string, [string, string][]][] : []),
                 ["Editing", [
                   ["e", "Edit turn text"],
                   ["a", "Re-attribute turn speaker"],
-                  ["Shift+A", "Rename speaker globally"],
-                  ["Shift+E", "Edit speaker title"],
+                  ["\u21E7A", "Rename speaker globally"],
+                  ["\u21E7E", "Edit speaker title"],
                 ]],
                 ["View", [
                   ["m", "Toggle expand / collapse"],
-                  ["Shift+R", "Reset to defaults"],
+                  ["\u21E7R", "Reset to defaults"],
                 ]],
                 ["Filter", [
-                  ["1–9", "Toggle speaker filter"],
+                  ["1\u20139", "Toggle speaker filter"],
                 ]],
-                ["Video", [
-                  ["q", "Toggle pip / audio-only"],
-                  ["w", "Toggle full / audio-only"],
-                ]],
+                ...(youtube_id ? [
+                  ["Video", [
+                    ["q", "Toggle pip / audio-only"],
+                    ["w", "Toggle full / audio-only"],
+                  ]],
+                ] as [string, [string, string][]][] : []),
                 ["Search", [
                   ["/", "Focus search"],
                   ["?", "Toggle this help"],
-                  ["Esc", "Close overlay / cancel edit / clear active"],
+                  ["Esc", "Close / cancel / clear active"],
                 ]],
               ] as [string, [string, string][]][]).map(([group, keys]) => (
                 <div key={group}>
@@ -1892,8 +1943,45 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                 </div>
               ))}
             </div>
+            <div className="px-5 py-3 bg-[#faf9f7] border-t border-[#e5e3df] text-[11px] text-[#888]">
+              Press <kbd className="font-mono px-1 py-0.5 bg-[#f5f4f2] border border-[#e5e3df] rounded text-[10px]">?</kbd> to dismiss
+            </div>
           </div>
         </div>
+      )}
+
+      {/* Context-aware keyboard shortcuts bar */}
+      {shortcutsBarVisible && (
+        <div className="hidden md:flex fixed bottom-0 left-0 right-0 z-50 bg-[#fffdf8] border-t border-[#e5e3df] shadow-lg px-4 py-2.5 items-center gap-4">
+          {contextBarShortcuts.map(([key, label]) => (
+            <div key={key} className="flex items-center gap-1.5">
+              <kbd className="font-mono text-[11px] bg-[#f5f4f2] border border-[#e5e3df] px-1.5 py-0.5 rounded text-[#555]">{key}</kbd>
+              <span className="text-[12px] text-[#666]">{label}</span>
+            </div>
+          ))}
+          <button
+            onClick={() => {
+              setShortcutsBarVisible(false);
+              localStorage.setItem("hideShortcutsBar", "true");
+            }}
+            className="ml-auto text-[11px] text-[#999] hover:text-[#333]"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
+      {/* Re-show shortcuts bar button (when dismissed) */}
+      {shortcutsBarVisible === false && (
+        <button
+          onClick={() => {
+            setShortcutsBarVisible(true);
+            localStorage.removeItem("hideShortcutsBar");
+          }}
+          className="hidden md:flex fixed bottom-3 right-3 z-40 items-center justify-center font-mono text-[12px] bg-[#f5f4f2] border border-[#e5e3df] px-2 py-1 rounded text-[#555] hover:text-[#333] hover:bg-[#eeedeb] shadow-sm"
+        >
+          ?
+        </button>
       )}
     </div>
   );
