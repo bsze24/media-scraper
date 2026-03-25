@@ -243,8 +243,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   }, [expandedTurns, isHighlightMode]);
 
   // Sync hiddenTurns to URL via replaceState
+  // Guard: skip until URL-init effect has run, otherwise the initial empty set
+  // would delete ?hidden= from the URL before it's read.
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!urlInitRef.current) return;
     const url = new URL(window.location.href);
     if (hiddenTurns.size > 0) {
       const indices = Array.from(hiddenTurns).sort((a, b) => a - b).join(",");
