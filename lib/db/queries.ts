@@ -137,6 +137,12 @@ export async function insertManualAppearance(
 // Pipeline step updates
 // ---------------------------------------------------------------------------
 
+export async function deleteAppearance(id: string): Promise<void> {
+  const supabase = createServerClient();
+  const { error } = await supabase.from("appearances").delete().eq("id", id);
+  if (error) throw error;
+}
+
 /**
  * Atomically claim a row for processing by transitioning from expectedStatus
  * to newStatus. Returns true if the claim succeeded (row was in expected state).
