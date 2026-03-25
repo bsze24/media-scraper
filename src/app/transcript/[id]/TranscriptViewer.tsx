@@ -1475,9 +1475,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   {formatDuration(highlightDurationSec)} highlight
                   {(() => {
                     // Full call: prefer player duration, fall back to last turn timestamp
-                    const lastTs = turns.length > 0
-                      ? Math.max(...turns.filter(t => t.timestamp_seconds != null).map(t => t.timestamp_seconds!))
-                      : 0;
+                    const timestamped = turns.filter(t => t.timestamp_seconds != null).map(t => t.timestamp_seconds!);
+                    const lastTs = timestamped.length > 0 ? Math.max(...timestamped) : 0;
                     const fullSec = duration > 0 ? duration : lastTs > 0 ? lastTs + 120 : 0;
                     return fullSec > 0 ? ` · ${formatDuration(fullSec)} full call` : '';
                   })()}

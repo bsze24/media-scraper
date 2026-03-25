@@ -4,7 +4,7 @@
  */
 export function formatDuration(seconds: number): string {
   if (!seconds || seconds < 0) return "0 sec";
-  const totalMin = Math.round(seconds / 60);
+  const totalMin = Math.floor(seconds / 60);
   if (totalMin < 1) return `${Math.round(seconds)} sec`;
   if (totalMin < 60) return `${totalMin} min`;
   const hrs = Math.floor(totalMin / 60);

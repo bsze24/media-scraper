@@ -162,9 +162,8 @@ export async function generateMetadata({
       );
       if (nextTurn) highlightSec += nextTurn.timestamp_seconds! - turn.timestamp_seconds!;
     }
-    const lastTs = allTurns.length > 0
-      ? Math.max(...allTurns.filter(t => t.timestamp_seconds != null).map(t => t.timestamp_seconds!))
-      : 0;
+    const timestamped = allTurns.filter(t => t.timestamp_seconds != null).map(t => t.timestamp_seconds!);
+    const lastTs = timestamped.length > 0 ? Math.max(...timestamped) : 0;
     const fullSec = lastTs > 0 ? lastTs + 120 : 0;
     const durationSuffix = highlightSec > 0
       ? ` · ${formatDuration(highlightSec)} highlight${fullSec > 0 ? ` from ${formatDuration(fullSec)} call` : ''}`
