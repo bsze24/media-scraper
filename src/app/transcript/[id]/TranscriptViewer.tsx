@@ -299,7 +299,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const [feedback, setFeedback] = useState<Record<number, BulletFeedback>>({});
   const [floatingPanel, setFloatingPanel] = useState<{ idx: number } | null>(null);
   const [panelDraft, setPanelDraft] = useState("");
-  const [videoMode, setVideoMode] = useState<'collapsed' | 'pip' | 'full'>('collapsed');
+  const [videoMode, setVideoMode] = useState<'collapsed' | 'pip' | 'full'>(youtube_id ? 'full' : 'collapsed');
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -1972,7 +1972,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       )}
 
       {/* Re-show shortcuts bar button (when dismissed) */}
-      {!shortcutsBarVisible && (
+      {shortcutsBarVisible === false && (
         <button
           onClick={() => {
             setShortcutsBarVisible(true);

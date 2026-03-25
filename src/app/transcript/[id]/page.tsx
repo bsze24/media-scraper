@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getAppearanceById } from "@lib/db/queries";
@@ -6,6 +7,9 @@ import type { AppearanceRow } from "@lib/db/types";
 import type { SpeakerRole } from "@/types/appearance";
 import type { TranscriptViewerProps } from "./types";
 import { TranscriptViewer } from "./TranscriptViewer";
+
+// React cache() deduplicates across generateMetadata + page component in the same request
+const getCachedAppearance = cache(getAppearanceById);
 
 function extractYoutubeId(url: string): string | null {
   try {
@@ -120,7 +124,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const { expanded } = await searchParams;
-  const row = await getAppearanceById(id);
+  const row = await getCachedAppearance(id);
 
   if (!row || row.processing_status !== "complete") {
     return { title: "Meeting Prep Tool" };
@@ -174,7 +178,7 @@ export default async function TranscriptPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const row = await getAppearanceById(id);
+  const row = await getCachedAppearance(id);
 
   if (!row) {
     notFound();
