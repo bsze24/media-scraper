@@ -426,6 +426,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   const panelInputRef = useRef<HTMLInputElement>(null);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
   const monologueRef = useRef<HTMLDivElement | null>(null);
   const ytPlayerRef = useRef<YTPlayer | null>(null);
   const pendingSeekRef = useRef<number | null>(null);
@@ -718,6 +719,29 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const savedExpandedTurnsRef = useRef<Set<number> | null>(null);
   const savedIsHighlightModeRef = useRef(false);
 
+  // Scroll an element into view within the transcript scroll container,
+  // accounting for sticky headers (video player, control strip) that vary by mode.
+  const scrollIntoViewWithOffset = useCallback((el: Element) => {
+    const container = scrollContainerRef.current;
+    // Fall back to native scrollIntoView when container is missing or not scrollable
+    // (mobile viewports use overflow:visible on the section, so scrollTo is a no-op)
+    if (!container || container.scrollHeight <= container.clientHeight) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    // Measure total height of sticky children at the top of the scroll container
+    let stickyBottom = 0;
+    for (const child of Array.from(container.children)) {
+      const style = getComputedStyle(child);
+      if (style.position === 'sticky') {
+        const rect = child.getBoundingClientRect();
+        stickyBottom = Math.max(stickyBottom, rect.bottom - container.getBoundingClientRect().top);
+      }
+    }
+    const elTop = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
+    container.scrollTo({ top: elTop - stickyBottom - 12, behavior: 'smooth' });
+  }, []);
+
   const handleSpeakerClick = useCallback(
     (name: string) => {
       if (activeSpeaker === name) {
@@ -762,23 +786,21 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         if (firstTurn) {
           requestAnimationFrame(() => {
             const el = document.querySelector(`[data-turn-index="${firstTurn.turn_index}"]`);
-            el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if (el) scrollIntoViewWithOffset(el);
           });
         }
       }
     },
-    [activeSpeaker, allAnchors, turnsBySection, turns, expandedTurns, isHighlightMode]
+    [activeSpeaker, allAnchors, turnsBySection, turns, expandedTurns, isHighlightMode, scrollIntoViewWithOffset]
   );
 
   const scrollToSection = useCallback((anchor: string) => {
     setExpandedSections((prev) => ({ ...prev, [anchor]: true }));
     setTimeout(() => {
-      sectionRefs.current[anchor]?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
+      const el = sectionRefs.current[anchor];
+      if (el) scrollIntoViewWithOffset(el);
     }, 60);
-  }, []);
+  }, [scrollIntoViewWithOffset]);
 
   const allExpanded = allAnchors.every((a) => expandedSections[a]);
   const allCollapsed = allAnchors.every((a) => !expandedSections[a]);
@@ -1548,7 +1570,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         </aside>
 
         {/* Center: Transcript */}
-        <section className="relative h-full bg-white overflow-y-auto flex flex-col max-md:h-auto max-md:overflow-visible">
+        <section ref={scrollContainerRef} className="relative h-full bg-white overflow-y-auto flex flex-col max-md:h-auto max-md:overflow-visible">
           {/* Single always-mounted YouTube player container — CSS positions it per videoMode */}
           {youtube_id && (
             <div
@@ -2062,7 +2084,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                                 });
                                 setHighlightedQuote(firstQuote.quote);
                               } else if (isMonologue) {
-                                monologueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                                if (monologueRef.current) scrollIntoViewWithOffset(monologueRef.current);
                               } else if (firstQuote.section_anchor) {
                                 scrollToSection(firstQuote.section_anchor);
                               }
