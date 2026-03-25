@@ -599,6 +599,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           m[a] = (turnsBySection.get(a) ?? []).some((t) => t.speaker === name);
         });
         setExpandedSections(m);
+        // Scroll to first turn for this speaker
+        const firstTurn = turns.find(t => t.speaker === name);
+        if (firstTurn) {
+          requestAnimationFrame(() => {
+            const el = document.querySelector(`[data-turn-index="${firstTurn.turn_index}"]`);
+            el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
+        }
       }
     },
     [activeSpeaker, allAnchors, turnsBySection, turns, expandedTurns, isHighlightMode]
@@ -1484,7 +1492,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                       isActive={activeTurnIndex === turn.turn_index}
                       isTurnHit={hasSearch && searchResults.turnKeys.has(turnKey)}
                       isCitedTurn={false}
-
+                      isSpeakerFiltered={activeSpeaker === turn.speaker}
                       isHost={isCollapsedRole(turn.speaker)}
                       collapsedText={summary || (hasMore ? first : turn.text)}
                       collapsedIsSummary={!!summary}
@@ -1529,7 +1537,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                       isActive={activeTurnIndex === turn.turn_index}
                       isTurnHit={hasSearch && searchResults.turnKeys.has(`${INTRO_ANCHOR}-${ti}`)}
                       isCitedTurn={false}
-
+                      isSpeakerFiltered={activeSpeaker === turn.speaker}
                       isHost={isCollapsedRole(turn.speaker)}
                       collapsedText={summary || (hasMore ? first : turn.text)}
                       collapsedIsSummary={!!summary}
@@ -1631,7 +1639,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                             isActive={activeTurnIndex === turn.turn_index}
                             isTurnHit={hasSearch && searchResults.turnKeys.has(`${section.anchor}-${ti}`)}
                             isCitedTurn={citedTurnIndices.has(turn.turn_index)}
-      
+                            isSpeakerFiltered={activeSpeaker === turn.speaker}
                             isHost={isCollapsedRole(turn.speaker)}
                             collapsedText={summary || (hasMore ? first : turn.text)}
                             collapsedIsSummary={!!summary}

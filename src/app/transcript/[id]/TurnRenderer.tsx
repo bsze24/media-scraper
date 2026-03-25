@@ -14,6 +14,7 @@ export interface TurnRendererProps {
   isActive: boolean;
   isTurnHit: boolean;
   isCitedTurn: boolean;
+  isSpeakerFiltered: boolean;
   isHost: boolean;
   // Collapse
   collapsedText: string;
@@ -52,6 +53,7 @@ export const TurnRenderer = React.memo(function TurnRenderer({
   isActive,
   isTurnHit,
   isCitedTurn,
+  isSpeakerFiltered,
   isHost,
   collapsedText,
   collapsedIsSummary,
@@ -87,6 +89,8 @@ export const TurnRenderer = React.memo(function TurnRenderer({
           ? 'bg-[#eff6ff] border-[#5a8fc7]'
           : isCitedTurn
           ? 'bg-[#b8860b]/5 border-[#b8860b]/40'
+          : isSpeakerFiltered
+          ? 'border-[#6366f1]/40'
           : 'hover:bg-[#faf9f7] border-transparent'
       }`}
     >
