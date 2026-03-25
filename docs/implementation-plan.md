@@ -1,7 +1,7 @@
 # Meeting Prep Tool — Technical Implementation Plan
 **Last updated:** March 23, 2026
 **Branch:** `main` (feature branches per PR)
-**Status:** Phase 1D complete, Phase 1E in progress. Transcript QA + speaker management shipped (speaker rename/role/title editing, turn corrections, data quality banner). Keyboard shortcuts next. Phase 2 partially pulled forward (corrections table, inline editing, speaker reassignment now live in Phase 1E). Prod synced: 41 appearances (29 Colossus + 12 YouTube).
+**Status:** Phase 1E complete (PRs #41–54 merged). 59 appearances in prod (29 Colossus + 30 YouTube/manual). Next: save as default view, then Phase 2 (AssemblyAI diarization, bullet feedback).
 
 ---
 
@@ -315,16 +315,16 @@ src/
     page.tsx                       Phase 0 bulk paste UI
     globals.css
     transcript/[id]/
-      page.tsx                     Server component — fetches appearance, routes by status
-      TranscriptViewer.tsx         Client component — all interaction logic, speaker management, turn editing
-      useAppearanceApi.ts          Custom hook — mutable state + API calls for speaker/turn corrections
-      RegenerateBulletsButton.tsx  Client component — triggers bullet regeneration
+      page.tsx                     Server component — fetch + generateMetadata (OG tags, YouTube thumbnail)
+      TranscriptViewer.tsx         Client orchestrator — keyboard, URL sync, playback (~101KB, ~60 state vars)
+      SpeakerPanel.tsx             Speaker sidebar — rename, role, filter (useImperativeHandle ref)
+      TurnRenderer.tsx             Single turn render — expand/collapse, editing (28 props, React.memo)
+      helpers.tsx                  Shared utilities (highlightText, formatTimestamp, search)
+      useAppearanceApi.ts          Data mutation hooks (rename, role, turn edit, re-attribution)
+      RegenerateBulletsButton.tsx  Bullet regeneration via Server Action
       types.ts                     TranscriptViewerProps interface
     search/page.tsx                [Phase 1]
     api/
-      appearances/route.ts         GET all appearances
-      appearances/[id]/route.ts    GET single appearance
-      search/route.ts              Fund name search
       process/
         submit/route.ts            POST — bulk URL submission
         run/route.ts               POST — trigger batch processing
@@ -398,7 +398,7 @@ Every LLM-dependent pipeline step has a validation guard that checks output qual
 
 ---
 
-### Phase 1: Transcript Viewer + Lookup UI ← IN PROGRESS
+### Phase 1: Transcript Viewer + Lookup UI ✓ COMPLETE
 
 **Branch:** `phase1/transcript-ui`
 
@@ -432,7 +432,7 @@ Every LLM-dependent pipeline step has a validation guard that checks output qual
 - Fund name search works via tsvector full-text search on `cleaned_transcript`
 - **Not yet built:** `AppearanceCard` with bullet triage, `BulletItem` + `CitationTooltip`, `AgeFlag`, search-to-transcript deep linking with pre-loaded search
 
-**Phase 1D — YouTube Pipeline (IN PROGRESS):**
+**Phase 1D — YouTube Pipeline ✓ COMPLETE:**
 - ✓ YouTube scraper — yt-dlp for metadata + captions, speaker detection from title/description/channel, caption segments stored in `scraper_metadata`
 - ✓ YouTube-specific clean prompt with speaker attribution — pass scraped speakers[] into clean step, LLM attributes dialogue turns from conversational context. Falls back to "Speaker 1/2" when metadata is absent. Re-parses turns from cleaned transcript for YouTube sources.
 - ✓ Speaker attribution trust layer — `Turn.attribution: "source" | "inferred"` flag, `validateSpeakerAttribution()` catches hallucinated names via fuzzy matching, transcript viewer shows disclaimer for inferred turns
@@ -457,29 +457,57 @@ Every LLM-dependent pipeline step has a validation guard that checks output qual
 - ✓ Transcript viewer redesign (PR #36) — v0 + Claude Code. Three-column layout rebuilt.
 - ✓ YouTube player modes (PR #37) — collapsed/pip/full with single always-mounted container, CSS positioning, onStateChange sync.
 
-**Phase 1E — Transcript QA + Speaker Management (IN PROGRESS):**
+**Phase 1E — Transcript Viewer UX + Speaker Management ✓ COMPLETE (PRs #41–54):**
 
-Speaker management (shipped):
+Speaker management + corrections (PR #41):
 - ✓ Speaker sidebar panel — inline rename (cascading across 6 data locations), role dropdown (host/guest/rowspace/customer/other), title/affiliation editing
-- ✓ `POST /api/appearances/[id]/rename-speaker` — cascading rename across speakers[], turns[], turn_summaries[], prep_bullets[].supporting_quotes[], entity_tags.key_people[], cleaned_transcript. Regex anchored to line start. Single UPDATE. Audit trail in corrections table.
-- ✓ `POST /api/appearances/[id]/correct-turn` — single-turn speaker re-attribution or text fix. Sets corrected: true, attribution: "source".
-- ✓ `POST /api/appearances/[id]/set-speaker-role` — role, title, affiliation updates on speakers[]. Title/affiliation written to speakers[] (human-validated layer), not entity_tags.
-- ✓ `useAppearanceApi` hook — mutable state management for speakers, turns, turnSummaries, prepBullets, hasInferredAttribution. API responses replace state slices without router.refresh(). enrichSpeakers() re-runs key_people lookup after each update.
-- ✓ Reprocessing protection — `mergeCorrectedTurns()` preserves human-edited turns (corrected: true) during pipeline re-runs. Keeps corrected speaker/text, accepts new timestamps/anchors. Applied in processAppearance and reprocessSpeakers.
-- ✓ Turn-level editing — re-attribution dropdown (speaker), text editing textarea (Cmd+Enter save, Escape cancel). Generic speaker nudge: clicking Speaker 1/2 on a turn scrolls to sidebar rename instead of opening dropdown.
-- ✓ Collapse logic updated: role === "host" || role === "rowspace" triggers muted/collapsed/summarized treatment. Customer turns get full detail.
-- ✓ Data quality review banner — amber banner at top of transcript when any speaker is generic, all attributions inferred, or timestamp coverage <50%. Dismissable, reappears on reload, disappears reactively when conditions clear.
+- ✓ API routes: rename-speaker (cascading), correct-turn (single turn), set-speaker-role
+- ✓ `useAppearanceApi` hook — mutable state + API calls. enrichSpeakers() re-runs key_people lookup after updates.
+- ✓ Reprocessing protection — `mergeCorrectedTurns()` preserves human-edited turns during pipeline re-runs
+- ✓ Turn-level editing — re-attribution dropdown, text editing textarea. Generic speaker nudge scrolls to sidebar.
+- ✓ Data quality review banner — triggered by data signals (generic speakers, inferred attribution, low timestamps). Dismissable, reactive.
 
-Keyboard shortcuts (next):
-- Active turn state (activeTurnIndex) — keyboard cursor with amber left border
-- j/k turn navigation, n/p section jumping
-- Enter play/pause, t seek to active turn timestamp
-- ? help overlay, Escape dismiss chain
+Expand/collapse + URL sync (PR #42):
+- ✓ Unified `expandedTurns: Set<number>` model — replaces separate host/guest logic
+- ✓ Highlight mode (`?expanded=3,7,12`) vs normal mode (role-based defaults)
+- ✓ `replaceState` sync — copy URL at any point for shareable highlight reel
 
-Deferred:
-- Auto-follow (video position drives transcript highlight) — after keyboard shortcuts
-- Guest turn collapse/expand — summaries exist for all turns but only host/rowspace collapsed
-- Prep bullet regeneration filtered to guest/customer speakers only
+Auto-follow playback (PR #43):
+- ✓ Video `onTimeUpdate` drives `activeTurnIndex` — amber highlight, auto-scroll
+- ✓ Skip-playback jumps between expanded turns only
+- ✓ `autoFollowEnabled` toggle — j/k disables, `t` re-enables
+
+Component refactor (PR #44):
+- ✓ Extracted SpeakerPanel.tsx (useImperativeHandle), TurnRenderer.tsx (28 props, React.memo), helpers.tsx, useAppearanceApi.ts
+- ✓ TranscriptViewer remains orchestrator at ~101KB
+
+Keyboard shortcuts (PR #45):
+- ✓ Full suite: j/k navigate, Space play/pause, m toggle, x hide, e edit, t seek, f follow, / search, ? help, n/p sections, 1-9 speaker filter, Esc priority chain, Shift+A/E speaker edit, Shift+R reset, Shift+X unhide all, </> speed
+
+Admin polish (PR #46):
+- ✓ Delete buttons, source_name column, clickable URL links
+
+Shortcuts bar + OG metadata (PR #47):
+- ✓ Context-aware sticky bottom bar with mode-sensitive shortcuts. ? help modal with 7 groups.
+- ✓ `generateMetadata` — og:title, og:description (contextual quote hook or speaker list), og:image (YouTube thumbnail), og:site_name "bz-bot 🤖". Duration hardcodes 1.5x.
+
+Speaker filter feedback (PR #48):
+- ✓ Left accent border on filtered speaker's turns + scroll-to-first. Number keys 1-9. Save/restore expand state across filter round-trips.
+
+Highlight reel duration (PR #49):
+- ✓ Header: "~N min highlight · M min full call" adjusted for playback speed
+
+Sticky video + control strip (PRs #50, #51):
+- ✓ Full-mode video player stays pinned at top during scroll. Follow + mode switch controls visible.
+
+Playback speed (PR #52):
+- ✓ Default 1.5x, rates [0.75, 1, 1.25, 1.5, 2], </> shortcuts, speed badge. Dual state+ref pattern. sessionStorage persistence. Duration: 1.5x plain, other rates show "(N min at 1x)".
+
+Hide turns (PR #53):
+- ✓ `hiddenTurns: Set<number>` — view layer above expand/collapse. Placeholder bars ("3 hidden turns"), clickable to unhide. x/Shift+X shortcuts. `?hidden=` URL. Playback + j/k/n/p skip hidden. Search excludes hidden from counts.
+
+Scroll occlusion fix (PR #54):
+- ✓ `scrollIntoViewWithOffset()` replaces raw `scrollIntoView` — accounts for sticky video player
 
 **Fund overview (Phase 1 stretch / Phase 2):**
 - Write `lib/prompts/overview.ts` — synthesis prompt that receives `prep_bullets` + metadata from all matching appearances for a fund, produces a cross-appearance narrative (consistent themes, evolving views, key people)
@@ -495,16 +523,18 @@ Deferred:
 
 ---
 
-### Phase 2: Feedback + Diarization
+### Phase 2: Persistence + Quality
 
-Trigger: corpus at ~50 transcripts, real meeting prep usage generating feedback.
+Trigger: dogfooding reveals specific quality issues or persistence needs.
 
-**Pulled forward to Phase 1E:** Corrections table, inline turn editing, speaker reassignment, keyboard shortcuts. See Phase 1E above.
+**Pulled forward to Phase 1E (done):** Corrections table, inline turn editing, speaker reassignment, keyboard shortcuts, speaker management, data quality banner.
 
-Remaining Phase 2 items:
-- POST /api/feedback route — thumbs up / thumbs down on bullets with optional text feedback overlay. Replaces [×] flag (local state) from Phase 1. Storage TBD (new `bullet_feedback` table or JSONB).
+Remaining items:
+- Save as default view — persist URL param snapshot (`expanded`, `hidden`, speaker filter) to a column on the appearance. Visitors with no URL params get the saved default. Explicit URL overrides saved default. Future: multiple named saved views.
+- POST /api/feedback route — thumbs up / thumbs down on bullets with optional text feedback overlay. Replaces [×] flag (local state). Storage TBD (new `bullet_feedback` table or JSONB).
 - Undo — revert turn to original value from corrections log; writes action: 'undone' to corrections table
-- "Upgrade Transcript" flow — user-triggered re-extraction via AssemblyAI diarization API. Downloads audio via yt-dlp, sends to AssemblyAI async transcription with speaker_labels=True, replaces raw_transcript and updates transcript_source to "youtube_diarized". Re-runs full pipeline (clean/entities/bullets). Same deployment constraint as tech debt #20. Estimated cost: ~$0.30 per episode. AssemblyAI selected over pyannote/Whisper for managed API with built-in diarization ($100 free credits). Test script scoped as Phase 1E reach goal (standalone comparison, not integrated).
+- "Upgrade Transcript" flow — user-triggered re-extraction via AssemblyAI diarization API. Downloads audio via yt-dlp, sends to AssemblyAI async transcription with speaker_labels=True, replaces raw_transcript and updates transcript_source to "youtube_diarized". Re-runs full pipeline. Same deployment constraint as tech debt #20. Estimated cost: ~$0.30 per episode.
+- Turn trimming (potential) — sentence-level in/out points within turns. Medium effort. Deferred — hide turns solves 80% of signal-density problem. Revisit after living with hide for a week.
 
 ---
 
@@ -574,7 +604,7 @@ Remaining Phase 2 items:
 | 20 | yt-dlp local only — YouTube extraction + batch processing runs locally via `npx tsx` scripts, can't run on Vercel serverless. Includes the job queue concern (formerly #14): web bulk endpoints have 300s timeout, but local scripts bypass this entirely. | P3 | Phase 4 — when self-serve URL submission is built or extraction moves to Docker (Railway/Fly.io/Cloud Run), add proper job queue (Inngest, BullMQ) alongside. |
 | 21 | Turn attribution heuristic assumes all non-YouTube sources have speaker labels. Orchestrator stamps attribution: "source" for all curated sources without inspecting whether the raw transcript actually contains SpeakerName:\n formatting. Correct for current sources (Colossus, manual with labels) but would silently mismark turns if a future scraper produces unlabeled transcripts. Fix: inspect raw transcript for speaker label patterns before stamping, or require scrapers to declare hasSpeakerLabels: boolean on their result. Trigger: when adding a new scraper for a source without speaker-labeled transcripts. |
 | 22 | Speaker extraction is hardcoded per-channel. `extractSpeakers()` relies on a `knownHosts` map and channel-specific title regex. Works for a small number of known podcast sources (Capital Allocators, AGM) but breaks on any new channel without a manual code change. Trigger to generalize: Phase 4 self-serve URL submission, or when adding a 4th-5th source becomes frequent enough that manual updates are friction. Options: LLM-based speaker extraction from description text, or a configurable speaker map in the DB/admin UI. | P3 | Phase 4 — when self-serve URL submission is built. |
-| 24 | **TranscriptViewer god component** — ~1800 lines after keyboard shortcuts. Extract `useAppearanceApi` hook (done), `SpeakerPanel` component, `TurnRenderer` component, `HelpOverlay` component. Refactor PR after keyboard shortcuts ship, before auto-follow. | P1 | After Phase 1E keyboard shortcuts |
+| 24 | ~~**TranscriptViewer god component**~~ | ~~P1~~ | **Partially resolved (PR #44):** Extracted SpeakerPanel.tsx, TurnRenderer.tsx, helpers.tsx, useAppearanceApi.ts. TranscriptViewer still ~101KB / ~60 state vars — orchestrator role is inherently large. Remaining: extract HelpOverlay, extract shortcuts bar, consider Context provider for TurnRenderer's 28 props. Lower priority now — boundary is clean even if orchestrator is big. |
 | 25 | **Speaker metadata two-layer model** — `speakers[]` is human-validated (names, roles, titles), `entity_tags.key_people[]` is LLM-generated draft. Current precedence: `speakers[].title ?? entity_tags.key_people[].title`. Consider whether entity_tags.key_people should stop overlapping with speakers[], or add explicit graduation flow. | P2 | When entity extraction prompt is updated |
 | 26 | **Entity extraction prompt needs speakers[] context** — entity_tags.key_people confuses speakers with mentioned people because entity extraction runs without speaker context. Fix: pass speakers[] to entity extraction prompt. | P2 | Next pipeline improvement pass |
 | 27 | **Prep bullet regeneration (guest only)** — sales calls need bullets from customer speakers only, not internal team. Add "Regenerate bullets (guest only)" button visible after roles assigned. New prompt variant filtering turns to role !== "host" && role !== "rowspace". | P1 | After speaker roles are reliably set |
@@ -601,9 +631,9 @@ These are ideas worth capturing but not worth building yet. Unlike tech debt (so
 ## Deployment State
 
 **Prod URL:** `https://media-scraper-xi.vercel.app`
-**Prod database:** 41 appearances (29 Colossus + 12 YouTube), all `processing_status: complete`
-**Last prod sync:** March 23, 2026 — YouTube rows copied from dev, Colossus sections backfilled, migrations 009+010 confirmed
-**Dev database:** 17 appearances (4 Colossus + 12 YouTube + 1 failed)
+**Prod database:** 59 appearances (29 Colossus + 30 YouTube/manual), all `processing_status: complete`
+**Last prod sync:** March 25, 2026 — PRs #41–54 deployed, data synced from dev
+**Dev database:** 33 appearances
 
 Prod sync cadence: every 3-5 PRs or at the end of a feature block, not every PR. Check for unapplied migrations and pipeline changes before syncing.
 
@@ -614,6 +644,8 @@ Prod sync cadence: every 3-5 PRs or at the end of a feature block, not every PR.
 **After Phase 0 batch:** 20 Apollo query returns populated rows with `turns`, `sections`, `entity_tags`, `prep_bullets` (section_anchor non-null). Alpha School processed successfully via chunking. `npx vitest` passes.
 
 **After Phase 1:** "Apollo" search → instant results. Bullet click → transcript viewer at correct section with search pre-loaded. Turn summaries populated.
+
+**After Phase 1E:** Speaker rename cascades to all 6 data locations. `?expanded=3,7,12` loads highlight reel. `?hidden=0,1` hides turns with placeholder bars. Auto-follow skips collapsed+hidden turns. Keyboard shortcuts navigate, toggle, hide, edit. Playback speed defaults to 1.5x. OG metadata shows YouTube thumbnail + quote hook in Slack preview.
 
 **After Phase 2:** "Generate Notion Doc" → formatted page with bullet comments + anchor links.
 
