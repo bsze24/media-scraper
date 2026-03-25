@@ -326,6 +326,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const isPlayingRef = useRef(false);
   const playToggleGuardRef = useRef(false);
   const lastPollTimeRef = useRef(NaN);
+  const lastPollWallRef = useRef(0);
 
   const seekToTime = useCallback((seconds: number) => {
     setCurrentTime(seconds); // immediate UI update
@@ -430,11 +431,15 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       const d = player.getDuration();
       if (d > 0) setDuration(d);
 
-      // Detect manual seek: if time jumped >2s between polls and it wasn't
-      // our skip logic, the user scrubbed in the player — re-enable follow.
+      // Detect manual seek: video time jumped >2s between polls, not caused by
+      // our skip logic. Also check wall-clock to avoid false positives from
+      // background tab throttling (browsers slow intervals to ~1/min).
+      const now = Date.now();
+      const wallElapsed = now - lastPollWallRef.current;
       if (
         !isNaN(lastPollTimeRef.current) &&
         !skipInProgressRef.current &&
+        wallElapsed < 2000 && // poll ran on schedule, not throttled
         Math.abs(time - lastPollTimeRef.current) > 2
       ) {
         if (!autoFollowEnabled) {
@@ -442,6 +447,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         }
       }
       lastPollTimeRef.current = time;
+      lastPollWallRef.current = now;
 
       // Auto-follow: track active turn and skip collapsed regions
       if (!autoFollowEnabled || skipInProgressRef.current) return;
@@ -473,6 +479,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     return () => {
       clearInterval(interval);
       lastPollTimeRef.current = NaN; // reset so next start doesn't false-positive
+      lastPollWallRef.current = 0;
     };
   }, [isPlaying, autoFollowEnabled, expandedPlaylist]);
 
@@ -847,7 +854,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
         // --- Playback ---
         case " ": {
-          // Space — play/pause
+          // Space — play/pause (only when video exists)
+          if (!youtube_id) break; // no video — let browser handle scroll
           e.preventDefault(); // prevent scroll and button activation
           // Throttle: YouTube IFrame API uses postMessage — rapid playVideo/pauseVideo
           // calls queue up and getPlayerState() blocks the main thread waiting for each
