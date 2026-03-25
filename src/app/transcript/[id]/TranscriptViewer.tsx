@@ -326,6 +326,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     }, 0);
   }, [isHighlightMode, expandedPlaylist, duration]);
 
+  // Full call duration label (shared by control strip and audio bar)
+  const fullCallLabel = useMemo(() => {
+    const timestamped = turns.filter(t => t.timestamp_seconds != null).map(t => t.timestamp_seconds!);
+    const lastTs = timestamped.length > 0 ? Math.max(...timestamped) : 0;
+    const fullSec = duration > 0 ? duration : lastTs > 0 ? lastTs + 120 : 0;
+    return fullSec > 0 ? ` · ${formatDuration(fullSec)} full call` : '';
+  }, [turns, duration]);
+
   // ---- Quote highlight (from prep bullet click) ----
   const [highlightedQuote, setHighlightedQuote] = useState<string | null>(null);
 
@@ -1346,6 +1354,37 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   </div>
                 )}
               </div>
+              {/* Control strip inside full-mode sticky container — avoids z-index overlap */}
+              {videoMode === 'full' && (
+                <div className="bg-[#faf9f7]/95 backdrop-blur border-b border-[#e5e3df] px-3 py-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {isHighlightMode && (
+                      <>
+                        <button onClick={handleResetView} className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors">Reset view</button>
+                        {resetConfirmation && <span className="text-[11px] text-green-600">View reset</span>}
+                        {highlightDurationSec > 0 && (
+                          <span className="text-[11px] text-[#888]">{formatDuration(highlightDurationSec)} highlight{fullCallLabel}</span>
+                        )}
+                        <span className="w-px h-3 bg-[#e5e3df]" />
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-[#888]">
+                    <button
+                      onClick={() => setAutoFollowEnabled(prev => !prev)}
+                      className={`text-[10px] px-2 py-1 rounded font-medium transition-colors ${autoFollowEnabled ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}`}
+                      title={autoFollowEnabled ? "Auto-follow: ON — skips collapsed turns [F]" : "Auto-follow: OFF — plays everything [F]"}
+                    >{autoFollowEnabled ? "[F] Follow ON" : "[F] Follow OFF"}</button>
+                    <span className="w-px h-4 bg-[#e5e3df]" />
+                    <button onClick={() => setVideoMode('pip')} className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" title="Mini player (podcast mode)">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17L17 7M17 7H8M17 7v9" /></svg>
+                    </button>
+                    <button onClick={() => setVideoMode('collapsed')} className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" title="Audio only">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1435,133 +1474,66 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               {/* Reel info row inside audio bar */}
               {isHighlightMode && (
                 <div className="px-3 pb-2 flex items-center gap-2">
-                  <button
-                    onClick={handleResetView}
-                    className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors"
-                  >
-                    Reset view
-                  </button>
-                  {resetConfirmation && (
-                    <span className="text-[11px] text-green-600">View reset</span>
-                  )}
+                  <button onClick={handleResetView} className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors">Reset view</button>
+                  {resetConfirmation && <span className="text-[11px] text-green-600">View reset</span>}
                   {highlightDurationSec > 0 && (
-                    <span className="text-[11px] text-[#888]">
-                      {formatDuration(highlightDurationSec)} highlight
-                      {(() => {
-                        const timestamped = turns.filter(t => t.timestamp_seconds != null).map(t => t.timestamp_seconds!);
-                        const lastTs = timestamped.length > 0 ? Math.max(...timestamped) : 0;
-                        const fullSec = duration > 0 ? duration : lastTs > 0 ? lastTs + 120 : 0;
-                        return fullSec > 0 ? ` · ${formatDuration(fullSec)} full call` : '';
-                      })()}
-                    </span>
+                    <span className="text-[11px] text-[#888]">{formatDuration(highlightDurationSec)} highlight{fullCallLabel}</span>
                   )}
                 </div>
               )}
             </div>
           )}
 
-          {/* Unified control strip — [F]ollow, mode switches, reel info. Sticky in full/pip modes. */}
-          {youtube_id && videoMode !== 'collapsed' && (
-            <div className={
-              videoMode === 'full'
-                ? "sticky top-0 z-30 bg-[#faf9f7]/95 backdrop-blur border-b border-[#e5e3df]"
-                : "sticky top-0 z-40 bg-[#faf9f7]/95 backdrop-blur border-b border-[#e5e3df]"
-            }>
+          {/* Control strip for pip mode — standalone sticky bar */}
+          {youtube_id && videoMode === 'pip' && (
+            <div className="sticky top-0 z-40 bg-[#faf9f7]/95 backdrop-blur border-b border-[#e5e3df]">
               <div className="px-3 py-2 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {isHighlightMode && (
-                      <>
-                        <button
-                          onClick={handleResetView}
-                          className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors"
-                        >
-                          Reset view
-                        </button>
-                        {resetConfirmation && (
-                          <span className="text-[11px] text-green-600">View reset</span>
-                        )}
-                        {highlightDurationSec > 0 && (
-                          <span className="text-[11px] text-[#888]">
-                            {formatDuration(highlightDurationSec)} highlight
-                            {(() => {
-                              const timestamped = turns.filter(t => t.timestamp_seconds != null).map(t => t.timestamp_seconds!);
-                              const lastTs = timestamped.length > 0 ? Math.max(...timestamped) : 0;
-                              const fullSec = duration > 0 ? duration : lastTs > 0 ? lastTs + 120 : 0;
-                              return fullSec > 0 ? ` · ${formatDuration(fullSec)} full call` : '';
-                            })()}
-                          </span>
-                        )}
-                        <span className="w-px h-3 bg-[#e5e3df]" />
-                      </>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 text-[#888]">
-                    <button
-                      onClick={() => setAutoFollowEnabled(prev => !prev)}
-                      className={`text-[10px] px-2 py-1 rounded font-medium transition-colors ${
-                        autoFollowEnabled
-                          ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                          : 'bg-red-100 text-red-600 hover:bg-red-200'
-                      }`}
-                      title={autoFollowEnabled ? "Auto-follow: ON — skips collapsed turns [F]" : "Auto-follow: OFF — plays everything [F]"}
-                    >
-                      {autoFollowEnabled ? "[F] Follow ON" : "[F] Follow OFF"}
-                    </button>
-                    <span className="w-px h-4 bg-[#e5e3df]" />
-                    {videoMode === 'full' ? (
-                      <>
-                        <button
-                          onClick={() => setVideoMode('pip')}
-                          className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded"
-                          title="Mini player (podcast mode)"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17L17 7M17 7H8M17 7v9" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => setVideoMode('collapsed')}
-                          className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded"
-                          title="Audio only"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => setVideoMode('full')}
-                          className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded"
-                          title="Full video (interview mode)"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m0-16l-3 3m3-3l3 3m-3 13l-3-3m3 3l3-3" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => setVideoMode('collapsed')}
-                          className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded"
-                          title="Audio only"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </>
-                    )}
-                  </div>
+                <div className="flex items-center gap-2">
+                  {isHighlightMode && (
+                    <>
+                      <button onClick={handleResetView} className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors">Reset view</button>
+                      {resetConfirmation && <span className="text-[11px] text-green-600">View reset</span>}
+                      {highlightDurationSec > 0 && (
+                        <span className="text-[11px] text-[#888]">{formatDuration(highlightDurationSec)} highlight{fullCallLabel}</span>
+                      )}
+                      <span className="w-px h-3 bg-[#e5e3df]" />
+                    </>
+                  )}
                 </div>
+                <div className="flex items-center gap-2 text-[#888]">
+                  <button
+                    onClick={() => setAutoFollowEnabled(prev => !prev)}
+                    className={`text-[10px] px-2 py-1 rounded font-medium transition-colors ${autoFollowEnabled ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}`}
+                    title={autoFollowEnabled ? "Auto-follow: ON — skips collapsed turns [F]" : "Auto-follow: OFF — plays everything [F]"}
+                  >{autoFollowEnabled ? "[F] Follow ON" : "[F] Follow OFF"}</button>
+                  <span className="w-px h-4 bg-[#e5e3df]" />
+                  <button onClick={() => setVideoMode('full')} className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" title="Full video (interview mode)">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m0-16l-3 3m3-3l3 3m-3 13l-3-3m3 3l3-3" /></svg>
+                  </button>
+                  <button onClick={() => setVideoMode('collapsed')} className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" title="Audio only">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
-          {/* No video message */}
+          {/* No video — show reset view bar when in highlight mode, otherwise "no video" message */}
           {!youtube_id && (
             <div className="sticky top-0 z-40 bg-[#faf9f7]/95 backdrop-blur p-3 border-b border-[#e5e3df]">
-              <div className="text-center text-[11px] text-[#888]">
-                No video available for this episode
-              </div>
+              {isHighlightMode ? (
+                <div className="flex items-center gap-2">
+                  <button onClick={handleResetView} className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors">Reset view</button>
+                  {resetConfirmation && <span className="text-[11px] text-green-600">View reset</span>}
+                  {highlightDurationSec > 0 && (
+                    <span className="text-[11px] text-[#888]">{formatDuration(highlightDurationSec)} highlight{fullCallLabel}</span>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center text-[11px] text-[#888]">
+                  No video available for this episode
+                </div>
+              )}
             </div>
           )}
 
