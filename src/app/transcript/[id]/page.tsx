@@ -165,8 +165,11 @@ export async function generateMetadata({
     const timestamped = allTurns.filter(t => t.timestamp_seconds != null).map(t => t.timestamp_seconds!);
     const lastTs = timestamped.length > 0 ? Math.max(...timestamped) : 0;
     const fullSec = lastTs > 0 ? lastTs + 120 : 0;
+    // OG duration assumes 1.5x default playback speed
+    const OG_PLAYBACK_RATE = 1.5;
+    const effectiveHighlight = highlightSec / OG_PLAYBACK_RATE;
     const durationSuffix = highlightSec > 0
-      ? ` · ${formatDuration(highlightSec)} highlight${fullSec > 0 ? ` from ${formatDuration(fullSec)} call` : ''}`
+      ? ` · ~${formatDuration(effectiveHighlight)} highlight${fullSec > 0 ? ` from ${formatDuration(fullSec)} call` : ''}`
       : '';
     description = quoteText
       ? `${quoteText} — ${count} highlighted moment${count !== 1 ? "s" : ""}${durationSuffix}`

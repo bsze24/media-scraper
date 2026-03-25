@@ -16,6 +16,9 @@ import { TurnRenderer } from "./TurnRenderer";
 import { parseSearchQuery, matchesTurn, firstSentence } from "./helpers";
 import { formatDuration } from "@lib/utils/format-duration";
 
+const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const;
+const DEFAULT_PLAYBACK_RATE = 1.5;
+
 // ---------------------------------------------------------------------------
 // Helpers (local to TranscriptViewer)
 // ---------------------------------------------------------------------------
@@ -43,6 +46,7 @@ interface YTPlayer {
   seekTo(seconds: number, allowSeekAhead: boolean): void;
   playVideo(): void;
   pauseVideo(): void;
+  setPlaybackRate(rate: number): void;
   getPlayerState(): number;
   getCurrentTime(): number;
   getDuration(): number;
@@ -334,17 +338,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     return fullSec > 0 ? ` · ${formatDuration(fullSec)} full call` : '';
   }, [turns, duration]);
 
-  // Shared reel info block — reset button + duration. Used in all control strip variants.
-  const reelInfoBlock = isHighlightMode ? (
-    <>
-      <button onClick={handleResetView} className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors">Reset view</button>
-      {resetConfirmation && <span className="text-[11px] text-green-600">View reset</span>}
-      {highlightDurationSec > 0 && (
-        <span className="text-[11px] text-[#888]">{formatDuration(highlightDurationSec)} highlight{fullCallLabel}</span>
-      )}
-    </>
-  ) : null;
-
   // Shared control strip right-side buttons — follow toggle + mode switches.
   // Parameterized by current mode to show the correct "switch to" buttons.
   const pipIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17L17 7M17 7H8M17 7v9" /></svg>;
@@ -352,6 +345,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const closeIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" /></svg>;
   const renderControlStripButtons = (mode: 'full' | 'pip' | 'collapsed') => (
     <div className="flex items-center gap-2 text-[#888]">
+      <button onClick={() => cyclePlaybackRate(1)} className="text-[10px] font-mono px-2 py-1 rounded font-medium transition-colors bg-[#f5f4f2] border border-[#e5e3df] hover:bg-[#eeedeb] text-[#555]" title="Playback speed — click to cycle, < / > keys">{playbackRate === 1 ? '1x' : `${playbackRate}x`}</button>
       <button
         onClick={() => setAutoFollowEnabled(prev => !prev)}
         className={`text-[10px] px-2 py-1 rounded font-medium transition-colors ${autoFollowEnabled ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}`}
@@ -388,9 +382,58 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const pendingSeekRef = useRef<number | null>(null);
   const pendingPlayRef = useRef<boolean>(false);
   const isPlayingRef = useRef(false);
+  const playbackRateRef = useRef(DEFAULT_PLAYBACK_RATE);
+  const [playbackRate, setPlaybackRate] = useState(DEFAULT_PLAYBACK_RATE);
+
+  // Format highlight duration with playback rate context
+  const highlightDurationLabel = useMemo(() => {
+    if (highlightDurationSec <= 0) return '';
+    if (!youtube_id) return formatDuration(highlightDurationSec);
+    const effective = highlightDurationSec / playbackRate;
+    if (playbackRate === 1) return formatDuration(highlightDurationSec);
+    if (playbackRate === 1.5) return `~${formatDuration(effective)}`;
+    return `~${formatDuration(effective)} at ${playbackRate}x (${formatDuration(highlightDurationSec)} at 1x)`;
+  }, [highlightDurationSec, playbackRate, youtube_id]);
+
+  // Shared reel info block — reset button + duration. Used in all control strip variants.
+  const reelInfoBlock = isHighlightMode ? (
+    <>
+      <button onClick={handleResetView} className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors">Reset view</button>
+      {resetConfirmation && <span className="text-[11px] text-green-600">View reset</span>}
+      {highlightDurationLabel && (
+        <span className="text-[11px] text-[#888]">{highlightDurationLabel} highlight{fullCallLabel}</span>
+      )}
+    </>
+  ) : null;
+
   const playToggleGuardRef = useRef(false);
   const lastPollTimeRef = useRef(NaN);
   const lastPollWallRef = useRef(0);
+
+  // Hydrate playback rate from sessionStorage (SSR-safe)
+  useEffect(() => {
+    const stored = sessionStorage.getItem("playbackRate");
+    if (stored) {
+      const rate = parseFloat(stored);
+      if (PLAYBACK_RATES.includes(rate as (typeof PLAYBACK_RATES)[number])) {
+        playbackRateRef.current = rate;
+        setPlaybackRate(rate);
+      }
+    }
+  }, []);
+
+  const cyclePlaybackRate = useCallback((direction: 1 | -1, wrap = true) => {
+    const currentIdx = PLAYBACK_RATES.indexOf(playbackRateRef.current as (typeof PLAYBACK_RATES)[number]);
+    const rawNext = currentIdx + direction;
+    if (!wrap && (rawNext < 0 || rawNext >= PLAYBACK_RATES.length)) return;
+    const nextIdx = (rawNext + PLAYBACK_RATES.length) % PLAYBACK_RATES.length;
+    const newRate = PLAYBACK_RATES[nextIdx];
+    playbackRateRef.current = newRate;
+    setPlaybackRate(newRate);
+    sessionStorage.setItem("playbackRate", String(newRate));
+    const player = ytPlayerRef.current;
+    if (player) player.setPlaybackRate(newRate);
+  }, []);
 
   const seekToTime = useCallback((seconds: number) => {
     setCurrentTime(seconds); // immediate UI update
@@ -435,6 +478,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               event.target.playVideo();
             }
             pendingPlayRef.current = false;
+            event.target.setPlaybackRate(playbackRateRef.current);
           },
           onStateChange: (event: { data: number }) => {
             // YT.PlayerState: PLAYING=1, PAUSED=2, ENDED=0, BUFFERING=3
@@ -1010,6 +1054,16 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           setAutoFollowEnabled(prev => !prev);
           break;
         }
+        case ">": {
+          if (!youtube_id) break;
+          cyclePlaybackRate(1, false);
+          break;
+        }
+        case "<": {
+          if (!youtube_id) break;
+          cyclePlaybackRate(-1, false);
+          break;
+        }
 
         // --- Editing ---
         case "e": {
@@ -1105,7 +1159,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     activeTurnIndex, activeTurn, navigableTurnIndices, turnSectionMap,
     sectionFirstTurns, editingTurnText, turnSpeakerDropdown, floatingPanel,
     showHelpOverlay, isMonologue, allSpeakersGeneric, speakers,
-    cancelEditTurnText, startEditingTurnText, seekToTime,
+    cancelEditTurnText, startEditingTurnText, seekToTime, cyclePlaybackRate,
     toggleTurnExpanded, handleResetView, handleSpeakerClick, highlightedQuote,
   ]);
   // EXTRACT: useKeyboardShortcuts — end
@@ -1951,6 +2005,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                     ["Space", "Play / pause"],
                     ["t", "Seek to active turn + auto-follow"],
                     ["f", "Toggle auto-follow"],
+                    [">", "Increase speed"],
+                    ["<", "Decrease speed"],
                   ]],
                 ] as [string, [string, string][]][] : []),
                 ["Editing", [
