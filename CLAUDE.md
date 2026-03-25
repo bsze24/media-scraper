@@ -7,9 +7,10 @@ Meeting Prep Tool — an internal tool that indexes podcast transcripts and yout
 
 
 Full PRD: docs/prd.md
-Current phase: Phase 1 — Transcript Viewer + Lookup UI
-Milestone (1C): Type "Apollo" → instant results. Click bullet → transcript viewer at correct section with search pre-loaded.
-Milestone (1D): Paste a YouTube URL (conference panel or interview) → transcript scraped, cleaned with speaker attribution, synthetic sections generated, entities extracted, bullets generated. Verify: turns[].timestamp_seconds populated, citation link opens YouTube at correct moment.
+Current phase: Phase 1E complete. Phase 2 next (save views, AssemblyAI diarization).
+Milestone (1C): ✓ Type "Apollo" → instant results.
+Milestone (1D): ✓ YouTube pipeline — scrape, clean, attribute, section, entity, bullet.
+Milestone (1E): ✓ Transcript viewer UX — speaker management, expand/collapse URL sync, auto-follow, keyboard shortcuts, hide turns, playback speed, OG metadata. PRs #41–54.
 
 Tech stack: Next.js 16 app using the App Router with TypeScript, React 19, and Tailwind CSS v4.
 
@@ -37,10 +38,44 @@ Deployed on Vercel.
 - Full-text search via tsvector generated column on cleaned_transcript.
 - Prompts live in lib/prompts/ as exported strings — never inline in pipeline functions.
 - Never call synchronous IFrame bridge methods (e.g., `getPlayerState()`) in keyboard handlers — they block the main thread under rapid key repeat. Use refs synced via callbacks (e.g., `onStateChange`) instead.
+- Use `scrollIntoViewWithOffset()` (not raw `scrollIntoView`) for any scroll-to-element. Raw `scrollIntoView` puts elements behind the sticky video player.
+
+## Transcript Viewer architecture
+
+TranscriptViewer.tsx (~101KB) is the orchestrator — owns keyboard listener, URL param sync, playback state, dispatches to child components. ~60 state variables/refs/memos.
+
+Key shared state:
+- `expandedTurns: Set<number>` — which turns show full text. URL `?expanded=` (highlight mode) or role-based defaults (normal mode). Synced via `replaceState`.
+- `hiddenTurns: Set<number>` — turns hidden from reel. Higher priority than expandedTurns. URL `?hidden=`. Placeholder bars for consecutive groups.
+- `activeTurnIndex: number | null` — currently focused turn. Driven by video `onTimeUpdate` (auto-follow) or j/k keyboard nav. Amber highlight + scroll-into-view.
+- `autoFollowEnabled: boolean` — video drives activeTurnIndex when true. j/k sets false, `t` re-enables.
+- `playbackRate` + `playbackRateRef` — dual state+ref pattern. State for UI, ref for keyboard handlers. Default 1.5x.
+- `isPlayingRef` — synced via `onStateChange`. Safe for keyboard handlers.
+- `expandedPlaylist: number[]` — useMemo of expanded non-hidden turn indices for playback skip.
+
+Component split (PR #44):
+- `SpeakerPanel.tsx` — speaker sidebar: rename, role, filter. `useImperativeHandle` ref with `startEditing(name, 'rename' | 'meta')` and `cancelEditing()`.
+- `TurnRenderer.tsx` — single turn: expand/collapse, speaker, timestamp, text, editing. 28 props, React.memo.
+- `helpers.tsx` — `highlightText`, `highlightQuote`, `firstSentence`, `formatTimestamp`, search utils.
+- `useAppearanceApi.ts` — data mutations (rename, role, turn edit, re-attribution). Data state only.
+
+URL state: `?expanded=3,7,12&hidden=0,1,2` parsed on mount via `urlInitRef` guard (SSR safety). Toggles call `replaceState` (not `pushState`).
 
 ## File structure
 lib/          — scrapers, pipeline, prompts, db, queue, api (server-side logic)
 src/app/      — Next.js pages and API routes
+  transcript/[id]/
+    page.tsx                     Server component — fetch + generateMetadata (OG tags, YouTube thumbnail)
+    TranscriptViewer.tsx         Client orchestrator — keyboard, URL sync, playback (~101KB)
+    SpeakerPanel.tsx             Speaker sidebar — rename, role, filter (useImperativeHandle)
+    TurnRenderer.tsx             Single turn render — expand/collapse, editing (28 props, React.memo)
+    helpers.tsx                  Shared utilities
+    useAppearanceApi.ts          Data mutation hooks
+    types.ts                     TranscriptViewerProps
+    RegenerateBulletsButton.tsx  Bullet regeneration
+  api/
+    appearances/[id]/            rename-speaker, correct-turn, set-speaker-role routes
+    process/                     submit, run, retry, status, bullets, turn-summaries, manual-ingest
 docs/         — prd.md, implementation-plan.md
 
 ## Commands
@@ -60,7 +95,8 @@ docs/         — prd.md, implementation-plan.md
 - Don't bother testing yet:
   - Scraper DOM selectors (Colossus HTML will change; these tests go stale fast)
   - Exact LLM output text (non-deterministic — test structure, not content)
-- Playwright for E2E tests once Phase 1 UI exists. Not before.
+- Playwright for E2E tests — write before the next major refactor to lock current behavior.
+- Before any refactor PR, write e2e tests that lock the current behavior of affected components.
 
 ## Observability
 
@@ -89,7 +125,7 @@ If this session was driven by a session prompt (.md file), do not commit until c
 3. **Skips & divergences:** List anything from the prompt you intentionally skipped or interpreted differently, and why.
 
 ## Before Committing
-- Run `npm run typecheck && npm test && npm run test:e2e && npm run build`
+- Run `npm run typecheck && npm test && npm run build`
 - Scan all changed files for:
   - Missing try-catch around async operations
   - Missing error/loading states in UI components
