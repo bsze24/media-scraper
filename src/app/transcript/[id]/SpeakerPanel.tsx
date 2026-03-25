@@ -10,7 +10,6 @@ const ROLE_OPTIONS = ["host", "guest", "rowspace", "customer", "other"] as const
 export interface SpeakerPanelHandle {
   startEditing(speakerName: string, mode: 'rename' | 'meta'): void;
   cancelEditing(): boolean;
-  isEditing(): boolean;
 }
 
 export interface SpeakerPanelProps {
@@ -74,9 +73,6 @@ export const SpeakerPanel = forwardRef<SpeakerPanelHandle, SpeakerPanelProps>(fu
         return true;
       }
       return false;
-    },
-    isEditing() {
-      return editingSpeaker !== null || editingSpeakerMeta !== null;
     },
   }));
 
