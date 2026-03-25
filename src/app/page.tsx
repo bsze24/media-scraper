@@ -382,31 +382,17 @@ export default function Home() {
 
         {/* Appearances Table */}
         {appearances.length > 0 && (
-          <section className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
-            <table className="w-full text-sm">
+          <section className="rounded-lg border border-zinc-200 bg-white">
+            <table className="w-full table-fixed text-sm">
               <thead>
                 <tr className="border-b border-zinc-200 bg-zinc-50 text-left">
-                  <th className="px-4 py-2 font-medium text-zinc-600">
-                    ID
-                  </th>
-                  <th className="px-4 py-2 font-medium text-zinc-600">
-                    URL
-                  </th>
-                  <th className="px-4 py-2 font-medium text-zinc-600">
-                    Source
-                  </th>
-                  <th className="px-4 py-2 font-medium text-zinc-600">
-                    Title
-                  </th>
-                  <th className="px-4 py-2 font-medium text-zinc-600">
-                    Status
-                  </th>
-                  <th className="px-4 py-2 font-medium text-zinc-600">
-                    Detail
-                  </th>
-                  <th className="px-4 py-2 font-medium text-zinc-600">
-                    Action
-                  </th>
+                  <th className="w-[70px] px-3 py-2 font-medium text-zinc-600">ID</th>
+                  <th className="w-[180px] px-3 py-2 font-medium text-zinc-600">URL</th>
+                  <th className="w-[90px] px-3 py-2 font-medium text-zinc-600">Source</th>
+                  <th className="px-3 py-2 font-medium text-zinc-600">Title</th>
+                  <th className="w-[220px] px-3 py-2 font-medium text-zinc-600">Status</th>
+                  <th className="w-[140px] px-3 py-2 font-medium text-zinc-600">Detail</th>
+                  <th className="w-[100px] px-3 py-2 font-medium text-zinc-600">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -422,21 +408,21 @@ export default function Home() {
                       className="border-b border-zinc-100"
                     >
                       <td
-                        className="max-w-[100px] truncate px-4 py-2 font-mono text-xs text-zinc-500"
+                        className="truncate px-3 py-2 font-mono text-xs text-zinc-500"
                         title={a.id}
                       >
                         {a.id.slice(0, 8)}
                       </td>
                       <td
-                        className="max-w-[200px] truncate px-4 py-2 font-mono text-xs text-zinc-700"
+                        className="truncate px-3 py-2 font-mono text-xs text-zinc-700"
                         title={a.source_url}
                       >
-                        {truncateUrl(a.source_url)}
+                        {truncateUrl(a.source_url, 30)}
                       </td>
-                      <td className="max-w-[120px] truncate px-4 py-2 text-xs text-zinc-500" title={a.source_name ?? ""}>
+                      <td className="truncate px-3 py-2 text-xs text-zinc-500" title={a.source_name ?? ""}>
                         {a.source_name ?? "\u2014"}
                       </td>
-                      <td className="max-w-[200px] truncate px-4 py-2 text-zinc-700">
+                      <td className="truncate px-3 py-2 text-zinc-700">
                         {isComplete ? (
                           <a
                             href={`/transcript/${a.id}`}
@@ -448,7 +434,7 @@ export default function Home() {
                           a.title ?? "\u2014"
                         )}
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-3 py-2">
                         <span
                           className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}
                         >
@@ -464,8 +450,8 @@ export default function Home() {
                             className="ml-2 text-xs text-red-500"
                             title={a.processing_error}
                           >
-                            {a.processing_error.slice(0, 40)}
-                            {a.processing_error.length > 40 ? "\u2026" : ""}
+                            {a.processing_error.slice(0, 25)}
+                            {a.processing_error.length > 25 ? "\u2026" : ""}
                           </span>
                         )}
                         {isComplete && a.processing_error && (
@@ -473,15 +459,15 @@ export default function Home() {
                             className="ml-2 text-xs text-amber-500"
                             title={a.processing_error}
                           >
-                            {a.processing_error.slice(0, 40)}
-                            {a.processing_error.length > 40 ? "\u2026" : ""}
+                            {a.processing_error.slice(0, 25)}
+                            {a.processing_error.length > 25 ? "\u2026" : ""}
                           </span>
                         )}
                       </td>
-                      <td className="max-w-[200px] truncate px-4 py-2 text-xs text-zinc-500">
+                      <td className="truncate px-3 py-2 text-xs text-zinc-500">
                         {a.processing_detail ?? "\u2014"}
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
                           {canRetry && (
                             <button
