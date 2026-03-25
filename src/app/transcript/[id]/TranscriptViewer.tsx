@@ -345,6 +345,31 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     </>
   ) : null;
 
+  // Shared control strip right-side buttons — follow toggle + mode switches.
+  // Parameterized by current mode to show the correct "switch to" buttons.
+  const pipIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17L17 7M17 7H8M17 7v9" /></svg>;
+  const fullIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m0-16l-3 3m3-3l3 3m-3 13l-3-3m3 3l3-3" /></svg>;
+  const closeIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" /></svg>;
+  const renderControlStripButtons = (mode: 'full' | 'pip' | 'collapsed') => (
+    <div className="flex items-center gap-2 text-[#888]">
+      <button
+        onClick={() => setAutoFollowEnabled(prev => !prev)}
+        className={`text-[10px] px-2 py-1 rounded font-medium transition-colors ${autoFollowEnabled ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}`}
+        title={autoFollowEnabled ? "Auto-follow: ON — skips collapsed turns [F]" : "Auto-follow: OFF — plays everything [F]"}
+      >{autoFollowEnabled ? "[F] Follow ON" : "[F] Follow OFF"}</button>
+      <span className="w-px h-4 bg-[#e5e3df]" />
+      {mode !== 'full' && (
+        <button onClick={() => setVideoMode('full')} className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" title="Full video (interview mode)">{fullIcon}</button>
+      )}
+      {mode !== 'pip' && (
+        <button onClick={() => setVideoMode('pip')} className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" title="Mini player (podcast mode)">{pipIcon}</button>
+      )}
+      {mode !== 'collapsed' && (
+        <button onClick={() => setVideoMode('collapsed')} className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" title="Audio only">{closeIcon}</button>
+      )}
+    </div>
+  );
+
   // ---- Quote highlight (from prep bullet click) ----
   const [highlightedQuote, setHighlightedQuote] = useState<string | null>(null);
 
@@ -1368,24 +1393,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               {/* Control strip inside full-mode sticky container — avoids z-index overlap */}
               {videoMode === 'full' && (
                 <div className="bg-[#faf9f7]/95 backdrop-blur border-b border-[#e5e3df] px-3 py-2 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {reelInfoBlock}
-                    {isHighlightMode && <span className="w-px h-3 bg-[#e5e3df]" />}
-                  </div>
-                  <div className="flex items-center gap-2 text-[#888]">
-                    <button
-                      onClick={() => setAutoFollowEnabled(prev => !prev)}
-                      className={`text-[10px] px-2 py-1 rounded font-medium transition-colors ${autoFollowEnabled ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}`}
-                      title={autoFollowEnabled ? "Auto-follow: ON — skips collapsed turns [F]" : "Auto-follow: OFF — plays everything [F]"}
-                    >{autoFollowEnabled ? "[F] Follow ON" : "[F] Follow OFF"}</button>
-                    <span className="w-px h-4 bg-[#e5e3df]" />
-                    <button onClick={() => setVideoMode('pip')} className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" title="Mini player (podcast mode)">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17L17 7M17 7H8M17 7v9" /></svg>
-                    </button>
-                    <button onClick={() => setVideoMode('collapsed')} className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" title="Audio only">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" /></svg>
-                    </button>
-                  </div>
+                  <div className="flex items-center gap-2">{reelInfoBlock}</div>
+                  {renderControlStripButtons('full')}
                 </div>
               )}
             </div>
@@ -1438,41 +1447,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                     <span className="text-[11px] font-mono text-[#999]">{duration > 0 ? `-${formatPlayerTime(duration - currentTime)}` : "--:--"}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 text-[#888]">
-                  {/* Auto-follow toggle */}
-                  <button
-                    onClick={() => setAutoFollowEnabled(prev => !prev)}
-                    className={`text-[10px] px-2 py-1 rounded font-medium transition-colors ${
-                      autoFollowEnabled
-                        ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                        : 'bg-red-100 text-red-600 hover:bg-red-200'
-                    }`}
-                    title={autoFollowEnabled ? "Auto-follow: ON — skips collapsed turns [F]" : "Auto-follow: OFF — plays everything [F]"}
-                  >
-                    {autoFollowEnabled ? "[F] Follow ON" : "[F] Follow OFF"}
-                  </button>
-                  <span className="w-px h-4 bg-[#e5e3df]" />
-                  {/* Mini PiP */}
-                  <button
-                    onClick={() => setVideoMode('pip')}
-                    className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded"
-                    title="Mini player (podcast mode)"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17L17 7M17 7H8M17 7v9" />
-                    </svg>
-                  </button>
-                  {/* Full expand - vertical arrows */}
-                  <button
-                    onClick={() => setVideoMode('full')}
-                    className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded"
-                    title="Full video (interview mode)"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m0-16l-3 3m3-3l3 3m-3 13l-3-3m3 3l3-3" />
-                    </svg>
-                  </button>
-                </div>
+                {renderControlStripButtons('collapsed')}
               </div>
               {/* Reel info row inside audio bar */}
               {reelInfoBlock && (
@@ -1485,24 +1460,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           {youtube_id && videoMode === 'pip' && (
             <div className="sticky top-0 z-40 bg-[#faf9f7]/95 backdrop-blur border-b border-[#e5e3df]">
               <div className="px-3 py-2 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {reelInfoBlock}
-                  {isHighlightMode && <span className="w-px h-3 bg-[#e5e3df]" />}
-                </div>
-                <div className="flex items-center gap-2 text-[#888]">
-                  <button
-                    onClick={() => setAutoFollowEnabled(prev => !prev)}
-                    className={`text-[10px] px-2 py-1 rounded font-medium transition-colors ${autoFollowEnabled ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}`}
-                    title={autoFollowEnabled ? "Auto-follow: ON — skips collapsed turns [F]" : "Auto-follow: OFF — plays everything [F]"}
-                  >{autoFollowEnabled ? "[F] Follow ON" : "[F] Follow OFF"}</button>
-                  <span className="w-px h-4 bg-[#e5e3df]" />
-                  <button onClick={() => setVideoMode('full')} className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" title="Full video (interview mode)">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m0-16l-3 3m3-3l3 3m-3 13l-3-3m3 3l3-3" /></svg>
-                  </button>
-                  <button onClick={() => setVideoMode('collapsed')} className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" title="Audio only">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" /></svg>
-                  </button>
-                </div>
+                <div className="flex items-center gap-2">{reelInfoBlock}</div>
+                {renderControlStripButtons('pip')}
               </div>
             </div>
           )}
