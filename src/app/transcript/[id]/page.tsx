@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getAppearanceById } from "@lib/db/queries";
 import { formatDate } from "@lib/utils/format-date";
+import { formatDuration } from "@lib/utils/format-duration";
 import type { AppearanceRow } from "@lib/db/types";
 import type { SpeakerRole } from "@/types/appearance";
 import type { TranscriptViewerProps } from "./types";
@@ -149,9 +150,28 @@ export async function generateMetadata({
       ? `"${quoteTurn.text.slice(0, 150)}${quoteTurn.text.length > 150 ? "…" : ""}"`
       : "";
     const count = indices.size;
+    // Compute highlight duration from turn timestamps
+    const allTurns = row.turns ?? [];
+    const sortedExpanded = expandedTurns
+      .filter(t => t.timestamp_seconds != null)
+      .sort((a, b) => a.timestamp_seconds! - b.timestamp_seconds!);
+    let highlightSec = 0;
+    for (const turn of sortedExpanded) {
+      const nextTurn = allTurns.find(t =>
+        t.timestamp_seconds != null && t.timestamp_seconds! > turn.timestamp_seconds!
+      );
+      if (nextTurn) highlightSec += nextTurn.timestamp_seconds! - turn.timestamp_seconds!;
+    }
+    const lastTs = allTurns.length > 0
+      ? Math.max(...allTurns.filter(t => t.timestamp_seconds != null).map(t => t.timestamp_seconds!))
+      : 0;
+    const fullSec = lastTs > 0 ? lastTs + 120 : 0;
+    const durationSuffix = highlightSec > 0
+      ? ` · ${formatDuration(highlightSec)} highlight${fullSec > 0 ? ` from ${formatDuration(fullSec)} call` : ''}`
+      : '';
     description = quoteText
-      ? `${quoteText} — ${count} highlighted moment${count !== 1 ? "s" : ""}`
-      : `${count} highlighted moment${count !== 1 ? "s" : ""}`;
+      ? `${quoteText} — ${count} highlighted moment${count !== 1 ? "s" : ""}${durationSuffix}`
+      : `${count} highlighted moment${count !== 1 ? "s" : ""}${durationSuffix}`;
   } else {
     // Default mode — list speakers + turn count
     const names = row.speakers.map(s => s.name).join(", ");

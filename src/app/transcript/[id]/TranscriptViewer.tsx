@@ -14,6 +14,7 @@ import { SpeakerPanel } from "./SpeakerPanel";
 import type { SpeakerPanelHandle } from "./SpeakerPanel";
 import { TurnRenderer } from "./TurnRenderer";
 import { parseSearchQuery, matchesTurn, firstSentence } from "./helpers";
+import { formatDuration } from "@lib/utils/format-duration";
 
 // ---------------------------------------------------------------------------
 // Helpers (local to TranscriptViewer)
@@ -305,6 +306,16 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const [duration, setDuration] = useState(0);
   const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null);
   const [relatedExpanded, setRelatedExpanded] = useState(false);
+
+  // Highlight reel duration — sum of expanded turn durations.
+  // Uses video duration to cap the last turn (end=Infinity). Falls back to excluding it.
+  const highlightDurationSec = useMemo(() => {
+    if (!isHighlightMode || expandedPlaylist.length === 0) return 0;
+    return expandedPlaylist.reduce((sum, item) => {
+      const end = item.end === Infinity ? (duration > 0 ? duration : null) : item.end;
+      return sum + (end != null ? end - item.start : 0);
+    }, 0);
+  }, [isHighlightMode, expandedPlaylist, duration]);
 
   // ---- Quote highlight (from prep bullet click) ----
   const [highlightedQuote, setHighlightedQuote] = useState<string | null>(null);
@@ -1447,7 +1458,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             </div>
           )}
 
-          {/* Reset view — only shown in highlight mode */}
+          {/* Reset view + reel duration — only shown in highlight mode */}
           {isHighlightMode && (
             <div className="mx-6 mt-2 flex items-center gap-2">
               <button
@@ -1458,6 +1469,19 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               </button>
               {resetConfirmation && (
                 <span className="text-[11px] text-green-600">View reset</span>
+              )}
+              {highlightDurationSec > 0 && (
+                <span className="text-[11px] text-[#888]">
+                  {formatDuration(highlightDurationSec)} highlight
+                  {(() => {
+                    // Full call: prefer player duration, fall back to last turn timestamp
+                    const lastTs = turns.length > 0
+                      ? Math.max(...turns.filter(t => t.timestamp_seconds != null).map(t => t.timestamp_seconds!))
+                      : 0;
+                    const fullSec = duration > 0 ? duration : lastTs > 0 ? lastTs + 120 : 0;
+                    return fullSec > 0 ? ` · ${formatDuration(fullSec)} full call` : '';
+                  })()}
+                </span>
               )}
             </div>
           )}
