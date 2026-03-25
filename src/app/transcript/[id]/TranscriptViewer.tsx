@@ -441,7 +441,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         if (document.activeElement?.tagName === 'IFRAME') {
           window.focus();
         }
-      }, 100);
+      }, 0);
     };
     window.addEventListener('blur', handler);
     return () => window.removeEventListener('blur', handler);
