@@ -135,7 +135,12 @@ export async function generateMetadata({
   const title = row.title ?? "Untitled";
 
   // Priority: URL params > saved default view > none
-  const savedParams = row.default_view_params ? new URLSearchParams(row.default_view_params) : null;
+  // All-or-nothing: if any URL param is present, ignore saved view entirely
+  // (matches client-side logic in TranscriptViewer's urlInitRef effect)
+  const hasUrlParams = expanded != null || hidden != null;
+  const savedParams = !hasUrlParams && row.default_view_params
+    ? new URLSearchParams(row.default_view_params)
+    : null;
   const effectiveExpanded = expanded ?? savedParams?.get("expanded") ?? undefined;
   const effectiveHidden = hidden ?? savedParams?.get("hidden") ?? undefined;
 
