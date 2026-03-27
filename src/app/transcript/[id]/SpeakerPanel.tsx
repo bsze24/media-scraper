@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
 import type { TranscriptViewerProps } from "./types";
+import { KBD_CLASS } from "./helpers";
 
 type Speaker = TranscriptViewerProps["appearance"]["speakers"][number];
 
@@ -175,7 +176,7 @@ export const SpeakerPanel = forwardRef<SpeakerPanelHandle, SpeakerPanelProps>(fu
             >
               <div className="flex items-center justify-between gap-1">
                 {showNumberBadges && idx < 9 && (
-                  <span className="text-[10px] font-mono text-[#bbb] shrink-0">[{idx + 1}]</span>
+                  <kbd className={`${KBD_CLASS} shrink-0`}>{idx + 1}</kbd>
                 )}
                 {isEditing ? (
                   <input
