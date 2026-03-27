@@ -1409,8 +1409,27 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       }
     }
 
+    // Check if source_name looks like a person not in speakers[]
+    if (source_name) {
+      const words = source_name.trim().split(/\s+/);
+      const orgIndicators = /\b(capital|partners|associates|fund|group|invest|allocator|mainstream|podcast|llc|inc|management|street|advisory)\b/i;
+      if (words.length >= 2 && words.length <= 4 && !orgIndicators.test(source_name)) {
+        const sourceWords = new Set(words.map(w => w.toLowerCase()));
+        const hasMatch = speakers.some(s =>
+          s.name.toLowerCase().split(/\s+/).some(w => sourceWords.has(w))
+        );
+        if (!hasMatch) {
+          conditions.push({
+            key: "host-missing",
+            text: `"${source_name}" not found in speakers — may need rename`,
+            action: "Open Speaker Panel",
+          });
+        }
+      }
+    }
+
     return conditions;
-  }, [speakers, youtube_id, turns]);
+  }, [speakers, youtube_id, turns, source_name]);
 
   const showBanner = !bannerDismissed && bannerConditions.length > 0;
 
