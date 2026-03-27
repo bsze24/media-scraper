@@ -1093,7 +1093,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       }
 
       // Cmd+S / Ctrl+S — save current view as default (works even from inputs)
-      if (e.key === "s" && (e.metaKey || e.ctrlKey) && isHighlightMode) {
+      if (e.key === "s" && (e.metaKey || e.ctrlKey) && isHighlightMode && !savedMatchesCurrent && !saving) {
         e.preventDefault();
         handleSaveView();
         return;
