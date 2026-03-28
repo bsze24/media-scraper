@@ -34,7 +34,7 @@ export function formatSegmentsForPrompt(segments: CaptionSegment[]): string {
 /**
  * Format known speakers for the segmentation prompt.
  */
-export function formatSpeakersBlock(speakers: Speaker[]): string {
+export function formatSpeakersForSegmentation(speakers: Speaker[]): string {
   if (speakers.length === 0) {
     return "Known speakers:\n(none provided)";
   }
@@ -112,6 +112,6 @@ export function buildSegmentationPrompt(
 ): { system: string; user: string } {
   return {
     system: SEGMENT_PASSAGES_PROMPT,
-    user: `${formatSpeakersBlock(speakers)}\n\n## Caption Segments\n\n${formatSegmentsForPrompt(segments)}`,
+    user: `${formatSpeakersForSegmentation(speakers)}\n\n## Caption Segments\n\n${formatSegmentsForPrompt(segments)}`,
   };
 }

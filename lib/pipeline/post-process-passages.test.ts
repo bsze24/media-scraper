@@ -346,9 +346,10 @@ describe("integration: TA Associates fixture", () => {
   it.skipIf(!fixtureExists)(
     "post-processes real segmentation output",
     () => {
-      const raw: RawPassage[] = JSON.parse(
-        readFileSync(fixturePath, "utf-8")
-      );
+      const rawText = readFileSync(fixturePath, "utf-8");
+      // Strip markdown code fences if present (LLM may wrap output)
+      const cleaned = rawText.replace(/^```(?:json)?\s*\n?/m, "").replace(/\n?```\s*$/m, "");
+      const raw: RawPassage[] = JSON.parse(cleaned);
 
       // Actual speakers from DB (Oscar has parenthetical in DB)
       const speakers: Speaker[] = [
