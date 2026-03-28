@@ -196,6 +196,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   // Hidden turns — view-layer only, synced to URL ?hidden= param
   const [hiddenTurns, setHiddenTurns] = useState<Set<number>>(new Set);
 
+  // Refs synced to state — for keyboard handler to avoid useEffect dep changes
+  const turnsRef = useRef(turns);
+  turnsRef.current = turns;
+  const expandedTurnsRef = useRef(expandedTurns);
+  expandedTurnsRef.current = expandedTurns;
+  const turnsBySectionRef = useRef(turnsBySection);
+  turnsBySectionRef.current = turnsBySection;
+
   // Track whether we're in highlight mode (URL has ?expanded= param)
   const [isHighlightMode, setIsHighlightMode] = useState(false);
 
@@ -402,28 +410,33 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     const timestamped = turns.filter(t => t.timestamp_seconds != null).map(t => t.timestamp_seconds!);
     const lastTs = timestamped.length > 0 ? Math.max(...timestamped) : 0;
     const fullSec = duration > 0 ? duration : lastTs > 0 ? lastTs + 120 : 0;
-    return fullSec > 0 ? `${formatDuration(fullSec)} full call` : '';
+    return fullSec > 0 ? `${formatDuration(fullSec)} full video` : '';
   }, [turns, duration]);
 
   // Shared control strip right-side buttons — follow toggle + mode switches.
   // Parameterized by current mode to show the correct "switch to" buttons.
   const renderControlStripButtons = (mode: 'full' | 'pip' | 'collapsed') => (
-    <div className="flex items-center gap-2 text-[#888]">
-      <button onClick={() => cyclePlaybackRate(1)} className="text-[10px] font-mono px-2 py-1 rounded font-medium transition-colors bg-[#f5f4f2] border border-[#e5e3df] hover:bg-[#eeedeb] text-[#555] flex items-center gap-1" title="Playback speed — click to cycle, < / > keys">
+    <div className="flex items-center gap-1.5 text-[#888]">
+      <button onClick={() => cyclePlaybackRate(-1, false)} className="text-[10px] text-[#999] hover:text-[#555] transition-colors" title="Decrease speed [<]">
+        <kbd className={KBD_CLASS}>&lt;</kbd>
+      </button>
+      <button onClick={() => cyclePlaybackRate(1)} className="text-[10px] font-mono px-2 py-1 rounded font-medium transition-colors bg-[#f5f4f2] border border-[#e5e3df] hover:bg-[#eeedeb] text-[#555]" title="Playback speed — click to cycle">
         {playbackRate === 1 ? '1x' : `${playbackRate}x`}
-        <kbd className={KBD_CLASS}>&lt;/&gt;</kbd>
+      </button>
+      <button onClick={() => cyclePlaybackRate(1, false)} className="text-[10px] text-[#999] hover:text-[#555] transition-colors" title="Increase speed [>]">
+        <kbd className={KBD_CLASS}>&gt;</kbd>
       </button>
       <button
         onClick={() => setAutoFollowEnabled(prev => !prev)}
         className={`text-[10px] px-2 py-1 rounded font-medium transition-colors flex items-center gap-1 ${autoFollowEnabled ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}`}
-        title={autoFollowEnabled ? "Auto-follow: ON — skips collapsed turns [F]" : "Auto-follow: OFF — plays everything [F]"}
+        title={autoFollowEnabled ? "Auto-scroll: ON — skips collapsed turns [A]" : "Auto-scroll: OFF — plays everything [A]"}
       >
-        <kbd className={KBD_CLASS}>F</kbd> Follow {autoFollowEnabled ? "ON" : "OFF"}
+        <kbd className={KBD_CLASS}>A</kbd> Auto-Scroll {autoFollowEnabled ? "ON" : "OFF"}
       </button>
       <span className="w-px h-4 bg-[#e5e3df]" />
       <button
         onClick={() => setVideoMode(prev => prev === 'full' ? 'collapsed' : 'full')}
-        className={`p-1.5 rounded transition-colors flex items-center gap-1 ${mode === 'full' ? 'text-[#b8860b] bg-[#b8860b]/10' : 'hover:text-[#b8860b] hover:bg-[#f5f4f2]'}`}
+        className={`p-1.5 rounded transition-colors flex items-center gap-0.5 ${mode === 'full' ? 'text-[#b8860b] bg-[#b8860b]/10' : 'hover:text-[#b8860b] hover:bg-[#f5f4f2]'}`}
         title={mode === 'full' ? "Switch to audio only [w]" : "Full video [w]"}
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m0-16l-3 3m3-3l3 3m-3 13l-3-3m3 3l3-3" /></svg>
@@ -431,7 +444,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       </button>
       <button
         onClick={() => setVideoMode(prev => prev === 'pip' ? 'collapsed' : 'pip')}
-        className={`p-1.5 rounded transition-colors flex items-center gap-1 ${mode === 'pip' ? 'text-[#b8860b] bg-[#b8860b]/10' : 'hover:text-[#b8860b] hover:bg-[#f5f4f2]'}`}
+        className={`p-1.5 rounded transition-colors flex items-center gap-0.5 ${mode === 'pip' ? 'text-[#b8860b] bg-[#b8860b]/10' : 'hover:text-[#b8860b] hover:bg-[#f5f4f2]'}`}
         title={mode === 'pip' ? "Close mini player [q]" : "Mini player [q]"}
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17L17 7M17 7H8M17 7v9" /></svg>
@@ -502,48 +515,71 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     }
   }, [buildParamsString, saveDefaultView]);
 
+  const [clearViewConfirmation, setClearViewConfirmation] = useState(false);
   const handleClearSavedView = useCallback(async () => {
     const success = await saveDefaultView(null);
-    if (success) handleResetView();
+    if (success) {
+      setClearViewConfirmation(true);
+      setTimeout(() => {
+        setClearViewConfirmation(false);
+        handleResetView();
+      }, 1000);
+    }
   }, [saveDefaultView, handleResetView]);
 
   // Platform-aware modifier key symbol (⌘ on Mac, Ctrl on others)
   const modSymbol = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent) ? '\u2318' : 'Ctrl+';
 
-  // Shared reel info block — duration + reset + save view. Used in all control strip variants.
-  // Always renders: in normal mode shows call duration; in highlight mode adds reset/save controls.
+  // Shared reel info block — duration label only. Used in all control strip variants.
   const reelInfoBlock = (
     <>
       {isHighlightMode && highlightDurationLabel ? (
-        <span className="text-[11px] text-[#888]">{highlightDurationLabel} highlight{fullCallLabel ? ` \u00B7 ${fullCallLabel}` : ''}</span>
+        <span className="text-[11px]">
+          <span className="font-medium text-[#b8860b]">{highlightDurationLabel} highlight</span>
+          {fullCallLabel && <span className="text-[#bbb]"> · {fullCallLabel}</span>}
+        </span>
       ) : fullCallLabel ? (
         <span className="text-[11px] text-[#888]">{fullCallLabel}</span>
       ) : null}
+    </>
+  );
+
+  // Header bar actions — Reset, Save, Help. Rendered in top-right header.
+  const headerActions = (
+    <div className="hidden md:flex items-center gap-0">
       {isHighlightMode && (
-        <span className="hidden md:inline-flex items-center gap-2">
+        <>
           {resetConfirmation ? (
-            <span className="text-[11px] text-green-600">View reset</span>
+            <span className="text-[11px] text-green-600 px-1.5 py-1">View reset</span>
           ) : (
-            <button onClick={handleResetView} className="inline-flex items-center gap-1 text-[11px] text-[#666] hover:text-[#b8860b] transition-colors">
+            <button onClick={handleResetView} className="inline-flex items-center gap-1 text-[11px] text-[#666] hover:text-[#b8860b] hover:bg-[#f5f4f2] px-1.5 py-1 rounded transition-colors">
               <kbd className={KBD_CLASS}>{'\u21E7'}R</kbd> Reset
             </button>
           )}
-          <span className="text-[#ddd]">\u00B7</span>
-          {saveViewConfirmation ? (
-            <span className="text-[11px] text-green-600">Saved ✓</span>
+          {clearViewConfirmation ? (
+            <span className="text-[11px] text-[#999] px-1.5 py-1">Cleared</span>
+          ) : saveViewConfirmation ? (
+            <span className="text-[11px] text-green-600 px-1.5 py-1">Saved ✓</span>
           ) : savedMatchesCurrent && defaultViewParams ? (
-            <span className="text-[11px] text-[#999]">
+            <span className="text-[11px] text-[#999] px-1.5 py-1">
               ✓ Saved
               <button onClick={handleClearSavedView} className="ml-1.5 text-[10px] text-[#bbb] hover:text-[#b8860b] transition-colors underline">Clear</button>
             </span>
           ) : hasChangesFromDefaults && !saving ? (
-            <button onClick={handleSaveView} className="inline-flex items-center gap-1 text-[11px] text-[#666] hover:text-[#b8860b] transition-colors">
+            <button onClick={handleSaveView} className="inline-flex items-center gap-1 text-[11px] text-[#666] hover:text-[#b8860b] hover:bg-[#f5f4f2] px-1.5 py-1 rounded transition-colors">
               <kbd className={KBD_CLASS}>{modSymbol}S</kbd> {defaultViewParams ? "Update" : "Save"}
             </button>
           ) : null}
-        </span>
+        </>
       )}
-    </>
+      <button
+        onClick={() => setShowHelpOverlay(true)}
+        className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-[#f5f4f2] transition-colors text-[#999] hover:text-[#666]"
+        title="Keyboard shortcuts (?)"
+      >
+        <kbd className={KBD_CLASS}>?</kbd>
+      </button>
+    </div>
   );
 
   const playToggleGuardRef = useRef(false);
@@ -888,11 +924,18 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   const scrollToSection = useCallback((anchor: string) => {
     setExpandedSections((prev) => ({ ...prev, [anchor]: true }));
+    // Activate the first visible turn in the section
+    const sectionTurns = turnsBySection.get(anchor) ?? [];
+    const firstVisible = sectionTurns.find(t => !hiddenTurns.has(t.turn_index));
+    if (firstVisible) {
+      setActiveTurnIndex(firstVisible.turn_index);
+      setAutoFollowEnabled(false);
+    }
     setTimeout(() => {
       const el = sectionRefs.current[anchor];
       if (el) scrollIntoViewWithOffset(el);
     }, 60);
-  }, [scrollIntoViewWithOffset]);
+  }, [scrollIntoViewWithOffset, turnsBySection, hiddenTurns]);
 
   const allExpanded = allAnchors.every((a) => expandedSections[a]);
   const allCollapsed = allAnchors.every((a) => !expandedSections[a]);
@@ -1079,7 +1122,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           searchInputRef.current?.blur();
           return;
         }
-        // 6. Clear active turn
+        // 6. Clear speaker highlight
+        if (activeSpeaker) {
+          setActiveSpeaker(null);
+          return;
+        }
+        // 7. Clear active turn
         if (activeTurnIndex !== null) {
           setActiveTurnIndex(null);
           return;
@@ -1204,14 +1252,15 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           break;
         }
         case "t": {
-          // Seek to active turn timestamp + re-enable auto-follow
+          // Seek to active turn timestamp + re-enable auto-scroll
           if (!activeTurn || activeTurn.timestamp_seconds == null) break;
           seekToTime(activeTurn.timestamp_seconds);
           setAutoFollowEnabled(true);
           break;
         }
-        case "f": {
-          // Toggle follow at current video position — no seek
+        case "a": {
+          // a — toggle auto-scroll at current video position
+          if (e.shiftKey) break;
           setAutoFollowEnabled(prev => !prev);
           break;
         }
@@ -1227,35 +1276,20 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         }
 
         // --- Editing ---
-        case "e": {
-          // e — edit turn text
-          if (!activeTurn || isMonologue) break;
+        case "T": {
+          // Shift+T — edit turn text
+          if (!e.shiftKey || !activeTurn || isMonologue) break;
           startEditingTurnText(activeTurn.turn_index, activeTurn.text);
           break;
         }
-        case "E": {
-          // Shift+E — edit speaker meta
-          if (!e.shiftKey || !activeTurn) break;
-          speakerPanelEditRef.current?.startEditing(activeTurn.speaker, 'meta');
-          speakersPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-          break;
-        }
-        case "a": {
-          if (e.shiftKey) break; // handled by 'A' case
-          // a — open speaker dropdown on active turn
-          if (!activeTurn || isMonologue) break;
+        case "S": {
+          // Shift+S — change speaker on active turn (re-attribute)
+          if (!e.shiftKey || !activeTurn || isMonologue) break;
           if (allSpeakersGeneric) {
             speakersPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
           } else {
             setTurnSpeakerDropdown(activeTurn.turn_index);
           }
-          break;
-        }
-        case "A": {
-          // Shift+A — rename speaker globally
-          if (!e.shiftKey || !activeTurn) break;
-          speakerPanelEditRef.current?.startEditing(activeTurn.speaker, 'rename');
-          speakersPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
           break;
         }
 
@@ -1266,7 +1300,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           break;
         }
         case "x": {
-          if (e.shiftKey) break; // handled by 'X' case
+          if (e.shiftKey) break;
           // x — toggle hide on active turn
           if (activeTurnIndex === null) break;
           const isCurrentlyHidden = hiddenTurns.has(activeTurnIndex);
@@ -1313,11 +1347,23 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           }
           break;
         }
-        case "X": {
-          // Shift+X — unhide all
-          if (!e.shiftKey) break;
-          suppressUrlSyncRef.current = false;
-          setHiddenTurns(new Set());
+        case "M": {
+          // Shift+M — toggle expand/collapse all turns in active section
+          if (!e.shiftKey || !activeTurnSectionAnchor) break;
+          const sectionTurns = turnsBySectionRef.current.get(activeTurnSectionAnchor) ?? [];
+          const sectionIndices = sectionTurns.map(t => t.turn_index);
+          if (sectionIndices.length === 0) break;
+          const currentExpanded = expandedTurnsRef.current;
+          const expandedCount = sectionIndices.filter(i => currentExpanded.has(i)).length;
+          const mostlyExpanded = expandedCount > sectionIndices.length / 2;
+          setExpandedTurns(prev => {
+            const next = new Set(prev);
+            for (const i of sectionIndices) {
+              if (mostlyExpanded) next.delete(i); else next.add(i);
+            }
+            return next;
+          });
+          setIsHighlightMode(true);
           break;
         }
         case "R": {
@@ -1327,12 +1373,44 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           break;
         }
 
-        // --- Speaker filter ---
+        // --- Speaker: number = expand/collapse toggle, Shift+number = edit speaker ---
         case "1": case "2": case "3": case "4": case "5":
         case "6": case "7": case "8": case "9": {
           const idx = parseInt(e.key) - 1;
-          if (idx < speakers.length) {
-            handleSpeakerClick(speakers[idx].name);
+          if (idx >= speakers.length) break;
+          const speakerName = speakers[idx].name;
+          if (e.shiftKey) {
+            // Shift+number — enter speaker edit mode (rename)
+            speakerPanelEditRef.current?.startEditing(speakerName, 'rename');
+            speakersPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          } else {
+            // number — toggle expand/collapse for this speaker's turns
+            const currentTurns = turnsRef.current;
+            const currentExpanded = expandedTurnsRef.current;
+            const speakerTurnIndices = currentTurns.filter(t => t.speaker === speakerName).map(t => t.turn_index);
+            if (speakerTurnIndices.length === 0) break;
+            const expandedCount = speakerTurnIndices.filter(i => currentExpanded.has(i)).length;
+            const mostlyExpanded = expandedCount > speakerTurnIndices.length / 2;
+            setExpandedTurns(prev => {
+              const next = new Set(prev);
+              for (const i of speakerTurnIndices) {
+                if (mostlyExpanded) next.delete(i); else next.add(i);
+              }
+              return next;
+            });
+            setActiveSpeaker(speakerName);
+            setIsHighlightMode(true);
+          }
+          break;
+        }
+        case "!": case "@": case "#": case "$": case "%":
+        case "^": case "&": case "*": case "(": {
+          // Shift+number produces these symbols — handle speaker edit
+          const shiftNumMap: Record<string, number> = { "!": 0, "@": 1, "#": 2, "$": 3, "%": 4, "^": 5, "&": 6, "*": 7, "(": 8 };
+          const idx = shiftNumMap[e.key];
+          if (idx !== undefined && idx < speakers.length) {
+            speakerPanelEditRef.current?.startEditing(speakers[idx].name, 'rename');
+            speakersPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
           }
           break;
         }
@@ -1370,7 +1448,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     sectionFirstTurns, editingTurnText, turnSpeakerDropdown, floatingPanel,
     showHelpOverlay, isMonologue, allSpeakersGeneric, speakers,
     cancelEditTurnText, startEditingTurnText, seekToTime, cyclePlaybackRate,
-    toggleTurnExpanded, toggleTurnHidden, handleResetView, handleSpeakerClick,
+    toggleTurnExpanded, toggleTurnHidden, handleResetView,
     highlightedQuote, hiddenTurns, expandedPlaylist, youtube_id,
     handleSaveView, isHighlightMode, kbdNavCount,
   ]);
@@ -1483,13 +1561,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             </span>
           )}
           <span>{date}</span>
-          <button
-            onClick={() => setShowHelpOverlay(true)}
-            className="hidden md:flex items-center gap-1 px-2 py-1 rounded hover:bg-[#f5f4f2] transition-colors text-[#999] hover:text-[#666]"
-            title="Keyboard shortcuts (?)"
-          >
-            <kbd className={KBD_CLASS}>?</kbd>
-          </button>
+          <span className="w-px h-4 bg-[#e5e3df]" />
+          {headerActions}
         </div>
       </header>
 
@@ -1547,45 +1620,15 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           </div>
 
           {/* Sections */}
-          <div className="px-3 py-1 flex-1">
-            <div className="flex items-center justify-between mb-1">
-              <div className="text-[10px] font-medium uppercase tracking-wider text-[#999]">
+          <div className="px-3 py-2 flex-1">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[#999]">
                 {isMonologue ? "Topics" : "Sections"}
               </div>
-              <div className="flex items-center gap-1">
-                <span className="hidden md:inline-flex items-center gap-2 mr-1 text-[10px] text-[#999]">
-                  <span className="inline-flex items-center gap-0.5"><kbd className={KBD_CLASS}>n</kbd> next</span>
-                  <span className="inline-flex items-center gap-0.5"><kbd className={KBD_CLASS}>p</kbd> prev</span>
-                </span>
-                {!isMonologue && (
-                  <>
-                    <button
-                      onClick={() => {
-                        const m: Record<string, boolean> = {};
-                        allAnchors.forEach((a) => (m[a] = true));
-                        setExpandedSections(m);
-                      }}
-                      disabled={allExpanded}
-                      className="w-5 h-5 flex items-center justify-center text-[#999] hover:text-[#555] hover:bg-[#f0efed] transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[#999]"
-                      title="Expand all"
-                    >
-                      <span className="text-sm">+</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        const m: Record<string, boolean> = {};
-                        allAnchors.forEach((a) => (m[a] = false));
-                        setExpandedSections(m);
-                      }}
-                      disabled={allCollapsed}
-                      className="w-5 h-5 flex items-center justify-center text-[#999] hover:text-[#555] hover:bg-[#f0efed] transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[#999]"
-                      title="Collapse all"
-                    >
-                      <span className="text-sm">-</span>
-                    </button>
-                  </>
-                )}
-              </div>
+              <span className="hidden md:inline-flex items-center gap-2 text-[10px] text-[#999]">
+                <span className="inline-flex items-center gap-0.5"><kbd className={KBD_CLASS}>n</kbd> next</span>
+                <span className="inline-flex items-center gap-0.5"><kbd className={KBD_CLASS}>p</kbd> prev</span>
+              </span>
             </div>
             <div className="space-y-0.5">
               {sections.map((s) => {
@@ -1593,6 +1636,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                 const hit = hasSearch && searchResults.anchors.has(s.anchor);
                 const dim = hasSearch && !hit;
                 const hitCount = searchResults.countBySection.get(s.anchor) ?? 0;
+                const isActiveSection = activeTurnSectionAnchor === s.anchor;
 
                 return (
                   <button
@@ -1603,8 +1647,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         ? 'cursor-default opacity-60'
                         : dim
                         ? 'pointer-events-none opacity-30'
+                        : isActiveSection
+                        ? 'bg-[#b8860b]/5 border-l-2 border-[#b8860b]'
                         : expandedSections[s.anchor]
-                        ? 'bg-white border-l-2 border-[#b8860b]'
+                        ? 'bg-white border-l-2 border-[#b8860b]/30'
                         : 'hover:bg-[#f5f4f2] border-l-2 border-transparent'
                     }`}
                   >
@@ -2354,27 +2400,26 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                 ...(youtube_id ? [
                   ["Playback", [
                     ["Space", "Play / pause"],
-                    ["t", "Seek to active turn + auto-follow"],
-                    ["f", "Toggle auto-follow"],
+                    ["t", "Seek to active turn + auto-scroll"],
+                    ["a", "Toggle auto-scroll"],
                     [">", "Increase speed"],
                     ["<", "Decrease speed"],
                   ]],
                 ] as [string, [string, string][]][] : []),
                 ["Editing", [
-                  ["e", "Edit turn text"],
-                  ["a", "Re-attribute turn speaker"],
-                  ["\u21E7A", "Rename speaker globally"],
-                  ["\u21E7E", "Edit speaker title"],
+                  ["\u21E7T", "Edit turn text"],
+                  ["\u21E7S", "Change turn speaker"],
                 ]],
                 ["View", [
                   ["m", "Toggle expand / collapse"],
+                  ["\u21E7M", "Toggle all turns in section"],
                   ["x", "Toggle hide turn"],
-                  ["\u21E7X", "Unhide all turns"],
                   ["\u21E7R", "Reset to defaults"],
                   ["\u2318S", "Save view as default"],
                 ]],
-                ["Filter", [
-                  ["1\u20139", "Toggle speaker filter"],
+                ["Speakers", [
+                  ["1\u20139", "Toggle expand / collapse"],
+                  ["\u21E71\u20139", "Edit speaker name"],
                 ]],
                 ...(youtube_id ? [
                   ["Video", [
