@@ -921,6 +921,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   );
 
   const scrollToSection = useCallback((anchor: string) => {
+    lastNavWasKeyboardRef.current = false;
     setExpandedSections((prev) => ({ ...prev, [anchor]: true }));
     // Activate the first visible turn in the section
     const sectionTurns = turnsBySection.get(anchor) ?? [];
@@ -1206,7 +1207,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           break;
         }
         case "n": {
-          // Jump to first turn of next section
+          // Jump to first turn of next section (expand if collapsed)
           const currentAnchor = activeTurnIndex !== null
             ? turnSectionMap.get(activeTurnIndex) ?? null
             : null;
@@ -1215,13 +1216,15 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             : -1;
           const nextIdx = currentSectionIdx + 1;
           if (nextIdx < sectionFirstTurns.length) {
+            const targetAnchor = sectionFirstTurns[nextIdx].anchor;
+            setExpandedSections((prev) => ({ ...prev, [targetAnchor]: true }));
             setActiveTurnIndex(sectionFirstTurns[nextIdx].firstTurnIndex);
             setAutoFollowEnabled(false);
           }
           break;
         }
         case "p": {
-          // Jump to first turn of previous section
+          // Jump to first turn of previous section (expand if collapsed)
           const currentAnchor = activeTurnIndex !== null
             ? turnSectionMap.get(activeTurnIndex) ?? null
             : null;
@@ -1229,6 +1232,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             ? sectionFirstTurns.findIndex(s => s.anchor === currentAnchor)
             : -1;
           if (currentSectionIdx > 0) {
+            const targetAnchor = sectionFirstTurns[currentSectionIdx - 1].anchor;
+            setExpandedSections((prev) => ({ ...prev, [targetAnchor]: true }));
             setActiveTurnIndex(sectionFirstTurns[currentSectionIdx - 1].firstTurnIndex);
             setAutoFollowEnabled(false);
           }
