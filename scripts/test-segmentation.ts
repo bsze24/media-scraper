@@ -386,7 +386,8 @@ async function listAppearances(): Promise<void> {
   for (const row of youtube) {
     const segCount = row.scraper_metadata.segments.length;
     const spkCount = Array.isArray(row.speakers) ? row.speakers.length : 0;
-    const title = row.title.length > titleW - 1 ? row.title.slice(0, titleW - 4) + "..." : row.title;
+    const rawTitle = row.title ?? "Untitled";
+    const title = rawTitle.length > titleW - 1 ? rawTitle.slice(0, titleW - 4) + "..." : rawTitle;
     console.log(
       `${row.id.padEnd(idW)}| ${title.padEnd(titleW)}| ${String(segCount).padStart(segW)} | ${String(spkCount).padStart(spkW)}`
     );
