@@ -529,7 +529,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   }, [saveDefaultView, handleResetView]);
 
   // Platform-aware modifier key symbol (⌘ on Mac, Ctrl on others)
-  const modSymbol = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent) ? '\u2318' : 'Ctrl+';
+  // Initialized to Ctrl+ for SSR, updated client-side to avoid hydration mismatch.
+  const [modSymbol, setModSymbol] = useState('Ctrl+');
+  useEffect(() => {
+    if (/Mac|iPhone|iPad/.test(navigator.userAgent)) setModSymbol('\u2318');
+  }, []);
 
   // Shared reel info block — duration label only. Used in all control strip variants.
   // Returns null (falsy) when there's no content to render.
@@ -1407,6 +1411,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             if (speakerTurnIndices.length === 0) break;
             const expandedCount = speakerTurnIndices.filter(i => currentExpanded.has(i)).length;
             const mostlyExpanded = expandedCount > speakerTurnIndices.length / 2;
+            // Save current view state before filtering (so Escape can restore)
+            if (!activeSpeaker) {
+              savedExpandedTurnsRef.current = expandedTurnsRef.current;
+              savedIsHighlightModeRef.current = isHighlightMode;
+            }
             setExpandedTurns(prev => {
               const next = new Set(prev);
               for (const i of speakerTurnIndices) {
@@ -1414,11 +1423,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               }
               return next;
             });
-            // Save current view state before filtering (so Escape can restore)
-            if (!activeSpeaker) {
-              savedExpandedTurnsRef.current = expandedTurnsRef.current;
-              savedIsHighlightModeRef.current = isHighlightMode;
-            }
             setActiveSpeaker(speakerName);
             setIsHighlightMode(true);
           }
