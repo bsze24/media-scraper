@@ -67,6 +67,11 @@ function normalizeSpeakerName(
     return { normalized: name };
   }
 
+  // Try matching original name before stripping (handles DB names with parentheticals)
+  for (const s of speakers) {
+    if (s.name === name) return { normalized: s.name };
+  }
+
   // Strip parenthetical annotations
   const stripped = name.replace(/\s*\(.*\)\s*$/, "").trim();
 
