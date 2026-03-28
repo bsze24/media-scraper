@@ -35,6 +35,10 @@ function computeDurations(
   passages: Passage[],
   segments: CaptionSegment[]
 ): { min: number; max: number; avg: number; median: number } {
+  if (passages.length === 0) {
+    return { min: 0, max: 0, avg: 0, median: 0 };
+  }
+
   const durations = passages.map((p) => {
     const startSec = segments[p.start_segment]?.start ?? 0;
     const endSeg = segments[p.end_segment];
