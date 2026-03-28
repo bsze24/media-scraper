@@ -122,6 +122,14 @@ function stepNormalizeSpeakers(
 
 // ── Step 2: Passage size enforcement ─────────────────────────────────────
 
+/**
+ * Find where to split an oversized passage. Returns the first segment
+ * index of the SECOND passage (i.e., first passage ends at splitPoint - 1).
+ *
+ * Prefers splitting at a >> marker (speaker change) near the midpoint,
+ * since >> marks the start of new speech — the >> segment belongs in
+ * the second passage.
+ */
 function findSplitPoint(
   passage: RawPassage,
   segments: CaptionSegment[]
@@ -146,6 +154,9 @@ function findSplitPoint(
     }
   }
 
+  // >> marker found: it marks the start of new speech, so the >>
+  // segment is the first segment of the second passage.
+  // No >> found: split at midpoint (midpoint becomes first of second passage).
   return bestIdx >= 0 ? bestIdx : mid;
 }
 
@@ -167,11 +178,12 @@ function stepEnforceSize(
         continue;
       }
 
+      // splitPoint = first segment index of the second passage
       const splitPoint = findSplitPoint(p, segments);
 
       // Check minimum size floor
-      const firstSize = splitPoint - p.start_segment + 1;
-      const secondSize = p.end_segment - splitPoint;
+      const firstSize = splitPoint - p.start_segment;
+      const secondSize = p.end_segment - splitPoint + 1;
 
       if (firstSize < MIN_SPLIT_SIZE || secondSize < MIN_SPLIT_SIZE) {
         expanded.push(p);
@@ -185,12 +197,12 @@ function stepEnforceSize(
       expanded.push(
         {
           ...p,
-          end_segment: splitPoint,
+          end_segment: splitPoint - 1,
           topic_tags: [...p.topic_tags],
         },
         {
           ...p,
-          start_segment: splitPoint + 1,
+          start_segment: splitPoint,
           topic_tags: [...p.topic_tags],
         }
       );

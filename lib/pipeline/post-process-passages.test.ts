@@ -174,16 +174,16 @@ describe("passage size enforcement", () => {
     // The general behavior is covered.
   });
 
-  it("prefers >> marker near midpoint for split", () => {
+  it("prefers >> marker near midpoint for split, placing >> in second passage", () => {
     const segments = makeSegments(30, [14]); // >> at index 14
     const passages = [makePassage({ start_segment: 0, end_segment: 29 })];
     const speakers: Speaker[] = [{ name: "Alice", role: "guest" }];
 
     const { passages: result } = postProcessPassages(passages, speakers, segments);
     expect(result.length).toBe(2);
-    // Should split at 14 (the >> marker) not 15 (the midpoint)
-    expect(result[0].end_segment).toBe(14);
-    expect(result[1].start_segment).toBe(15);
+    // >> marks start of new speech — segment 14 belongs in the second passage
+    expect(result[0].end_segment).toBe(13);
+    expect(result[1].start_segment).toBe(14);
   });
 
   it("preserves speaker and signal_score on split passages", () => {
