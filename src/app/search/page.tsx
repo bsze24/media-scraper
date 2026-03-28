@@ -6,12 +6,16 @@ import { Pagination } from "./Pagination";
 
 const PAGE_SIZE = 20;
 
+import { detectSpeakerMismatch } from "../speaker-utils";
+
 function AppearanceTableRow({ row }: { row: AppearanceListRow }) {
   const speakers = (row.speakers ?? [])
     .map((s) => s.name)
     .filter(Boolean)
     .join(", ");
   const bulletCount = row.prep_bullets?.bullets?.length ?? 0;
+  const hasGenericSpeakers = (row.speakers ?? []).some(s => /^Speaker \d+$/.test(s.name));
+  const hasSpeakerMismatch = detectSpeakerMismatch(row.source_name, row.speakers ?? []);
 
   return (
     <tr className="border-b border-zinc-100 hover:bg-zinc-50">
@@ -25,7 +29,15 @@ function AppearanceTableRow({ row }: { row: AppearanceListRow }) {
       </td>
       <td className="py-2 pr-3 text-xs text-zinc-500">{row.source_name ?? "—"}</td>
       <td className="py-2 pr-3 text-xs text-zinc-500">{formatDate(row.appearance_date) || "—"}</td>
-      <td className="py-2 pr-3 text-xs text-zinc-500">{speakers || "—"}</td>
+      <td className="py-2 pr-3 text-xs text-zinc-500">
+        {speakers || "—"}
+        {hasGenericSpeakers && (
+          <span className="ml-1.5 text-[10px] text-amber-600" title="Has generic speaker names">needs ID</span>
+        )}
+        {hasSpeakerMismatch && (
+          <span className="ml-1.5 text-[10px] text-red-500" title={`"${row.source_name}" not found in speakers — may need rename`}>host missing</span>
+        )}
+      </td>
       <td className="py-2 text-xs text-zinc-500 text-right">{bulletCount}</td>
     </tr>
   );
