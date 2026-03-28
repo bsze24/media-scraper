@@ -1466,7 +1466,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     toggleTurnExpanded, toggleTurnHidden, handleResetView,
     highlightedQuote, hiddenTurns, expandedPlaylist, youtube_id,
     handleSaveView, isHighlightMode, kbdNavCount, savedMatchesCurrent, saving,
-    allAnchors,
+    allAnchors, activeTurnSectionAnchor,
   ]);
   // EXTRACT: useKeyboardShortcuts — end
 
