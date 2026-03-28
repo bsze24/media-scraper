@@ -45,3 +45,6 @@ next-env.d.ts
 
 # URL lists (may contain proprietary content lists)
 urls/*.txt
+
+# script output
+scripts/output/
