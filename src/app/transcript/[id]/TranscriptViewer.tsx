@@ -1419,6 +1419,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           });
           setActiveSpeaker(speakerName);
           setIsHighlightMode(true);
+          // Filter sections to only those containing this speaker
+          const sectionFilter: Record<string, boolean> = {};
+          allAnchors.forEach((a) => {
+            sectionFilter[a] = (turnsBySectionRef.current.get(a) ?? []).some((t) => t.speaker === speakerName);
+          });
+          setExpandedSections(sectionFilter);
           break;
         }
         case "!": case "@": case "#": case "$": case "%":
