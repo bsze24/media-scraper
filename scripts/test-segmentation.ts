@@ -1,3 +1,6 @@
+import { loadEnvConfig } from "@next/env";
+loadEnvConfig(process.cwd());
+
 import { createServerClient } from "../lib/db/client";
 import { createAnthropicClient } from "../lib/anthropic/client";
 import { buildSegmentationPrompt } from "../lib/prompts/segmentation";
