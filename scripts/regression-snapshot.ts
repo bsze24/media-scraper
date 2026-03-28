@@ -25,6 +25,8 @@ interface AppearanceSnapshot {
   first_turn_speaker: string | null;
   last_turn_speaker: string | null;
   cleaned_transcript_length: number;
+  segment_count: number;
+  passage_count: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -60,7 +62,7 @@ async function main() {
   const { data, error } = await supabase
     .from("appearances")
     .select(
-      "id, title, transcript_source, source_name, turns, speakers, sections, entity_tags, prep_bullets, turn_summaries, cleaned_transcript, processing_detail"
+      "id, title, transcript_source, source_name, turns, speakers, sections, entity_tags, prep_bullets, turn_summaries, cleaned_transcript, processing_detail, scraper_metadata"
     )
     .eq("processing_status", "complete")
     .order("title");
@@ -102,6 +104,10 @@ async function main() {
       first_turn_speaker: turns[0]?.speaker ?? null,
       last_turn_speaker: turns[turns.length - 1]?.speaker ?? null,
       cleaned_transcript_length: row.cleaned_transcript?.length ?? 0,
+      segment_count: Array.isArray(row.scraper_metadata?.segments)
+        ? row.scraper_metadata.segments.length
+        : 0,
+      passage_count: 0, // placeholder — no passages table yet
     };
   });
 
@@ -126,6 +132,7 @@ async function main() {
   const secW = 10;
   const entW = 10;
   const sumW = 11;
+  const segW = 8;
   const clnW = 11;
 
   const header = [
@@ -139,6 +146,7 @@ async function main() {
     "Sections".padStart(secW),
     "Entities".padStart(entW),
     "Summaries".padStart(sumW),
+    "Segs".padStart(segW),
     "Clean Len".padStart(clnW),
   ].join(" | ");
 
@@ -160,6 +168,7 @@ async function main() {
       String(s.section_count).padStart(secW),
       String(entityTotal).padStart(entW),
       String(s.turn_summary_count).padStart(sumW),
+      String(s.segment_count || "-").padStart(segW),
       String(s.cleaned_transcript_length).padStart(clnW),
     ].join(" | ");
     console.log(row);
