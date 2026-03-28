@@ -574,7 +574,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-[#f5f4f2] transition-colors text-[#999] hover:text-[#666]"
         title="Keyboard shortcuts (?)"
       >
-        <kbd className={KBD_CLASS}>?</kbd>
+        <span className="md:hidden text-[10px]">?</span><kbd className={KBD_CLASS}>?</kbd>
       </button>
     </div>
   );
@@ -1444,7 +1444,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     cancelEditTurnText, startEditingTurnText, seekToTime, cyclePlaybackRate,
     toggleTurnExpanded, toggleTurnHidden, handleResetView,
     highlightedQuote, hiddenTurns, expandedPlaylist, youtube_id,
-    handleSaveView, isHighlightMode, kbdNavCount,
+    handleSaveView, isHighlightMode, kbdNavCount, savedMatchesCurrent, saving,
   ]);
   // EXTRACT: useKeyboardShortcuts — end
 
