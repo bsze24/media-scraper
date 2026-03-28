@@ -13,6 +13,7 @@ import { useAppearanceApi } from "./useAppearanceApi";
 import { SpeakerPanel } from "./SpeakerPanel";
 import type { SpeakerPanelHandle } from "./SpeakerPanel";
 import { TurnRenderer } from "./TurnRenderer";
+import { detectSpeakerMismatch } from "../../speaker-utils";
 import { parseSearchQuery, matchesTurn, firstSentence } from "./helpers";
 import { formatDuration } from "@lib/utils/format-duration";
 
@@ -1410,22 +1411,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     }
 
     // Check if source_name looks like a person not in speakers[]
-    if (source_name) {
-      const words = source_name.trim().split(/\s+/);
-      const orgIndicators = /\b(capital|partners|associates|fund|group|invest|allocator|mainstream|podcast|llc|inc|management|street|advisory)\b/i;
-      if (words.length >= 2 && words.length <= 4 && !orgIndicators.test(source_name)) {
-        const sourceWords = new Set(words.map(w => w.toLowerCase()));
-        const hasMatch = speakers.some(s =>
-          s.name.toLowerCase().split(/\s+/).some(w => sourceWords.has(w))
-        );
-        if (!hasMatch) {
-          conditions.push({
-            key: "host-missing",
-            text: `"${source_name}" not found in speakers — may need rename`,
-            action: "Open Speaker Panel",
-          });
-        }
-      }
+    if (detectSpeakerMismatch(source_name, speakers)) {
+      conditions.push({
+        key: "host-missing",
+        text: `"${source_name}" not found in speakers — may need rename`,
+        action: "Open Speaker Panel",
+      });
     }
 
     return conditions;

@@ -6,23 +6,7 @@ import { Pagination } from "./Pagination";
 
 const PAGE_SIZE = 20;
 
-/** Detect if source_name looks like a person's name that's missing from speakers[] */
-function detectSpeakerMismatch(row: AppearanceListRow): boolean {
-  const source = row.source_name?.trim();
-  if (!source) return false;
-  // Person names: 2-3 words, no common podcast/org indicators
-  const words = source.split(/\s+/);
-  if (words.length < 2 || words.length > 4) return false;
-  const orgIndicators = /\b(capital|partners|associates|fund|group|invest|allocator|mainstream|podcast|llc|inc|management|street|advisory)\b/i;
-  if (orgIndicators.test(source)) return false;
-  // Check if any speaker name shares a word with source_name
-  const sourceWords = new Set(words.map(w => w.toLowerCase()));
-  const speakerNames = (row.speakers ?? []).map(s => s.name.toLowerCase());
-  const hasMatch = speakerNames.some(name =>
-    name.split(/\s+/).some(w => sourceWords.has(w))
-  );
-  return !hasMatch;
-}
+import { detectSpeakerMismatch } from "../speaker-utils";
 
 function AppearanceTableRow({ row }: { row: AppearanceListRow }) {
   const speakers = (row.speakers ?? [])
@@ -31,7 +15,7 @@ function AppearanceTableRow({ row }: { row: AppearanceListRow }) {
     .join(", ");
   const bulletCount = row.prep_bullets?.bullets?.length ?? 0;
   const hasGenericSpeakers = (row.speakers ?? []).some(s => /^Speaker \d+$/.test(s.name));
-  const hasSpeakerMismatch = detectSpeakerMismatch(row);
+  const hasSpeakerMismatch = detectSpeakerMismatch(row.source_name, row.speakers ?? []);
 
   return (
     <tr className="border-b border-zinc-100 hover:bg-zinc-50">
