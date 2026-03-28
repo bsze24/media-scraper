@@ -70,6 +70,14 @@ function normalizeSpeakerName(
   // Strip parenthetical annotations
   const stripped = name.replace(/\s*\(.*\)\s*$/, "").trim();
 
+  // Empty after stripping — can't match anything meaningful
+  if (!stripped) {
+    return {
+      normalized: name,
+      warning: `Unknown speaker '${name}' (empty after stripping) — not in speakers list`,
+    };
+  }
+
   // Exact match (case-sensitive)
   for (const s of speakers) {
     if (s.name === stripped) return { normalized: s.name };
