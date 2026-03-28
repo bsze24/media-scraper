@@ -13,6 +13,7 @@ import { useAppearanceApi } from "./useAppearanceApi";
 import { SpeakerPanel } from "./SpeakerPanel";
 import type { SpeakerPanelHandle } from "./SpeakerPanel";
 import { TurnRenderer } from "./TurnRenderer";
+import { detectSpeakerMismatch } from "../../speaker-utils";
 import { parseSearchQuery, matchesTurn, firstSentence, KBD_CLASS } from "./helpers";
 import { formatDuration } from "@lib/utils/format-duration";
 
@@ -1504,8 +1505,17 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       }
     }
 
+    // Check if source_name looks like a person not in speakers[]
+    if (detectSpeakerMismatch(source_name, speakers)) {
+      conditions.push({
+        key: "host-missing",
+        text: `"${source_name}" not found in speakers — may need rename`,
+        action: "Open Speaker Panel",
+      });
+    }
+
     return conditions;
-  }, [speakers, youtube_id, turns]);
+  }, [speakers, youtube_id, turns, source_name]);
 
   const showBanner = !bannerDismissed && bannerConditions.length > 0;
 
