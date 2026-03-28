@@ -62,13 +62,13 @@ export const SEGMENT_PASSAGES_PROMPT = `You are a transcript analyst. You will r
 
 - Every segment must belong to exactly one passage (100% coverage). Exception: a segment at a topic boundary may belong to two adjacent passages if the transition happens mid-segment.
 
-- When a topic transition occurs within a single segment, assign that segment to both the ending and starting passages (overlap by one segment is allowed at boundaries, nowhere else).
+- When a topic transition occurs within a single caption segment, assign that segment to both the ending and starting passages. Overlap must be exactly 1 segment at a boundary, never more. If two consecutive passages share 2 or more segments, your segment ranges are wrong — fix them so they share at most 1.
 
 - Passages are WITHIN a single speaker's continuous speech. A passage never spans a speaker change.
 
-- A passage should be a topic-coherent chunk — typically 3-15 segments (roughly 10-60 seconds). Don't split too fine (every sentence) or too coarse (an entire 3-minute monologue as one passage).
+- A passage should be a topic-coherent chunk — target 5-20 segments (roughly 15-45 seconds of speech). Maximum 25 segments per passage. If a speaker talks for longer than 25 segments without interruption, there are almost certainly multiple sub-topics — split at the clearest topic shift. A 2-minute monologue covering "use cases, value creation, IC memo analysis, and platform flexibility" is four passages, not one.
 
-- Assign 1-3 topic tags per passage. Tags should be specific enough to be useful for search ("data integration pain", "sourcing workflow") but not so narrow they're unique to one sentence. Use lowercase, natural phrases.
+- Assign 1-3 topic tags per passage. If you find yourself wanting to assign 4 or more tags, that's a signal the passage covers multiple topics and should be split into separate passages instead. Tags should be specific enough to be useful for search ("data integration pain", "sourcing workflow") but not so narrow they're unique to one sentence. Use lowercase, natural phrases.
 
   Examples of good tag granularity:
   - "co-founder background", "career history"
@@ -78,14 +78,16 @@ export const SEGMENT_PASSAGES_PROMPT = `You are a transcript analyst. You will r
   - "security posture", "on-premise deployment"
   - "competitive landscape", "build vs buy"
 
-  Do NOT use tags like "introduction" or "closing" — these are structural, not topical.
+  Do NOT use structural tags like "introduction", "closing", "wrap-up", "meeting logistics", or "next steps". Instead, describe the actual topic being discussed. For example, use "demo process" instead of "next steps", or "team coordination" instead of "closing".
 
 - Assign a signal score to each passage:
   - "filler" — small talk, logistics, ums, transition phrases
   - "context" — provides background, setup, or narrative flow
   - "insight" — contains a concrete opinion, pain point, decision factor, or quotable moment. The kind of thing someone would clip for a highlight reel.
 
-- For speaker attribution: use the known speakers list. When you can't identify who's speaking, use "Unknown Speaker" rather than guessing. The ">>" marker indicates a speaker change but not which speaker.
+- For speaker attribution: use the known speakers list. Use speaker names EXACTLY as they appear in the list — do not add last names, affiliations, or annotations (e.g., if the list says "Oscar", output "Oscar", not "Oscar Loynaz" or "Oscar (TA)"). When you can't identify who's speaking, use "Unknown Speaker" rather than guessing. The ">>" marker indicates a speaker change but not which speaker.
+
+- For a typical 30-minute call with ~500 segments, expect to produce 60-100 passages. For a 60-minute call, 100-180 passages. If your output has significantly fewer, you are likely making passages too coarse.
 
 ## Output format
 
