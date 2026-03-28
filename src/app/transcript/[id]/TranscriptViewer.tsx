@@ -520,11 +520,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const handleClearSavedView = useCallback(async () => {
     const success = await saveDefaultView(null);
     if (success) {
+      handleResetView();
       setClearViewConfirmation(true);
-      setTimeout(() => {
-        setClearViewConfirmation(false);
-        handleResetView();
-      }, 1000);
+      setTimeout(() => setClearViewConfirmation(false), 1500);
     }
   }, [saveDefaultView, handleResetView]);
 
@@ -1376,11 +1374,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           const currentExpanded = expandedTurnsRef.current;
           const expandedCount = sectionIndices.filter(i => currentExpanded.has(i)).length;
           const mostlyExpanded = expandedCount > sectionIndices.length / 2;
-          // Save current view state before toggling (so Escape can restore)
-          if (!activeSpeaker) {
-            savedExpandedTurnsRef.current = expandedTurnsRef.current;
-            savedIsHighlightModeRef.current = isHighlightMode;
-          }
           setExpandedTurns(prev => {
             const next = new Set(prev);
             for (const i of sectionIndices) {
@@ -1398,39 +1391,34 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           break;
         }
 
-        // --- Speaker: number = expand/collapse toggle, Shift+number = edit speaker ---
+        // --- Speaker: number = highlight speaker, Shift+number = edit speaker ---
         case "1": case "2": case "3": case "4": case "5":
         case "6": case "7": case "8": case "9": {
+          // On US keyboards, Shift+number produces symbol chars ("!", "@", etc.)
+          // handled in the separate case below. This branch is number-only.
           const idx = parseInt(e.key) - 1;
           if (idx >= speakers.length) break;
           const speakerName = speakers[idx].name;
-          if (e.shiftKey) {
-            // Shift+number — enter speaker edit mode (rename)
-            speakerPanelEditRef.current?.startEditing(speakerName, 'rename');
-            speakersPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-          } else {
-            // number — toggle expand/collapse for this speaker's turns
-            const currentTurns = turnsRef.current;
-            const currentExpanded = expandedTurnsRef.current;
-            const speakerTurnIndices = currentTurns.filter(t => t.speaker === speakerName).map(t => t.turn_index);
-            if (speakerTurnIndices.length === 0) break;
-            const expandedCount = speakerTurnIndices.filter(i => currentExpanded.has(i)).length;
-            const mostlyExpanded = expandedCount > speakerTurnIndices.length / 2;
-            // Save current view state before filtering (so Escape can restore)
-            if (!activeSpeaker) {
-              savedExpandedTurnsRef.current = expandedTurnsRef.current;
-              savedIsHighlightModeRef.current = isHighlightMode;
-            }
-            setExpandedTurns(prev => {
-              const next = new Set(prev);
-              for (const i of speakerTurnIndices) {
-                if (mostlyExpanded) next.delete(i); else next.add(i);
-              }
-              return next;
-            });
-            setActiveSpeaker(speakerName);
-            setIsHighlightMode(true);
+          const currentTurns = turnsRef.current;
+          const currentExpanded = expandedTurnsRef.current;
+          const speakerTurnIndices = currentTurns.filter(t => t.speaker === speakerName).map(t => t.turn_index);
+          if (speakerTurnIndices.length === 0) break;
+          const expandedCount = speakerTurnIndices.filter(i => currentExpanded.has(i)).length;
+          const mostlyExpanded = expandedCount > speakerTurnIndices.length / 2;
+          // Save current view state before filtering (so Escape can restore)
+          if (!activeSpeaker) {
+            savedExpandedTurnsRef.current = expandedTurnsRef.current;
+            savedIsHighlightModeRef.current = isHighlightMode;
           }
+          setExpandedTurns(prev => {
+            const next = new Set(prev);
+            for (const i of speakerTurnIndices) {
+              if (mostlyExpanded) next.delete(i); else next.add(i);
+            }
+            return next;
+          });
+          setActiveSpeaker(speakerName);
+          setIsHighlightMode(true);
           break;
         }
         case "!": case "@": case "#": case "$": case "%":
