@@ -418,13 +418,13 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const renderControlStripButtons = (mode: 'full' | 'pip' | 'collapsed') => (
     <div className="flex items-center gap-1.5 text-[#888]">
       <button onClick={() => cyclePlaybackRate(-1, false)} className="text-[10px] text-[#999] hover:text-[#555] transition-colors" title="Decrease speed [<]">
-        <kbd className={KBD_CLASS}>&lt;</kbd>
+        <span className="md:hidden">&lt;</span><kbd className={KBD_CLASS}>&lt;</kbd>
       </button>
       <button onClick={() => cyclePlaybackRate(1)} className="text-[10px] font-mono px-2 py-1 rounded font-medium transition-colors bg-[#f5f4f2] border border-[#e5e3df] hover:bg-[#eeedeb] text-[#555]" title="Playback speed — click to cycle">
         {playbackRate === 1 ? '1x' : `${playbackRate}x`}
       </button>
       <button onClick={() => cyclePlaybackRate(1, false)} className="text-[10px] text-[#999] hover:text-[#555] transition-colors" title="Increase speed [>]">
-        <kbd className={KBD_CLASS}>&gt;</kbd>
+        <span className="md:hidden">&gt;</span><kbd className={KBD_CLASS}>&gt;</kbd>
       </button>
       <button
         onClick={() => setAutoFollowEnabled(prev => !prev)}
@@ -531,18 +531,15 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const modSymbol = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent) ? '\u2318' : 'Ctrl+';
 
   // Shared reel info block — duration label only. Used in all control strip variants.
-  const reelInfoBlock = (
-    <>
-      {isHighlightMode && highlightDurationLabel ? (
-        <span className="text-[11px]">
-          <span className="font-medium text-[#b8860b]">{highlightDurationLabel} highlight</span>
-          {fullCallLabel && <span className="text-[#bbb]"> · {fullCallLabel}</span>}
-        </span>
-      ) : fullCallLabel ? (
-        <span className="text-[11px] text-[#888]">{fullCallLabel}</span>
-      ) : null}
-    </>
-  );
+  // Returns null (falsy) when there's no content to render.
+  const reelInfoBlock = isHighlightMode && highlightDurationLabel ? (
+    <span className="text-[11px]">
+      <span className="font-medium text-[#b8860b]">{highlightDurationLabel} highlight</span>
+      {fullCallLabel && <span className="text-[#bbb]"> · {fullCallLabel}</span>}
+    </span>
+  ) : fullCallLabel ? (
+    <span className="text-[11px] text-[#888]">{fullCallLabel}</span>
+  ) : null;
 
   // Header bar actions — Reset, Save, Help. Rendered in top-right header.
   const headerActions = (
@@ -936,9 +933,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       if (el) scrollIntoViewWithOffset(el);
     }, 60);
   }, [scrollIntoViewWithOffset, turnsBySection, hiddenTurns]);
-
-  const allExpanded = allAnchors.every((a) => expandedSections[a]);
-  const allCollapsed = allAnchors.every((a) => !expandedSections[a]);
 
   // Guard against Enter→blur double-fire on inputs
   const savingGuardRef = useRef(false);
@@ -1444,7 +1438,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [
-    activeTurnIndex, activeTurn, navigableTurnIndices, turnSectionMap,
+    activeTurnIndex, activeTurn, activeSpeaker, navigableTurnIndices, turnSectionMap,
     sectionFirstTurns, editingTurnText, turnSpeakerDropdown, floatingPanel,
     showHelpOverlay, isMonologue, allSpeakersGeneric, speakers,
     cancelEditTurnText, startEditingTurnText, seekToTime, cyclePlaybackRate,
