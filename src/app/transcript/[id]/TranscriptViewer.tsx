@@ -1116,9 +1116,25 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           searchInputRef.current?.blur();
           return;
         }
-        // 6. Clear speaker highlight
+        // 6. Clear speaker highlight and restore pre-filter state
         if (activeSpeaker) {
           setActiveSpeaker(null);
+          if (savedExpandedTurnsRef.current) {
+            setExpandedTurns(savedExpandedTurnsRef.current);
+            const restoreHighlight = savedIsHighlightModeRef.current;
+            setIsHighlightMode(restoreHighlight);
+            savedExpandedTurnsRef.current = null;
+            if (!restoreHighlight && typeof window !== "undefined") {
+              const url = new URL(window.location.href);
+              if (url.searchParams.has("expanded")) {
+                url.searchParams.delete("expanded");
+                window.history.replaceState({}, "", url.toString());
+              }
+            }
+          }
+          const m: Record<string, boolean> = {};
+          allAnchors.forEach((a) => (m[a] = true));
+          setExpandedSections(m);
           return;
         }
         // 7. Clear active turn
@@ -2409,7 +2425,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   ["\u21E7M", "Toggle all turns in section"],
                   ["x", "Toggle hide turn"],
                   ["\u21E7R", "Reset to defaults"],
-                  ["\u2318S", "Save view as default"],
+                  [`${modSymbol}S`, "Save view as default"],
                 ]],
                 ["Speakers", [
                   ["1\u20139", "Toggle expand / collapse"],
