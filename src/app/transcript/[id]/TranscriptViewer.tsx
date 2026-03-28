@@ -1376,6 +1376,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           const currentExpanded = expandedTurnsRef.current;
           const expandedCount = sectionIndices.filter(i => currentExpanded.has(i)).length;
           const mostlyExpanded = expandedCount > sectionIndices.length / 2;
+          // Save current view state before toggling (so Escape can restore)
+          if (!activeSpeaker) {
+            savedExpandedTurnsRef.current = expandedTurnsRef.current;
+            savedIsHighlightModeRef.current = isHighlightMode;
+          }
           setExpandedTurns(prev => {
             const next = new Set(prev);
             for (const i of sectionIndices) {
