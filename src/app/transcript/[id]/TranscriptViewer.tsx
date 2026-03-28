@@ -1408,6 +1408,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
               }
               return next;
             });
+            // Save current view state before filtering (so Escape can restore)
+            if (!activeSpeaker) {
+              savedExpandedTurnsRef.current = expandedTurnsRef.current;
+              savedIsHighlightModeRef.current = isHighlightMode;
+            }
             setActiveSpeaker(speakerName);
             setIsHighlightMode(true);
           }
