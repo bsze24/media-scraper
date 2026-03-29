@@ -93,6 +93,13 @@ export function highlightQuote(text: string, quote: string): ReactNode {
 }
 
 // ---------------------------------------------------------------------------
+// Keyboard badge styling — unified treatment for all [key] shortcut indicators
+// ---------------------------------------------------------------------------
+
+export const KBD_CLASS =
+  "hidden md:inline-flex items-center justify-center font-mono text-[10px] bg-[#f0eeeb] border border-[#ddd9d3] px-1.5 py-0.5 rounded text-[#777]";
+
+// ---------------------------------------------------------------------------
 // Formatting
 // ---------------------------------------------------------------------------
 

@@ -2,7 +2,7 @@
 
 import React from "react";
 import type { TranscriptViewerProps } from "./types";
-import { highlightText, highlightQuote, formatTimestamp } from "./helpers";
+import { highlightText, highlightQuote, formatTimestamp, KBD_CLASS } from "./helpers";
 
 type Turn = TranscriptViewerProps["appearance"]["turns"][number];
 type Speaker = TranscriptViewerProps["appearance"]["speakers"][number];
@@ -45,6 +45,8 @@ export interface TurnRendererProps {
   // Search & quote highlight
   searchQuery: string;
   highlightedQuote: string | null;
+  // Onboarding shortcut badges
+  showShortcutBadges: boolean;
 }
 
 export const TurnRenderer = React.memo(function TurnRenderer({
@@ -77,6 +79,7 @@ export const TurnRenderer = React.memo(function TurnRenderer({
   onScrollToSpeakerPanel,
   searchQuery,
   highlightedQuote,
+  showShortcutBadges,
 }: TurnRendererProps) {
   return (
     <div
@@ -150,6 +153,15 @@ export const TurnRenderer = React.memo(function TurnRenderer({
           <span className="flex items-center gap-1 text-[9px] text-[#b8860b]/70">
             <span className="w-1 h-1 rounded-full bg-[#b8860b]" />
             cited
+          </span>
+        )}
+        {showShortcutBadges && (
+          <span className="hidden md:inline-flex items-center gap-2 ml-auto text-[10px] text-[#999]">
+            <span className="inline-flex items-center gap-1"><kbd className={KBD_CLASS}>m</kbd> {isExpanded ? 'collapse' : 'expand'}</span>
+            <span className="inline-flex items-center gap-1"><kbd className={KBD_CLASS}>x</kbd> hide</span>
+            {turn.timestamp_seconds != null && (
+              <span className="inline-flex items-center gap-1"><kbd className={KBD_CLASS}>t</kbd> jump</span>
+            )}
           </span>
         )}
       </div>

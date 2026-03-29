@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
 import type { TranscriptViewerProps } from "./types";
+import { KBD_CLASS } from "./helpers";
 
 type Speaker = TranscriptViewerProps["appearance"]["speakers"][number];
 
@@ -134,8 +135,8 @@ export const SpeakerPanel = forwardRef<SpeakerPanelHandle, SpeakerPanelProps>(fu
 
   return (
     <div className="px-3 py-3 border-b border-[#e5e3df]">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-[#999]">Speakers</span>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-[#999]">Speakers</span>
         {hasInferredAttribution && (
           <span className="text-[9px] text-[#bbb] italic" title="Speaker labels were auto-generated and may not be accurate">
             (auto)
@@ -175,7 +176,7 @@ export const SpeakerPanel = forwardRef<SpeakerPanelHandle, SpeakerPanelProps>(fu
             >
               <div className="flex items-center justify-between gap-1">
                 {showNumberBadges && idx < 9 && (
-                  <span className="text-[10px] font-mono text-[#bbb] shrink-0">[{idx + 1}]</span>
+                  <kbd className={`${KBD_CLASS} shrink-0`}>{idx + 1}</kbd>
                 )}
                 {isEditing ? (
                   <input

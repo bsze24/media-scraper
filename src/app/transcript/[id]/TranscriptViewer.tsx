@@ -14,7 +14,7 @@ import { SpeakerPanel } from "./SpeakerPanel";
 import type { SpeakerPanelHandle } from "./SpeakerPanel";
 import { TurnRenderer } from "./TurnRenderer";
 import { detectSpeakerMismatch } from "../../speaker-utils";
-import { parseSearchQuery, matchesTurn, firstSentence } from "./helpers";
+import { parseSearchQuery, matchesTurn, firstSentence, KBD_CLASS } from "./helpers";
 import { formatDuration } from "@lib/utils/format-duration";
 
 const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const;
@@ -196,6 +196,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   // Hidden turns — view-layer only, synced to URL ?hidden= param
   const [hiddenTurns, setHiddenTurns] = useState<Set<number>>(new Set);
+
+  // Refs synced to state — for keyboard handler to avoid useEffect dep changes
+  const turnsRef = useRef(turns);
+  turnsRef.current = turns;
+  const expandedTurnsRef = useRef(expandedTurns);
+  expandedTurnsRef.current = expandedTurns;
+  const turnsBySectionRef = useRef(turnsBySection);
+  turnsBySectionRef.current = turnsBySection;
 
   // Track whether we're in highlight mode (URL has ?expanded= param)
   const [isHighlightMode, setIsHighlightMode] = useState(false);
@@ -403,32 +411,47 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     const timestamped = turns.filter(t => t.timestamp_seconds != null).map(t => t.timestamp_seconds!);
     const lastTs = timestamped.length > 0 ? Math.max(...timestamped) : 0;
     const fullSec = duration > 0 ? duration : lastTs > 0 ? lastTs + 120 : 0;
-    return fullSec > 0 ? ` · ${formatDuration(fullSec)} full call` : '';
-  }, [turns, duration]);
+    const label = youtube_id ? 'full video' : 'full call';
+    return fullSec > 0 ? `${formatDuration(fullSec)} ${label}` : '';
+  }, [turns, duration, youtube_id]);
 
   // Shared control strip right-side buttons — follow toggle + mode switches.
   // Parameterized by current mode to show the correct "switch to" buttons.
-  const pipIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17L17 7M17 7H8M17 7v9" /></svg>;
-  const fullIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m0-16l-3 3m3-3l3 3m-3 13l-3-3m3 3l3-3" /></svg>;
-  const closeIcon = <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" /></svg>;
   const renderControlStripButtons = (mode: 'full' | 'pip' | 'collapsed') => (
-    <div className="flex items-center gap-2 text-[#888]">
-      <button onClick={() => cyclePlaybackRate(1)} className="text-[10px] font-mono px-2 py-1 rounded font-medium transition-colors bg-[#f5f4f2] border border-[#e5e3df] hover:bg-[#eeedeb] text-[#555]" title="Playback speed — click to cycle, < / > keys">{playbackRate === 1 ? '1x' : `${playbackRate}x`}</button>
+    <div className="flex items-center gap-1.5 text-[#888]">
+      <button onClick={() => cyclePlaybackRate(-1, false)} className="text-[10px] text-[#999] hover:text-[#555] transition-colors" title="Decrease speed [<]">
+        <span className="md:hidden">&lt;</span><kbd className={KBD_CLASS}>&lt;</kbd>
+      </button>
+      <button onClick={() => cyclePlaybackRate(1)} className="text-[10px] font-mono px-2 py-1 rounded font-medium transition-colors bg-[#f5f4f2] border border-[#e5e3df] hover:bg-[#eeedeb] text-[#555]" title="Playback speed — click to cycle">
+        {playbackRate === 1 ? '1x' : `${playbackRate}x`}
+      </button>
+      <button onClick={() => cyclePlaybackRate(1, false)} className="text-[10px] text-[#999] hover:text-[#555] transition-colors" title="Increase speed [>]">
+        <span className="md:hidden">&gt;</span><kbd className={KBD_CLASS}>&gt;</kbd>
+      </button>
       <button
         onClick={() => setAutoFollowEnabled(prev => !prev)}
-        className={`text-[10px] px-2 py-1 rounded font-medium transition-colors ${autoFollowEnabled ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}`}
-        title={autoFollowEnabled ? "Auto-follow: ON — skips collapsed turns [F]" : "Auto-follow: OFF — plays everything [F]"}
-      >{autoFollowEnabled ? "[F] Follow ON" : "[F] Follow OFF"}</button>
+        className={`text-[10px] px-2 py-1 rounded font-medium transition-colors flex items-center gap-1 ${autoFollowEnabled ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}`}
+        title={autoFollowEnabled ? "Auto-scroll: ON — skips collapsed turns [A]" : "Auto-scroll: OFF — plays everything [A]"}
+      >
+        <kbd className={KBD_CLASS}>A</kbd> Auto-Scroll {autoFollowEnabled ? "ON" : "OFF"}
+      </button>
       <span className="w-px h-4 bg-[#e5e3df]" />
-      {mode !== 'full' && (
-        <button onClick={() => setVideoMode('full')} className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" title="Full video (interview mode)">{fullIcon}</button>
-      )}
-      {mode !== 'pip' && (
-        <button onClick={() => setVideoMode('pip')} className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" title="Mini player (podcast mode)">{pipIcon}</button>
-      )}
-      {mode !== 'collapsed' && (
-        <button onClick={() => setVideoMode('collapsed')} className="hover:text-[#b8860b] transition-colors p-1.5 hover:bg-[#f5f4f2] rounded" title="Audio only">{closeIcon}</button>
-      )}
+      <button
+        onClick={() => setVideoMode(prev => prev === 'full' ? 'collapsed' : 'full')}
+        className={`p-1.5 rounded transition-colors flex items-center gap-0.5 ${mode === 'full' ? 'text-[#b8860b] bg-[#b8860b]/10' : 'hover:text-[#b8860b] hover:bg-[#f5f4f2]'}`}
+        title={mode === 'full' ? "Switch to audio only [w]" : "Full video [w]"}
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m0-16l-3 3m3-3l3 3m-3 13l-3-3m3 3l3-3" /></svg>
+        <kbd className={KBD_CLASS}>w</kbd>
+      </button>
+      <button
+        onClick={() => setVideoMode(prev => prev === 'pip' ? 'collapsed' : 'pip')}
+        className={`p-1.5 rounded transition-colors flex items-center gap-0.5 ${mode === 'pip' ? 'text-[#b8860b] bg-[#b8860b]/10' : 'hover:text-[#b8860b] hover:bg-[#f5f4f2]'}`}
+        title={mode === 'pip' ? "Close mini player [q]" : "Mini player [q]"}
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17L17 7M17 7H8M17 7v9" /></svg>
+        <kbd className={KBD_CLASS}>q</kbd>
+      </button>
     </div>
   );
 
@@ -494,33 +517,71 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     }
   }, [buildParamsString, saveDefaultView]);
 
+  const [clearViewConfirmation, setClearViewConfirmation] = useState(false);
   const handleClearSavedView = useCallback(async () => {
     const success = await saveDefaultView(null);
-    if (success) handleResetView();
+    if (success) {
+      handleResetView();
+      setClearViewConfirmation(true);
+      setTimeout(() => setClearViewConfirmation(false), 1500);
+    }
   }, [saveDefaultView, handleResetView]);
 
-  // Shared reel info block — reset button + duration + save view. Used in all control strip variants.
-  const reelInfoBlock = isHighlightMode ? (
-    <>
-      <button onClick={handleResetView} className="text-[11px] text-[#999] hover:text-[#b8860b] transition-colors">Reset view</button>
-      {resetConfirmation && <span className="text-[11px] text-green-600">View reset</span>}
-      {highlightDurationLabel && (
-        <span className="text-[11px] text-[#888]">{highlightDurationLabel} highlight{fullCallLabel}</span>
-      )}
-      {saveViewConfirmation ? (
-        <span className="text-[11px] text-green-600">Saved ✓</span>
-      ) : savedMatchesCurrent && defaultViewParams ? (
-        <span className="text-[11px] text-[#999]">
-          ✓ Saved
-          <button onClick={handleClearSavedView} className="ml-1.5 text-[10px] text-[#bbb] hover:text-[#b8860b] transition-colors underline">Clear</button>
-        </span>
-      ) : hasChangesFromDefaults && !saving ? (
-        <button onClick={handleSaveView} className="text-[11px] text-[#888] hover:text-[#b8860b] transition-colors">
-          {defaultViewParams ? "Update view" : "Save view"}
-        </button>
-      ) : null}
-    </>
+  // Platform-aware modifier key symbol (⌘ on Mac, Ctrl on others)
+  // Initialized to Ctrl+ for SSR, updated client-side to avoid hydration mismatch.
+  const [modSymbol, setModSymbol] = useState('Ctrl+');
+  useEffect(() => {
+    if (/Mac|iPhone|iPad/.test(navigator.userAgent)) setModSymbol('\u2318');
+  }, []);
+
+  // Shared reel info block — duration label only. Used in all control strip variants.
+  // Returns null (falsy) when there's no content to render.
+  const reelInfoBlock = isHighlightMode && highlightDurationLabel ? (
+    <span className="text-[11px]">
+      <span className="font-medium text-[#b8860b]">{highlightDurationLabel} highlight</span>
+      {fullCallLabel && <span className="text-[#bbb]"> · {fullCallLabel}</span>}
+    </span>
+  ) : fullCallLabel ? (
+    <span className="text-[11px] text-[#888]">{fullCallLabel}</span>
   ) : null;
+
+  // Header bar actions — Reset, Save, Help. Rendered in top-right header.
+  const headerActions = (
+    <div className="hidden md:flex items-center gap-0">
+      {isHighlightMode && (
+        <>
+          {resetConfirmation ? (
+            <span className="text-[11px] text-green-600 px-1.5 py-1">View reset</span>
+          ) : (
+            <button onClick={handleResetView} className="inline-flex items-center gap-1 text-[11px] text-[#666] hover:text-[#b8860b] hover:bg-[#f5f4f2] px-1.5 py-1 rounded transition-colors">
+              <kbd className={KBD_CLASS}>{'\u21E7'}R</kbd> Reset
+            </button>
+          )}
+          {clearViewConfirmation ? (
+            <span className="text-[11px] text-[#999] px-1.5 py-1">Cleared</span>
+          ) : saveViewConfirmation ? (
+            <span className="text-[11px] text-green-600 px-1.5 py-1">Saved ✓</span>
+          ) : savedMatchesCurrent && defaultViewParams ? (
+            <span className="text-[11px] text-[#999] px-1.5 py-1">
+              ✓ Saved
+              <button onClick={handleClearSavedView} className="ml-1.5 text-[10px] text-[#bbb] hover:text-[#b8860b] transition-colors underline">Clear</button>
+            </span>
+          ) : hasChangesFromDefaults && !saving ? (
+            <button onClick={handleSaveView} className="inline-flex items-center gap-1 text-[11px] text-[#666] hover:text-[#b8860b] hover:bg-[#f5f4f2] px-1.5 py-1 rounded transition-colors">
+              <kbd className={KBD_CLASS}>{modSymbol}S</kbd> {defaultViewParams ? "Update" : "Save"}
+            </button>
+          ) : null}
+        </>
+      )}
+      <button
+        onClick={() => setShowHelpOverlay(true)}
+        className="flex items-center gap-1 px-1.5 py-1 rounded hover:bg-[#f5f4f2] transition-colors text-[#999] hover:text-[#666]"
+        title="Keyboard shortcuts (?)"
+      >
+        <span className="md:hidden text-[10px]">?</span><kbd className={KBD_CLASS}>?</kbd>
+      </button>
+    </div>
+  );
 
   const playToggleGuardRef = useRef(false);
   const lastPollTimeRef = useRef(NaN);
@@ -675,6 +736,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
       // Auto-follow: track active turn and skip collapsed regions
       if (!autoFollowEnabled || skipInProgressRef.current) return;
+      lastNavWasKeyboardRef.current = false;
 
       const currentItem = expandedPlaylist.find(
         item => time >= item.start && time < item.end
@@ -808,6 +870,40 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     container.scrollTo({ top: elTop - stickyBottom - 12, behavior: 'smooth' });
   }, []);
 
+  // Shared speaker selection logic — used by both handleSpeakerClick and number key handler.
+  // Uses refs so it's safe to call from event handlers without stale closures.
+  const applySpeakerFilter = useCallback(
+    (name: string) => {
+      // Save current view state before filtering (so Escape/deselect can restore)
+      if (!activeSpeaker) {
+        savedExpandedTurnsRef.current = expandedTurnsRef.current;
+        savedIsHighlightModeRef.current = isHighlightMode;
+      }
+      setActiveSpeaker(name);
+      setIsHighlightMode(true);
+      // Replace expanded turns with only this speaker's turns
+      const currentTurns = turnsRef.current;
+      setExpandedTurns(
+        new Set(currentTurns.filter(t => t.speaker === name).map(t => t.turn_index))
+      );
+      // Only show sections containing this speaker
+      const m: Record<string, boolean> = {};
+      allAnchors.forEach((a) => {
+        m[a] = (turnsBySectionRef.current.get(a) ?? []).some((t) => t.speaker === name);
+      });
+      setExpandedSections(m);
+      // Scroll to first turn for this speaker
+      const firstTurn = currentTurns.find(t => t.speaker === name);
+      if (firstTurn) {
+        requestAnimationFrame(() => {
+          const el = document.querySelector(`[data-turn-index="${firstTurn.turn_index}"]`);
+          if (el) scrollIntoViewWithOffset(el);
+        });
+      }
+    },
+    [activeSpeaker, allAnchors, isHighlightMode, scrollIntoViewWithOffset]
+  );
+
   const handleSpeakerClick = useCallback(
     (name: string) => {
       if (activeSpeaker === name) {
@@ -831,45 +927,27 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         allAnchors.forEach((a) => (m[a] = true));
         setExpandedSections(m);
       } else {
-        // Select — save current state, expand speaker's turns, collapse others
-        if (!activeSpeaker) {
-          savedExpandedTurnsRef.current = expandedTurns;
-          savedIsHighlightModeRef.current = isHighlightMode;
-        }
-        setActiveSpeaker(name);
-        // Expand all turns for this speaker, collapse everyone else
-        setExpandedTurns(
-          new Set(turns.filter(t => t.speaker === name).map(t => t.turn_index))
-        );
-        // Only show sections containing this speaker
-        const m: Record<string, boolean> = {};
-        allAnchors.forEach((a) => {
-          m[a] = (turnsBySection.get(a) ?? []).some((t) => t.speaker === name);
-        });
-        setExpandedSections(m);
-        // Scroll to first turn for this speaker
-        const firstTurn = turns.find(t => t.speaker === name);
-        if (firstTurn) {
-          requestAnimationFrame(() => {
-            const el = document.querySelector(`[data-turn-index="${firstTurn.turn_index}"]`);
-            if (el) scrollIntoViewWithOffset(el);
-          });
-        }
+        applySpeakerFilter(name);
       }
     },
-    [activeSpeaker, allAnchors, turnsBySection, turns, expandedTurns, isHighlightMode, scrollIntoViewWithOffset]
+    [activeSpeaker, allAnchors, applySpeakerFilter]
   );
 
   const scrollToSection = useCallback((anchor: string) => {
+    lastNavWasKeyboardRef.current = false;
     setExpandedSections((prev) => ({ ...prev, [anchor]: true }));
+    // Activate the first visible turn in the section
+    const sectionTurns = turnsBySection.get(anchor) ?? [];
+    const firstVisible = sectionTurns.find(t => !hiddenTurns.has(t.turn_index));
+    if (firstVisible) {
+      setActiveTurnIndex(firstVisible.turn_index);
+      setAutoFollowEnabled(false);
+    }
     setTimeout(() => {
       const el = sectionRefs.current[anchor];
       if (el) scrollIntoViewWithOffset(el);
     }, 60);
-  }, [scrollIntoViewWithOffset]);
-
-  const allExpanded = allAnchors.every((a) => expandedSections[a]);
-  const allCollapsed = allAnchors.every((a) => !expandedSections[a]);
+  }, [scrollIntoViewWithOffset, turnsBySection, hiddenTurns]);
 
   // Guard against Enter→blur double-fire on inputs
   const savingGuardRef = useRef(false);
@@ -932,6 +1010,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   // Clicking a turn clears any quote highlight from prep bullets
   const handleSetActiveTurn = useCallback((turnIndex: number) => {
+    lastNavWasKeyboardRef.current = false;
     setActiveTurnIndex(turnIndex);
     setHighlightedQuote(null);
   }, []);
@@ -940,12 +1019,13 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   // ---- Keyboard shortcuts state & derived values ----
   const [showHelpOverlay, setShowHelpOverlay] = useState(false);
 
-  // EXTRACT: KeyboardShortcutsBar — begin
-  // null = not yet hydrated (prevents flash for users who dismissed the bar)
-  const [shortcutsBarVisible, setShortcutsBarVisible] = useState<boolean | null>(null);
-  // SSR-safe: read localStorage on mount
+  // Onboarding: show inline shortcut badges on active turn for the first N keyboard navigations
+  const [kbdNavCount, setKbdNavCount] = useState(0);
+  const lastNavWasKeyboardRef = useRef(false);
+  const KBD_ONBOARDING_LIMIT = 5;
   useEffect(() => {
-    setShortcutsBarVisible(localStorage.getItem("hideShortcutsBar") !== "true");
+    const stored = localStorage.getItem("kbdNavCount");
+    if (stored) setKbdNavCount(parseInt(stored, 10) || 0);
   }, []);
 
   const activeTurn = useMemo(() => {
@@ -1008,45 +1088,11 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     return result;
   }, [turnsBySection, sections, hiddenTurns]);
 
-  // Context-aware shortcuts for the bottom bar
-  const contextBarShortcuts = useMemo(() => {
-    // Priority order: most specific state wins
-    if (editingTurnText !== null) {
-      const modKey = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent) ? '\u2318' : 'Ctrl';
-      return [['Esc', 'Cancel edit'], [`${modKey}\u21B5`, 'Save']] as [string, string][];
-    }
-    if (turnSpeakerDropdown !== null) {
-      return [['Esc', 'Close']] as [string, string][];
-    }
-    // No active turn (landing state)
-    if (activeTurnIndex === null) {
-      const shortcuts: [string, string][] = [
-        ['j', 'Start navigating'],
-        ['/', 'Search'],
-        ['?', 'All shortcuts'],
-      ];
-      if (speakers.length >= 2) {
-        shortcuts.push(['1\u20139', 'Filter speaker']);
-      }
-      return shortcuts;
-    }
-    // Active turn exists — show contextual actions
-    const shortcuts: [string, string][] = [
-      ['j/k', 'Navigate'],
-      ['m', 'Toggle'],
-      ['x', 'Hide'],
-    ];
-    if (!isMonologue) {
-      shortcuts.push(['e', 'Edit']);
-    }
-    if (activeTurn?.timestamp_seconds != null && youtube_id) {
-      shortcuts.push(['t', 'Seek + follow']);
-    }
-    shortcuts.push(['n/p', 'Section']);
-    shortcuts.push(['?', 'More']);
-    return shortcuts;
-  }, [editingTurnText, turnSpeakerDropdown, activeTurnIndex, activeTurn, isMonologue, youtube_id, speakers.length]);
-  // EXTRACT: KeyboardShortcutsBar — end
+  // Active turn's section anchor — used for section heading badge placement
+  const activeTurnSectionAnchor = useMemo(() => {
+    if (activeTurnIndex === null) return null;
+    return turnSectionMap.get(activeTurnIndex) ?? null;
+  }, [activeTurnIndex, turnSectionMap]);
 
   // Unified keydown listener
   useEffect(() => {
@@ -1085,7 +1131,28 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           searchInputRef.current?.blur();
           return;
         }
-        // 6. Clear active turn
+        // 6. Clear speaker highlight and restore pre-filter state
+        if (activeSpeaker) {
+          setActiveSpeaker(null);
+          if (savedExpandedTurnsRef.current) {
+            setExpandedTurns(savedExpandedTurnsRef.current);
+            const restoreHighlight = savedIsHighlightModeRef.current;
+            setIsHighlightMode(restoreHighlight);
+            savedExpandedTurnsRef.current = null;
+            if (!restoreHighlight && typeof window !== "undefined") {
+              const url = new URL(window.location.href);
+              if (url.searchParams.has("expanded")) {
+                url.searchParams.delete("expanded");
+                window.history.replaceState({}, "", url.toString());
+              }
+            }
+          }
+          const m: Record<string, boolean> = {};
+          allAnchors.forEach((a) => (m[a] = true));
+          setExpandedSections(m);
+          return;
+        }
+        // 7. Clear active turn
         if (activeTurnIndex !== null) {
           setActiveTurnIndex(null);
           return;
@@ -1109,6 +1176,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       switch (e.key) {
         // --- Navigation ---
         case "j": {
+          lastNavWasKeyboardRef.current = true;
+          if (kbdNavCount < KBD_ONBOARDING_LIMIT) {
+            const next = kbdNavCount + 1;
+            setKbdNavCount(next);
+            localStorage.setItem("kbdNavCount", String(next));
+          }
           const currentPos = activeTurnIndex !== null
             ? navigableTurnIndices.indexOf(activeTurnIndex)
             : -1;
@@ -1125,6 +1198,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           break;
         }
         case "k": {
+          lastNavWasKeyboardRef.current = true;
+          if (kbdNavCount < KBD_ONBOARDING_LIMIT) {
+            const next = kbdNavCount + 1;
+            setKbdNavCount(next);
+            localStorage.setItem("kbdNavCount", String(next));
+          }
           const currentPos = activeTurnIndex !== null
             ? navigableTurnIndices.indexOf(activeTurnIndex)
             : -1;
@@ -1141,7 +1220,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           break;
         }
         case "n": {
-          // Jump to first turn of next section
+          // Jump to first turn of next section (expand if collapsed)
           const currentAnchor = activeTurnIndex !== null
             ? turnSectionMap.get(activeTurnIndex) ?? null
             : null;
@@ -1150,13 +1229,15 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             : -1;
           const nextIdx = currentSectionIdx + 1;
           if (nextIdx < sectionFirstTurns.length) {
+            const targetAnchor = sectionFirstTurns[nextIdx].anchor;
+            setExpandedSections((prev) => ({ ...prev, [targetAnchor]: true }));
             setActiveTurnIndex(sectionFirstTurns[nextIdx].firstTurnIndex);
             setAutoFollowEnabled(false);
           }
           break;
         }
         case "p": {
-          // Jump to first turn of previous section
+          // Jump to first turn of previous section (expand if collapsed)
           const currentAnchor = activeTurnIndex !== null
             ? turnSectionMap.get(activeTurnIndex) ?? null
             : null;
@@ -1164,6 +1245,8 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             ? sectionFirstTurns.findIndex(s => s.anchor === currentAnchor)
             : -1;
           if (currentSectionIdx > 0) {
+            const targetAnchor = sectionFirstTurns[currentSectionIdx - 1].anchor;
+            setExpandedSections((prev) => ({ ...prev, [targetAnchor]: true }));
             setActiveTurnIndex(sectionFirstTurns[currentSectionIdx - 1].firstTurnIndex);
             setAutoFollowEnabled(false);
           }
@@ -1198,14 +1281,15 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           break;
         }
         case "t": {
-          // Seek to active turn timestamp + re-enable auto-follow
+          // Seek to active turn timestamp + re-enable auto-scroll
           if (!activeTurn || activeTurn.timestamp_seconds == null) break;
           seekToTime(activeTurn.timestamp_seconds);
           setAutoFollowEnabled(true);
           break;
         }
-        case "f": {
-          // Toggle follow at current video position — no seek
+        case "a": {
+          // a — toggle auto-scroll at current video position
+          if (e.shiftKey) break;
           setAutoFollowEnabled(prev => !prev);
           break;
         }
@@ -1221,35 +1305,20 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         }
 
         // --- Editing ---
-        case "e": {
-          // e — edit turn text
-          if (!activeTurn || isMonologue) break;
+        case "T": {
+          // Shift+T — edit turn text
+          if (!e.shiftKey || !activeTurn || isMonologue) break;
           startEditingTurnText(activeTurn.turn_index, activeTurn.text);
           break;
         }
-        case "E": {
-          // Shift+E — edit speaker meta
-          if (!e.shiftKey || !activeTurn) break;
-          speakerPanelEditRef.current?.startEditing(activeTurn.speaker, 'meta');
-          speakersPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-          break;
-        }
-        case "a": {
-          if (e.shiftKey) break; // handled by 'A' case
-          // a — open speaker dropdown on active turn
-          if (!activeTurn || isMonologue) break;
+        case "S": {
+          // Shift+S — change speaker on active turn (re-attribute)
+          if (!e.shiftKey || !activeTurn || isMonologue) break;
           if (allSpeakersGeneric) {
             speakersPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
           } else {
             setTurnSpeakerDropdown(activeTurn.turn_index);
           }
-          break;
-        }
-        case "A": {
-          // Shift+A — rename speaker globally
-          if (!e.shiftKey || !activeTurn) break;
-          speakerPanelEditRef.current?.startEditing(activeTurn.speaker, 'rename');
-          speakersPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
           break;
         }
 
@@ -1260,7 +1329,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           break;
         }
         case "x": {
-          if (e.shiftKey) break; // handled by 'X' case
+          if (e.shiftKey) break;
           // x — toggle hide on active turn
           if (activeTurnIndex === null) break;
           const isCurrentlyHidden = hiddenTurns.has(activeTurnIndex);
@@ -1307,11 +1376,23 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           }
           break;
         }
-        case "X": {
-          // Shift+X — unhide all
-          if (!e.shiftKey) break;
-          suppressUrlSyncRef.current = false;
-          setHiddenTurns(new Set());
+        case "M": {
+          // Shift+M — toggle expand/collapse all turns in active section
+          if (!e.shiftKey || !activeTurnSectionAnchor) break;
+          const sectionTurns = turnsBySectionRef.current.get(activeTurnSectionAnchor) ?? [];
+          const sectionIndices = sectionTurns.map(t => t.turn_index);
+          if (sectionIndices.length === 0) break;
+          const currentExpanded = expandedTurnsRef.current;
+          const expandedCount = sectionIndices.filter(i => currentExpanded.has(i)).length;
+          const mostlyExpanded = expandedCount > sectionIndices.length / 2;
+          setExpandedTurns(prev => {
+            const next = new Set(prev);
+            for (const i of sectionIndices) {
+              if (mostlyExpanded) next.delete(i); else next.add(i);
+            }
+            return next;
+          });
+          setIsHighlightMode(true);
           break;
         }
         case "R": {
@@ -1321,31 +1402,37 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           break;
         }
 
-        // --- Speaker filter ---
+        // --- Speaker: number = highlight speaker, Shift+number = edit speaker ---
         case "1": case "2": case "3": case "4": case "5":
         case "6": case "7": case "8": case "9": {
+          // On US keyboards, Shift+number produces symbol chars ("!", "@", etc.)
+          // handled in the separate case below. This branch is number-only.
           const idx = parseInt(e.key) - 1;
-          if (idx < speakers.length) {
-            handleSpeakerClick(speakers[idx].name);
+          if (idx >= speakers.length) break;
+          handleSpeakerClick(speakers[idx].name);
+          break;
+        }
+        case "!": case "@": case "#": case "$": case "%":
+        case "^": case "&": case "*": case "(": {
+          // Shift+number produces these symbols — handle speaker edit
+          const shiftNumMap: Record<string, number> = { "!": 0, "@": 1, "#": 2, "$": 3, "%": 4, "^": 5, "&": 6, "*": 7, "(": 8 };
+          const idx = shiftNumMap[e.key];
+          if (idx !== undefined && idx < speakers.length) {
+            speakerPanelEditRef.current?.startEditing(speakers[idx].name, 'rename');
+            speakersPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
           }
           break;
         }
 
         // --- Video mode ---
         case "q": {
-          setVideoMode(prev => {
-            if (prev === 'collapsed') return 'pip';
-            if (prev === 'pip') return 'collapsed';
-            return 'pip'; // full → pip
-          });
+          // Toggle pip: off ↔ pip
+          setVideoMode(prev => prev === 'pip' ? 'collapsed' : 'pip');
           break;
         }
         case "w": {
-          setVideoMode(prev => {
-            if (prev === 'collapsed') return 'full';
-            if (prev === 'full') return 'collapsed';
-            return 'full'; // pip → full
-          });
+          // Toggle full video: off ↔ full
+          setVideoMode(prev => prev === 'full' ? 'collapsed' : 'full');
           break;
         }
 
@@ -1366,13 +1453,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [
-    activeTurnIndex, activeTurn, navigableTurnIndices, turnSectionMap,
+    activeTurnIndex, activeTurn, activeSpeaker, navigableTurnIndices, turnSectionMap,
     sectionFirstTurns, editingTurnText, turnSpeakerDropdown, floatingPanel,
     showHelpOverlay, isMonologue, allSpeakersGeneric, speakers,
     cancelEditTurnText, startEditingTurnText, seekToTime, cyclePlaybackRate,
-    toggleTurnExpanded, toggleTurnHidden, handleResetView, handleSpeakerClick,
+    toggleTurnExpanded, toggleTurnHidden, handleResetView,
     highlightedQuote, hiddenTurns, expandedPlaylist, youtube_id,
-    handleSaveView, isHighlightMode,
+    handleSaveView, isHighlightMode, kbdNavCount, savedMatchesCurrent, saving,
+    allAnchors, activeTurnSectionAnchor, handleSpeakerClick,
   ]);
   // EXTRACT: useKeyboardShortcuts — end
 
@@ -1484,8 +1572,16 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             <span className="text-[#555] truncate max-w-[300px]">{title}</span>
           </div>
         </div>
-        <div className="flex items-center gap-4 text-xs text-[#888]">
+        <div className="flex items-center gap-3 text-xs text-[#888]">
+          {isHighlightMode && highlightDurationLabel && (
+            <span className="text-[11px]">
+              <span className="font-medium text-[#b8860b]">{highlightDurationLabel} highlight</span>
+              {fullCallLabel && <span className="text-[#bbb]"> · {fullCallLabel}</span>}
+            </span>
+          )}
           <span>{date}</span>
+          <span className="w-px h-4 bg-[#e5e3df]" />
+          {headerActions}
         </div>
       </header>
 
@@ -1543,39 +1639,15 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           </div>
 
           {/* Sections */}
-          <div className="px-3 py-1 flex-1">
-            <div className="flex items-center justify-between mb-1">
-              <div className="text-[10px] font-medium uppercase tracking-wider text-[#999]">
+          <div className="px-3 py-2 flex-1">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[#999]">
                 {isMonologue ? "Topics" : "Sections"}
               </div>
-              {!isMonologue && (
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => {
-                      const m: Record<string, boolean> = {};
-                      allAnchors.forEach((a) => (m[a] = true));
-                      setExpandedSections(m);
-                    }}
-                    disabled={allExpanded}
-                    className="w-5 h-5 flex items-center justify-center text-[#999] hover:text-[#555] hover:bg-[#f0efed] transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[#999]"
-                    title="Expand all"
-                  >
-                    <span className="text-sm">+</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      const m: Record<string, boolean> = {};
-                      allAnchors.forEach((a) => (m[a] = false));
-                      setExpandedSections(m);
-                    }}
-                    disabled={allCollapsed}
-                    className="w-5 h-5 flex items-center justify-center text-[#999] hover:text-[#555] hover:bg-[#f0efed] transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[#999]"
-                    title="Collapse all"
-                  >
-                    <span className="text-sm">-</span>
-                  </button>
-                </div>
-              )}
+              <span className="hidden md:inline-flex items-center gap-2 text-[10px] text-[#999]">
+                <span className="inline-flex items-center gap-0.5"><kbd className={KBD_CLASS}>n</kbd> next</span>
+                <span className="inline-flex items-center gap-0.5"><kbd className={KBD_CLASS}>p</kbd> prev</span>
+              </span>
             </div>
             <div className="space-y-0.5">
               {sections.map((s) => {
@@ -1583,6 +1655,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                 const hit = hasSearch && searchResults.anchors.has(s.anchor);
                 const dim = hasSearch && !hit;
                 const hitCount = searchResults.countBySection.get(s.anchor) ?? 0;
+                const isActiveSection = activeTurnSectionAnchor === s.anchor;
 
                 return (
                   <button
@@ -1593,8 +1666,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         ? 'cursor-default opacity-60'
                         : dim
                         ? 'pointer-events-none opacity-30'
+                        : isActiveSection
+                        ? 'bg-[#b8860b]/5 border-l-2 border-[#b8860b]'
                         : expandedSections[s.anchor]
-                        ? 'bg-white border-l-2 border-[#b8860b]'
+                        ? 'bg-white border-l-2 border-[#b8860b]/30'
                         : 'hover:bg-[#f5f4f2] border-l-2 border-transparent'
                     }`}
                   >
@@ -1831,7 +1906,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           )}
 
           {/* Transcript Content */}
-          <div className={`flex-1 px-6 py-5 space-y-1 ${shortcutsBarVisible === true ? 'md:pb-14' : ''}`}>
+          <div className="flex-1 px-6 py-5 space-y-1">
             {/* Monologue mode */}
             {isMonologue && turns.length > 0 && (() => {
               const placeholderGroups = computePlaceholderGroups(turns);
@@ -1891,6 +1966,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                           onScrollToSpeakerPanel={null}
                           searchQuery={debouncedQuery}
                           highlightedQuote={activeTurnIndex === turn.turn_index ? highlightedQuote : null}
+                          showShortcutBadges={activeTurnIndex === turn.turn_index && kbdNavCount < KBD_ONBOARDING_LIMIT && lastNavWasKeyboardRef.current}
                         />
                       </React.Fragment>
                     );
@@ -1955,6 +2031,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                           onScrollToSpeakerPanel={scrollToSpeakerPanel}
                           searchQuery={debouncedQuery}
                           highlightedQuote={activeTurnIndex === turn.turn_index ? highlightedQuote : null}
+                          showShortcutBadges={activeTurnIndex === turn.turn_index && kbdNavCount < KBD_ONBOARDING_LIMIT && lastNavWasKeyboardRef.current}
                         />
                       </React.Fragment>
                     );
@@ -2013,11 +2090,19 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                         </span>
                       )}
                     </div>
-                    <span
-                      className="text-[9px] text-[#bbb] transition-transform"
-                      style={{ transform: isOpen ? "rotate(90deg)" : "rotate(0deg)" }}
-                    >
-                      ▶
+                    <span className="flex items-center gap-1">
+                      {activeTurnSectionAnchor === section.anchor && (
+                        <span className="hidden md:inline-flex items-center gap-2 mr-1 text-[10px] text-[#999]">
+                          <span className="inline-flex items-center gap-0.5"><kbd className={KBD_CLASS}>n</kbd> next</span>
+                          <span className="inline-flex items-center gap-0.5"><kbd className={KBD_CLASS}>p</kbd> prev</span>
+                        </span>
+                      )}
+                      <span
+                        className="text-[9px] text-[#bbb] transition-transform"
+                        style={{ transform: isOpen ? "rotate(90deg)" : "rotate(0deg)" }}
+                      >
+                        ▶
+                      </span>
                     </span>
                   </button>
 
@@ -2081,6 +2166,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                                     onScrollToSpeakerPanel={scrollToSpeakerPanel}
                                     searchQuery={debouncedQuery}
                                     highlightedQuote={activeTurnIndex === turn.turn_index ? highlightedQuote : null}
+                                    showShortcutBadges={activeTurnIndex === turn.turn_index && kbdNavCount < KBD_ONBOARDING_LIMIT && lastNavWasKeyboardRef.current}
                                   />
                                 </React.Fragment>
                               );
@@ -2333,27 +2419,26 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                 ...(youtube_id ? [
                   ["Playback", [
                     ["Space", "Play / pause"],
-                    ["t", "Seek to active turn + auto-follow"],
-                    ["f", "Toggle auto-follow"],
+                    ["t", "Seek to active turn + auto-scroll"],
+                    ["a", "Toggle auto-scroll"],
                     [">", "Increase speed"],
                     ["<", "Decrease speed"],
                   ]],
                 ] as [string, [string, string][]][] : []),
                 ["Editing", [
-                  ["e", "Edit turn text"],
-                  ["a", "Re-attribute turn speaker"],
-                  ["\u21E7A", "Rename speaker globally"],
-                  ["\u21E7E", "Edit speaker title"],
+                  ["\u21E7T", "Edit turn text"],
+                  ["\u21E7S", "Change turn speaker"],
                 ]],
                 ["View", [
                   ["m", "Toggle expand / collapse"],
+                  ["\u21E7M", "Toggle all turns in section"],
                   ["x", "Toggle hide turn"],
-                  ["\u21E7X", "Unhide all turns"],
                   ["\u21E7R", "Reset to defaults"],
-                  ["\u2318S", "Save view as default"],
+                  [`${modSymbol}S`, "Save view as default"],
                 ]],
-                ["Filter", [
+                ["Speakers", [
                   ["1\u20139", "Toggle speaker filter"],
+                  ["\u21E71\u20139", "Edit speaker name"],
                 ]],
                 ...(youtube_id ? [
                   ["Video", [
@@ -2387,39 +2472,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         </div>
       )}
 
-      {/* Context-aware keyboard shortcuts bar */}
-      {shortcutsBarVisible && (
-        <div className="hidden md:flex fixed bottom-0 left-0 right-0 z-50 bg-[#fffdf8] border-t border-[#e5e3df] shadow-lg px-4 py-2.5 items-center gap-4">
-          {contextBarShortcuts.map(([key, label]) => (
-            <div key={key} className="flex items-center gap-1.5">
-              <kbd className="font-mono text-[11px] bg-[#f5f4f2] border border-[#e5e3df] px-1.5 py-0.5 rounded text-[#555]">{key}</kbd>
-              <span className="text-[12px] text-[#666]">{label}</span>
-            </div>
-          ))}
-          <button
-            onClick={() => {
-              setShortcutsBarVisible(false);
-              localStorage.setItem("hideShortcutsBar", "true");
-            }}
-            className="ml-auto text-[11px] text-[#999] hover:text-[#333]"
-          >
-            &times;
-          </button>
-        </div>
-      )}
-
-      {/* Re-show shortcuts bar button (when dismissed) */}
-      {shortcutsBarVisible === false && (
-        <button
-          onClick={() => {
-            setShortcutsBarVisible(true);
-            localStorage.removeItem("hideShortcutsBar");
-          }}
-          className="hidden md:flex fixed bottom-3 right-3 z-40 items-center justify-center font-mono text-[12px] bg-[#f5f4f2] border border-[#e5e3df] px-2 py-1 rounded text-[#555] hover:text-[#333] hover:bg-[#eeedeb] shadow-sm"
-        >
-          ?
-        </button>
-      )}
     </div>
   );
 }
