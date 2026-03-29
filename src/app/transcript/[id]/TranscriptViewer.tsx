@@ -411,8 +411,9 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     const timestamped = turns.filter(t => t.timestamp_seconds != null).map(t => t.timestamp_seconds!);
     const lastTs = timestamped.length > 0 ? Math.max(...timestamped) : 0;
     const fullSec = duration > 0 ? duration : lastTs > 0 ? lastTs + 120 : 0;
-    return fullSec > 0 ? `${formatDuration(fullSec)} full video` : '';
-  }, [turns, duration]);
+    const label = youtube_id ? 'full video' : 'full call';
+    return fullSec > 0 ? `${formatDuration(fullSec)} ${label}` : '';
+  }, [turns, duration, youtube_id]);
 
   // Shared control strip right-side buttons — follow toggle + mode switches.
   // Parameterized by current mode to show the correct "switch to" buttons.
@@ -1417,6 +1418,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
             sectionFilter[a] = (turnsBySectionRef.current.get(a) ?? []).some((t) => t.speaker === speakerName);
           });
           setExpandedSections(sectionFilter);
+          // Scroll to first turn for this speaker
+          const firstTurn = currentTurns.find(t => t.speaker === speakerName);
+          if (firstTurn) {
+            requestAnimationFrame(() => {
+              const el = document.querySelector(`[data-turn-index="${firstTurn.turn_index}"]`);
+              if (el) scrollIntoViewWithOffset(el);
+            });
+          }
           break;
         }
         case "!": case "@": case "#": case "$": case "%":
