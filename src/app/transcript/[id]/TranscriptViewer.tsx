@@ -870,6 +870,40 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     container.scrollTo({ top: elTop - stickyBottom - 12, behavior: 'smooth' });
   }, []);
 
+  // Shared speaker selection logic — used by both handleSpeakerClick and number key handler.
+  // Uses refs so it's safe to call from event handlers without stale closures.
+  const applySpeakerFilter = useCallback(
+    (name: string) => {
+      // Save current view state before filtering (so Escape/deselect can restore)
+      if (!activeSpeaker) {
+        savedExpandedTurnsRef.current = expandedTurnsRef.current;
+        savedIsHighlightModeRef.current = isHighlightMode;
+      }
+      setActiveSpeaker(name);
+      setIsHighlightMode(true);
+      // Replace expanded turns with only this speaker's turns
+      const currentTurns = turnsRef.current;
+      setExpandedTurns(
+        new Set(currentTurns.filter(t => t.speaker === name).map(t => t.turn_index))
+      );
+      // Only show sections containing this speaker
+      const m: Record<string, boolean> = {};
+      allAnchors.forEach((a) => {
+        m[a] = (turnsBySectionRef.current.get(a) ?? []).some((t) => t.speaker === name);
+      });
+      setExpandedSections(m);
+      // Scroll to first turn for this speaker
+      const firstTurn = currentTurns.find(t => t.speaker === name);
+      if (firstTurn) {
+        requestAnimationFrame(() => {
+          const el = document.querySelector(`[data-turn-index="${firstTurn.turn_index}"]`);
+          if (el) scrollIntoViewWithOffset(el);
+        });
+      }
+    },
+    [activeSpeaker, allAnchors, isHighlightMode, scrollIntoViewWithOffset]
+  );
+
   const handleSpeakerClick = useCallback(
     (name: string) => {
       if (activeSpeaker === name) {
@@ -893,34 +927,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         allAnchors.forEach((a) => (m[a] = true));
         setExpandedSections(m);
       } else {
-        // Select — save current state, expand speaker's turns, collapse others
-        if (!activeSpeaker) {
-          savedExpandedTurnsRef.current = expandedTurns;
-          savedIsHighlightModeRef.current = isHighlightMode;
-        }
-        setActiveSpeaker(name);
-        setIsHighlightMode(true);
-        // Expand all turns for this speaker, collapse everyone else
-        setExpandedTurns(
-          new Set(turns.filter(t => t.speaker === name).map(t => t.turn_index))
-        );
-        // Only show sections containing this speaker
-        const m: Record<string, boolean> = {};
-        allAnchors.forEach((a) => {
-          m[a] = (turnsBySection.get(a) ?? []).some((t) => t.speaker === name);
-        });
-        setExpandedSections(m);
-        // Scroll to first turn for this speaker
-        const firstTurn = turns.find(t => t.speaker === name);
-        if (firstTurn) {
-          requestAnimationFrame(() => {
-            const el = document.querySelector(`[data-turn-index="${firstTurn.turn_index}"]`);
-            if (el) scrollIntoViewWithOffset(el);
-          });
-        }
+        applySpeakerFilter(name);
       }
     },
-    [activeSpeaker, allAnchors, turnsBySection, turns, expandedTurns, isHighlightMode, scrollIntoViewWithOffset]
+    [activeSpeaker, allAnchors, applySpeakerFilter]
   );
 
   const scrollToSection = useCallback((anchor: string) => {
@@ -1399,33 +1409,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           // handled in the separate case below. This branch is number-only.
           const idx = parseInt(e.key) - 1;
           if (idx >= speakers.length) break;
-          const speakerName = speakers[idx].name;
-          const currentTurns = turnsRef.current;
-          const speakerTurnIndices = currentTurns.filter(t => t.speaker === speakerName).map(t => t.turn_index);
-          if (speakerTurnIndices.length === 0) break;
-          // Save current view state before filtering (so Escape can restore)
-          if (!activeSpeaker) {
-            savedExpandedTurnsRef.current = expandedTurnsRef.current;
-            savedIsHighlightModeRef.current = isHighlightMode;
-          }
-          // Replace expanded turns with only this speaker's turns (matches handleSpeakerClick)
-          setExpandedTurns(new Set(speakerTurnIndices));
-          setActiveSpeaker(speakerName);
-          setIsHighlightMode(true);
-          // Filter sections to only those containing this speaker
-          const sectionFilter: Record<string, boolean> = {};
-          allAnchors.forEach((a) => {
-            sectionFilter[a] = (turnsBySectionRef.current.get(a) ?? []).some((t) => t.speaker === speakerName);
-          });
-          setExpandedSections(sectionFilter);
-          // Scroll to first turn for this speaker
-          const firstTurn = currentTurns.find(t => t.speaker === speakerName);
-          if (firstTurn) {
-            requestAnimationFrame(() => {
-              const el = document.querySelector(`[data-turn-index="${firstTurn.turn_index}"]`);
-              if (el) scrollIntoViewWithOffset(el);
-            });
-          }
+          applySpeakerFilter(speakers[idx].name);
           break;
         }
         case "!": case "@": case "#": case "$": case "%":
@@ -1476,7 +1460,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     toggleTurnExpanded, toggleTurnHidden, handleResetView,
     highlightedQuote, hiddenTurns, expandedPlaylist, youtube_id,
     handleSaveView, isHighlightMode, kbdNavCount, savedMatchesCurrent, saving,
-    allAnchors, activeTurnSectionAnchor,
+    allAnchors, activeTurnSectionAnchor, applySpeakerFilter,
   ]);
   // EXTRACT: useKeyboardShortcuts — end
 
