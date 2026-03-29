@@ -2437,7 +2437,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
                   [`${modSymbol}S`, "Save view as default"],
                 ]],
                 ["Speakers", [
-                  ["1\u20139", "Toggle expand / collapse"],
+                  ["1\u20139", "Toggle speaker filter"],
                   ["\u21E71\u20139", "Edit speaker name"],
                 ]],
                 ...(youtube_id ? [
