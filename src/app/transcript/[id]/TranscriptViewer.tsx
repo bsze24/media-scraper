@@ -1409,7 +1409,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           // handled in the separate case below. This branch is number-only.
           const idx = parseInt(e.key) - 1;
           if (idx >= speakers.length) break;
-          applySpeakerFilter(speakers[idx].name);
+          handleSpeakerClick(speakers[idx].name);
           break;
         }
         case "!": case "@": case "#": case "$": case "%":
@@ -1460,7 +1460,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     toggleTurnExpanded, toggleTurnHidden, handleResetView,
     highlightedQuote, hiddenTurns, expandedPlaylist, youtube_id,
     handleSaveView, isHighlightMode, kbdNavCount, savedMatchesCurrent, saving,
-    allAnchors, activeTurnSectionAnchor, applySpeakerFilter,
+    allAnchors, activeTurnSectionAnchor, handleSpeakerClick,
   ]);
   // EXTRACT: useKeyboardShortcuts — end
 
