@@ -1400,23 +1400,15 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           if (idx >= speakers.length) break;
           const speakerName = speakers[idx].name;
           const currentTurns = turnsRef.current;
-          const currentExpanded = expandedTurnsRef.current;
           const speakerTurnIndices = currentTurns.filter(t => t.speaker === speakerName).map(t => t.turn_index);
           if (speakerTurnIndices.length === 0) break;
-          const expandedCount = speakerTurnIndices.filter(i => currentExpanded.has(i)).length;
-          const mostlyExpanded = expandedCount > speakerTurnIndices.length / 2;
           // Save current view state before filtering (so Escape can restore)
           if (!activeSpeaker) {
             savedExpandedTurnsRef.current = expandedTurnsRef.current;
             savedIsHighlightModeRef.current = isHighlightMode;
           }
-          setExpandedTurns(prev => {
-            const next = new Set(prev);
-            for (const i of speakerTurnIndices) {
-              if (mostlyExpanded) next.delete(i); else next.add(i);
-            }
-            return next;
-          });
+          // Replace expanded turns with only this speaker's turns (matches handleSpeakerClick)
+          setExpandedTurns(new Set(speakerTurnIndices));
           setActiveSpeaker(speakerName);
           setIsHighlightMode(true);
           // Filter sections to only those containing this speaker
