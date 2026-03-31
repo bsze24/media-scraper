@@ -9,6 +9,7 @@ import { isYouTubeSource } from "@/types/appearance";
 import type { SpeakerRole } from "@/types/appearance";
 import type { TranscriptViewerProps } from "./types";
 import { TranscriptViewer } from "./TranscriptViewer";
+import { parseIndices } from "./helpers";
 
 // React cache() deduplicates across generateMetadata + page component in the same request
 const getCachedAppearance = cache(getAppearanceById);
@@ -146,7 +147,7 @@ export async function generateMetadata({
 
   // Parse hidden turn indices (if any)
   const hiddenSet = effectiveHidden != null && effectiveHidden !== ""
-    ? new Set(effectiveHidden.split(",").map(Number).filter(n => !isNaN(n)))
+    ? new Set(parseIndices(effectiveHidden))
     : new Set<number>();
 
   let description: string;
@@ -154,7 +155,7 @@ export async function generateMetadata({
     // Highlight mode — find first guest/customer turn from expanded indices (excluding hidden)
     const indices = effectiveExpanded === ""
       ? new Set<number>()
-      : new Set(effectiveExpanded.split(",").map(Number).filter(n => !isNaN(n)));
+      : new Set(parseIndices(effectiveExpanded));
     const speakerRoleMap = new Map<string, string>();
     for (const s of row.speakers) speakerRoleMap.set(s.name, s.role);
     // Filter out hidden turns from expanded set
