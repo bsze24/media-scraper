@@ -144,6 +144,8 @@ export function compressIndices(indices: number[]): string {
  * Parse range notation back to indices: "0-3,10-12,15" → [0,1,2,3,10,11,12,15]
  * Backward-compatible with old comma-separated format: "0,1,2,3" → [0,1,2,3]
  */
+const MAX_RANGE_SPAN = 10_000;
+
 export function parseIndices(param: string): number[] {
   if (!param) return [];
   const result = new Set<number>();
@@ -154,13 +156,16 @@ export function parseIndices(param: string): number[] {
 
     const dashIdx = trimmed.indexOf("-");
     if (dashIdx > 0) {
-      const start = parseInt(trimmed.slice(0, dashIdx), 10);
-      const end = parseInt(trimmed.slice(dashIdx + 1), 10);
-      if (isNaN(start) || isNaN(end) || end < start) continue;
+      const startStr = trimmed.slice(0, dashIdx);
+      const endStr = trimmed.slice(dashIdx + 1);
+      if (!/^\d+$/.test(startStr) || !/^\d+$/.test(endStr)) continue;
+      const start = Number(startStr);
+      const end = Number(endStr);
+      if (end < start || end - start > MAX_RANGE_SPAN) continue;
       for (let i = start; i <= end; i++) result.add(i);
     } else {
-      const n = parseInt(trimmed, 10);
-      if (!isNaN(n)) result.add(n);
+      if (!/^\d+$/.test(trimmed)) continue;
+      result.add(Number(trimmed));
     }
   }
 

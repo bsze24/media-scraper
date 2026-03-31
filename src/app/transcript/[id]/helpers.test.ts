@@ -55,6 +55,14 @@ describe("parseIndices", () => {
   it("deduplicates overlapping ranges", () => {
     expect(parseIndices("1-3,2-5")).toEqual([1, 2, 3, 4, 5]);
   });
+
+  it("skips tokens with trailing non-digits", () => {
+    expect(parseIndices("1x,2-4x,5")).toEqual([5]);
+  });
+
+  it("caps excessively large ranges", () => {
+    expect(parseIndices("0-999999999")).toEqual([]);
+  });
 });
 
 describe("round-trip", () => {
