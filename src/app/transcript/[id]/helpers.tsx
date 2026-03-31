@@ -111,6 +111,62 @@ export function formatTimestamp(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+// ---------------------------------------------------------------------------
+// URL param compression — encode turn indices as ranges (0-3,10-12,15)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compress sorted indices into range notation: [0,1,2,3,10,11,15] → "0-3,10-11,15"
+ */
+export function compressIndices(indices: number[]): string {
+  const unique = [...new Set(indices)].filter((n) => !isNaN(n)).sort((a, b) => a - b);
+  if (unique.length === 0) return "";
+
+  const parts: string[] = [];
+  let start = unique[0];
+  let end = unique[0];
+
+  for (let i = 1; i < unique.length; i++) {
+    if (unique[i] === end + 1) {
+      end = unique[i];
+    } else {
+      parts.push(start === end ? String(start) : `${start}-${end}`);
+      start = unique[i];
+      end = unique[i];
+    }
+  }
+  parts.push(start === end ? String(start) : `${start}-${end}`);
+
+  return parts.join(",");
+}
+
+/**
+ * Parse range notation back to indices: "0-3,10-12,15" → [0,1,2,3,10,11,12,15]
+ * Backward-compatible with old comma-separated format: "0,1,2,3" → [0,1,2,3]
+ */
+export function parseIndices(param: string): number[] {
+  if (!param) return [];
+  const result = new Set<number>();
+
+  for (const token of param.split(",")) {
+    const trimmed = token.trim();
+    if (!trimmed) continue;
+
+    const dashIdx = trimmed.indexOf("-");
+    if (dashIdx > 0) {
+      const start = parseInt(trimmed.slice(0, dashIdx), 10);
+      const end = parseInt(trimmed.slice(dashIdx + 1), 10);
+      if (isNaN(start) || isNaN(end) || end < start) continue;
+      for (let i = start; i <= end; i++) result.add(i);
+    } else {
+      const n = parseInt(trimmed, 10);
+      if (!isNaN(n)) result.add(n);
+    }
+  }
+
+  return [...result].sort((a, b) => a - b);
+}
+
 export function firstSentence(text: string): { first: string; hasMore: boolean } {
   const dotIdx = text.indexOf(". ");
   if (dotIdx > 0 && dotIdx < text.length - 2) {

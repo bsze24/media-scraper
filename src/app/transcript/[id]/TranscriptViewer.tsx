@@ -14,7 +14,7 @@ import { SpeakerPanel } from "./SpeakerPanel";
 import type { SpeakerPanelHandle } from "./SpeakerPanel";
 import { TurnRenderer } from "./TurnRenderer";
 import { detectSpeakerMismatch } from "../../speaker-utils";
-import { parseSearchQuery, matchesTurn, firstSentence, KBD_CLASS } from "./helpers";
+import { parseSearchQuery, matchesTurn, firstSentence, KBD_CLASS, compressIndices, parseIndices } from "./helpers";
 import { formatDuration } from "@lib/utils/format-duration";
 
 const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const;
@@ -239,14 +239,12 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
       if (expandedParam === "") {
         setExpandedTurns(new Set<number>());
       } else {
-        const indices = expandedParam.split(",").map(Number).filter(n => !isNaN(n));
-        setExpandedTurns(new Set(indices));
+        setExpandedTurns(new Set(parseIndices(expandedParam)));
       }
     }
     const hiddenParam = params.get("hidden");
     if (hiddenParam !== null && hiddenParam !== "") {
-      const indices = hiddenParam.split(",").map(Number).filter(n => !isNaN(n));
-      setHiddenTurns(new Set(indices));
+      setHiddenTurns(new Set(parseIndices(hiddenParam)));
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -271,12 +269,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     if (suppressUrlSyncRef.current) return;
     const url = new URL(window.location.href);
     if (isHighlightMode) {
-      const expanded = Array.from(expandedTurns).sort((a, b) => a - b).join(",");
-      url.searchParams.set("expanded", expanded);
+      url.searchParams.set("expanded", compressIndices(Array.from(expandedTurns)));
     }
     if (hiddenTurns.size > 0) {
-      const hidden = Array.from(hiddenTurns).sort((a, b) => a - b).join(",");
-      url.searchParams.set("hidden", hidden);
+      url.searchParams.set("hidden", compressIndices(Array.from(hiddenTurns)));
     } else {
       url.searchParams.delete("hidden");
     }
@@ -493,12 +489,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const buildParamsString = useCallback(() => {
     const parts: string[] = [];
     if (isHighlightMode) {
-      const expanded = Array.from(expandedTurns).sort((a, b) => a - b).join(",");
-      parts.push(`expanded=${expanded}`);
+      parts.push(`expanded=${compressIndices(Array.from(expandedTurns))}`);
     }
     if (hiddenTurns.size > 0) {
-      const hidden = Array.from(hiddenTurns).sort((a, b) => a - b).join(",");
-      parts.push(`hidden=${hidden}`);
+      parts.push(`hidden=${compressIndices(Array.from(hiddenTurns))}`);
     }
     return parts.join("&") || null;
   }, [expandedTurns, hiddenTurns, isHighlightMode]);
