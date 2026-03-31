@@ -161,11 +161,13 @@ export function parseIndices(param: string): number[] {
       if (!/^\d+$/.test(startStr) || !/^\d+$/.test(endStr)) continue;
       const start = Number(startStr);
       const end = Number(endStr);
-      if (end < start || end - start > MAX_RANGE_SPAN) continue;
+      if (!isFinite(start) || !isFinite(end) || end < start || end - start > MAX_RANGE_SPAN) continue;
       for (let i = start; i <= end; i++) result.add(i);
     } else {
       if (!/^\d+$/.test(trimmed)) continue;
-      result.add(Number(trimmed));
+      const n = Number(trimmed);
+      if (!isFinite(n)) continue;
+      result.add(n);
     }
   }
 

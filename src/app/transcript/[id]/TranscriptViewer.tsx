@@ -499,7 +499,18 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
 
   const currentParams = buildParamsString();
   const hasChangesFromDefaults = isHighlightMode || hiddenTurns.size > 0;
-  const savedMatchesCurrent = defaultViewParams === currentParams;
+  // Normalize saved params so old comma format ("0,1,2") matches new range format ("0-2")
+  const normalizedSavedParams = useMemo(() => {
+    if (!defaultViewParams) return null;
+    const saved = new URLSearchParams(defaultViewParams);
+    const parts: string[] = [];
+    const exp = saved.get("expanded");
+    if (exp !== null) parts.push(`expanded=${compressIndices(parseIndices(exp))}`);
+    const hid = saved.get("hidden");
+    if (hid !== null && hid !== "") parts.push(`hidden=${compressIndices(parseIndices(hid))}`);
+    return parts.join("&") || null;
+  }, [defaultViewParams]);
+  const savedMatchesCurrent = normalizedSavedParams === currentParams;
 
   const handleSaveView = useCallback(async () => {
     const params = buildParamsString();
