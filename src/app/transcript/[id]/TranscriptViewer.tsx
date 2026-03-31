@@ -548,7 +548,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   // Header bar actions — Reset, Save, Help. Rendered in top-right header.
   const headerActions = (
     <div className="hidden md:flex items-center gap-0">
-      {isHighlightMode && (
+      {hasChangesFromDefaults && (
         <>
           {resetConfirmation ? (
             <span className="text-[11px] text-green-600 px-1.5 py-1">View reset</span>
@@ -1573,12 +1573,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
           </div>
         </div>
         <div className="flex items-center gap-3 text-xs text-[#888]">
-          {isHighlightMode && highlightDurationLabel && (
-            <span className="text-[11px]">
-              <span className="font-medium text-[#b8860b]">{highlightDurationLabel} highlight</span>
-              {fullCallLabel && <span className="text-[#bbb]"> · {fullCallLabel}</span>}
-            </span>
-          )}
+          {reelInfoBlock}
           <span>{date}</span>
           <span className="w-px h-4 bg-[#e5e3df]" />
           {headerActions}
