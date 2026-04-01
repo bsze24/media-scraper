@@ -2,7 +2,7 @@ import type { EntityTags, FundName, KeyPerson } from "@/types/appearance";
 import type { PrepBulletsData } from "@/types/bullets";
 import type { SectionHeading } from "@/types/scraper";
 
-const DEFAULT_TARGET_CHARS = 120_000;
+export const CHUNK_THRESHOLD = 120_000;
 
 // ---------------------------------------------------------------------------
 // Split
@@ -21,7 +21,7 @@ const DEFAULT_TARGET_CHARS = 120_000;
 export function splitForProcessing(
   rawTranscript: string,
   sections: SectionHeading[],
-  targetChunkChars: number = DEFAULT_TARGET_CHARS
+  targetChunkChars: number = CHUNK_THRESHOLD
 ): string[] {
   if (rawTranscript.length < targetChunkChars) {
     return [rawTranscript];

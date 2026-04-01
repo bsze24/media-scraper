@@ -31,6 +31,7 @@ import { extractEntities } from "@lib/pipeline/entities";
 import { generateTurnSummaries } from "@lib/pipeline/turn-summaries";
 import { generatePrepBullets } from "@lib/pipeline/bullets";
 import {
+  CHUNK_THRESHOLD,
   splitForProcessing,
   mergeCleaned,
   mergeEntityTags,
@@ -163,7 +164,7 @@ export async function processAppearance(id: string): Promise<void> {
       await appendProcessingWarning(id, warning);
     }
 
-    const CHUNK_THRESHOLD = 120_000;
+
     const needsChunking = rawTranscript.length >= CHUNK_THRESHOLD;
     const rawChunks = needsChunking
       ? splitForProcessing(rawTranscript, sections)
@@ -489,7 +490,7 @@ export async function reprocessBullets(id: string): Promise<BulletsStepOutput> {
     // cleaned_transcript where the LLM may have stripped/modified them.
     // Raw chunks are used only for section filtering; cleaned_transcript
     // is what gets sent to the bullets LLM.
-    const CHUNK_THRESHOLD = 120_000;
+
     const rawSource = row.raw_transcript ?? row.cleaned_transcript;
     const needsChunking = rawSource.length >= CHUNK_THRESHOLD;
 
