@@ -63,6 +63,7 @@ const mockMergeCleaned = vi.fn();
 const mockMergeEntityTags = vi.fn();
 const mockMergePrepBullets = vi.fn();
 vi.mock("@lib/pipeline/splitter", () => ({
+  CHUNK_THRESHOLD: 120_000,
   splitForProcessing: (...args: unknown[]) => mockSplitForProcessing(...args),
   mergeCleaned: (...args: unknown[]) => mockMergeCleaned(...args),
   mergeEntityTags: (...args: unknown[]) => mockMergeEntityTags(...args),
