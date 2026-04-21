@@ -333,7 +333,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-zinc-50 p-8 font-sans">
-      <div className="mx-auto max-w-5xl space-y-6">
+      <div className="mx-auto space-y-6">
         <h1 className="text-2xl font-semibold text-zinc-900">
           Meeting Prep Tool — Admin
         </h1>
@@ -434,17 +434,16 @@ export default function Home() {
 
         {/* Appearances Table */}
         {appearances.length > 0 && (
-          <section className="rounded-lg border border-zinc-200 bg-white">
-            <table className="w-full table-fixed text-sm">
+          <section className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
+            <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-zinc-200 bg-zinc-50 text-left">
-                  <th className="w-[70px] px-3 py-2 font-medium text-zinc-600">ID</th>
-                  <th className="w-[180px] px-3 py-2 font-medium text-zinc-600">URL</th>
-                  <th className="w-[90px] px-3 py-2 font-medium text-zinc-600">Source</th>
-                  <th className="px-3 py-2 font-medium text-zinc-600">Title</th>
-                  <th className="w-[220px] px-3 py-2 font-medium text-zinc-600">Status</th>
-                  <th className="w-[140px] px-3 py-2 font-medium text-zinc-600">Detail</th>
-                  <th className="w-[100px] px-3 py-2 font-medium text-zinc-600">Action</th>
+                  <th className="px-3 py-1 font-medium text-zinc-600">ID</th>
+                  <th className="px-3 py-1 font-medium text-zinc-600">Source</th>
+                  <th className="px-3 py-1 font-medium text-zinc-600">Title</th>
+                  <th className="px-3 py-1 font-medium text-zinc-600">Status</th>
+                  <th className="px-3 py-1 font-medium text-zinc-600">Detail</th>
+                  <th className="px-3 py-1 font-medium text-zinc-600">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -459,32 +458,19 @@ export default function Home() {
                       key={a.id}
                       className="border-b border-zinc-100"
                     >
-                      <td className="truncate px-3 py-2 font-mono text-xs text-zinc-500">
+                      <td className="whitespace-nowrap px-3 py-1 font-mono text-xs text-zinc-500">
                         <button
                           onClick={() => navigator.clipboard.writeText(a.id)}
                           title="Click to copy"
                           className="cursor-pointer hover:text-zinc-900"
                         >
-                          {a.id.slice(0, 8)}
+                          {a.id}
                         </button>
                       </td>
-                      <td
-                        className="truncate px-3 py-2 font-mono text-xs"
-                        title={a.source_url}
-                      >
-                        <a
-                          href={isComplete ? `/transcript/${a.id}` : a.source_url}
-                          target={isComplete ? undefined : "_blank"}
-                          rel={isComplete ? undefined : "noopener noreferrer"}
-                          className="text-blue-600 hover:underline"
-                        >
-                          {truncateUrl(a.source_url, 30)}
-                        </a>
-                      </td>
-                      <td className="truncate px-3 py-2 text-xs text-zinc-500" title={a.source_name ?? ""}>
+                      <td className="px-3 py-1 text-xs text-zinc-500">
                         {a.source_name ?? "\u2014"}
                       </td>
-                      <td className="truncate px-3 py-2 text-zinc-700">
+                      <td className="px-3 py-1 text-zinc-700">
                         {isComplete ? (
                           <a
                             href={`/transcript/${a.id}`}
@@ -493,10 +479,17 @@ export default function Home() {
                             {a.title ?? "\u2014"}
                           </a>
                         ) : (
-                          a.title ?? "\u2014"
+                          <a
+                            href={a.source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {a.title || truncateUrl(a.source_url, 50)}
+                          </a>
                         )}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-1">
                         <span
                           className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}
                         >
@@ -537,7 +530,7 @@ export default function Home() {
                           </button>
                         ) : "\u2014"}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-1">
                         <div className="flex items-center gap-2">
                           {canRetry && (
                             <button
