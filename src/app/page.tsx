@@ -100,6 +100,7 @@ export default function Home() {
   const [tokenInput, setTokenInput] = useState("");
   const [authError, setAuthError] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
   const [showCopied, setShowCopied] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopRef = useRef(false);
@@ -263,7 +264,9 @@ export default function Home() {
         }
       }
       if (failedIds.length > 0) {
-        setLoadError(`Reset failed for ${failedIds.length} of ${inFlightRows.length} rows: [${failedIds.join(", ")}]`);
+        setResetError(`Reset failed for ${failedIds.length} of ${inFlightRows.length} rows: [${failedIds.join(", ")}]`);
+      } else {
+        setResetError(null);
       }
     } finally {
       setResettingInFlight(false);
@@ -434,10 +437,15 @@ export default function Home() {
           </section>
         )}
 
-        {/* Error Banner */}
+        {/* Error Banners */}
         {loadError && (
           <section className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            <strong>Error:</strong> {loadError}
+            <strong>Load error:</strong> {loadError}
+          </section>
+        )}
+        {resetError && (
+          <section className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-orange-700">
+            <strong>Reset error:</strong> {resetError}
           </section>
         )}
 
