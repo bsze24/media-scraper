@@ -106,10 +106,13 @@ export default function Home() {
   const stopRef = useRef(false);
 
   const copyToClipboard = useCallback((text: string) => {
-    navigator.clipboard.writeText(text);
-    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
-    setShowCopied(true);
-    copiedTimerRef.current = setTimeout(() => setShowCopied(false), 1500);
+    navigator.clipboard.writeText(text).then(() => {
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      setShowCopied(true);
+      copiedTimerRef.current = setTimeout(() => setShowCopied(false), 1500);
+    }).catch(() => {
+      // Silently ignore — no toast on failure
+    });
   }, []);
 
   // Check for existing admin cookie on mount
