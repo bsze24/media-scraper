@@ -97,6 +97,11 @@ export const TurnRenderer = React.memo(function TurnRenderer({
           : 'hover:bg-[#faf9f7] border-transparent'
       }`}
     >
+      {/* Turn index (subtle, for debugging) */}
+      <span className="absolute top-0.5 right-1 text-[9px] font-mono text-zinc-300 select-all" title={`Turn ${turn.turn_index}`}>
+        {turn.turn_index}
+      </span>
+
       {/* Header: timestamp + speaker name/title + cited badge */}
       <div className="flex items-baseline gap-3 mb-1">
         {turn.timestamp_seconds != null && (
