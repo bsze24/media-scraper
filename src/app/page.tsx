@@ -95,6 +95,7 @@ export default function Home() {
   const [processing, setProcessing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [retryingAll, setRetryingAll] = useState(false);
+  const [resettingInFlight, setResettingInFlight] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
   const [authError, setAuthError] = useState(false);
@@ -226,6 +227,28 @@ export default function Home() {
     }
   }
 
+  async function handleResetInFlight() {
+    const inFlightRows = appearances.filter((a) => IN_FLIGHT_STATUSES.has(a.processing_status));
+    if (inFlightRows.length === 0) return;
+
+    const confirmed = window.confirm(`Reset ${inFlightRows.length} in-flight row${inFlightRows.length === 1 ? "" : "s"} back to queued?`);
+    if (!confirmed) return;
+
+    setResettingInFlight(true);
+    try {
+      for (const row of inFlightRows) {
+        try {
+          await retryAppearance(row.id);
+        } catch (err) {
+          console.error(`Reset failed for ${row.id}:`, err);
+        }
+      }
+    } finally {
+      setResettingInFlight(false);
+      await refresh();
+    }
+  }
+
   async function handleDelete(id: string) {
     const confirmed = window.confirm("Delete this appearance? This cannot be undone.");
     if (!confirmed) return;
@@ -351,6 +374,15 @@ export default function Home() {
                 Failed: <strong>{counts.failed}</strong>
               </span>
               <div className="ml-auto flex gap-2">
+                {activeCount > 0 && !processing && (
+                  <button
+                    onClick={handleResetInFlight}
+                    disabled={resettingInFlight}
+                    className="rounded border border-orange-300 px-4 py-1.5 text-sm font-medium text-orange-700 hover:bg-orange-50 disabled:opacity-50"
+                  >
+                    {resettingInFlight ? "Resetting\u2026" : "Reset In-Flight"}
+                  </button>
+                )}
                 {failedCount > 0 && (
                   <button
                     onClick={handleRetryAllFailed}
