@@ -444,8 +444,9 @@ export default function Home() {
           </section>
         )}
         {resetError && (
-          <section className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-orange-700">
-            <strong>Reset error:</strong> {resetError}
+          <section className="flex items-start justify-between rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-orange-700">
+            <span><strong>Reset error:</strong> {resetError}</span>
+            <button onClick={() => setResetError(null)} aria-label="Dismiss" className="ml-4 text-orange-400 hover:text-orange-700">&times;</button>
           </section>
         )}
 
