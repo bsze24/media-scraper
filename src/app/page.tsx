@@ -99,6 +99,7 @@ export default function Home() {
   const [authed, setAuthed] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
   const [authError, setAuthError] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const stopRef = useRef(false);
 
   // Check for existing admin cookie on mount
@@ -107,12 +108,19 @@ export default function Home() {
   }, []);
 
   const refresh = useCallback(async () => {
-    const [newAppearances, newCounts] = await Promise.all([
-      getAllAppearances(),
-      getQueueStatus(),
-    ]);
-    setAppearances(newAppearances);
-    setCounts(newCounts);
+    try {
+      const [newAppearances, newCounts] = await Promise.all([
+        getAllAppearances(),
+        getQueueStatus(),
+      ]);
+      setAppearances(newAppearances);
+      setCounts(newCounts);
+      setLoadError(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setLoadError(msg);
+      console.error("Failed to load appearances:", err);
+    }
   }, []);
 
   // Initial load
@@ -235,13 +243,18 @@ export default function Home() {
     if (!confirmed) return;
 
     setResettingInFlight(true);
+    const failedIds: string[] = [];
     try {
       for (const row of inFlightRows) {
         try {
           await retryAppearance(row.id);
         } catch (err) {
+          failedIds.push(row.id);
           console.error(`Reset failed for ${row.id}:`, err);
         }
+      }
+      if (failedIds.length > 0) {
+        setLoadError(`Reset failed for ${failedIds.length} of ${inFlightRows.length} rows: [${failedIds.join(", ")}]`);
       }
     } finally {
       setResettingInFlight(false);
@@ -409,6 +422,13 @@ export default function Home() {
                 )}
               </div>
             </div>
+          </section>
+        )}
+
+        {/* Error Banner */}
+        {loadError && (
+          <section className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <strong>Error:</strong> {loadError}
           </section>
         )}
 
