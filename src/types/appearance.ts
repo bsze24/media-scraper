@@ -19,6 +19,7 @@ export type ProcessingStatus =
   | "complete"
   | "failed";
 
+// Note: will need to change when we upgrade diarization — likely to AssemblyAI, not youtube_whisper
 export function isYouTubeSource(source: TranscriptSource): boolean {
   return source === "youtube_captions" || source === "youtube_whisper";
 }
