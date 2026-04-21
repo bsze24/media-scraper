@@ -459,11 +459,14 @@ export default function Home() {
                       key={a.id}
                       className="border-b border-zinc-100"
                     >
-                      <td
-                        className="truncate px-3 py-2 font-mono text-xs text-zinc-500"
-                        title={a.id}
-                      >
-                        {a.id.slice(0, 8)}
+                      <td className="truncate px-3 py-2 font-mono text-xs text-zinc-500">
+                        <button
+                          onClick={() => navigator.clipboard.writeText(a.id)}
+                          title="Click to copy"
+                          className="cursor-pointer hover:text-zinc-900"
+                        >
+                          {a.id.slice(0, 8)}
+                        </button>
                       </td>
                       <td
                         className="truncate px-3 py-2 font-mono text-xs"
@@ -505,26 +508,34 @@ export default function Home() {
                           </span>
                         )}
                         {isFailed && a.processing_error && (
-                          <span
-                            className="ml-2 text-xs text-red-500"
-                            title={a.processing_error}
+                          <button
+                            onClick={() => navigator.clipboard.writeText(a.processing_error!)}
+                            title="Click to copy"
+                            className="ml-2 max-w-xs cursor-pointer break-words text-left text-xs text-red-500 hover:text-red-700"
                           >
-                            {a.processing_error.slice(0, 25)}
-                            {a.processing_error.length > 25 ? "\u2026" : ""}
-                          </span>
+                            {a.processing_error}
+                          </button>
                         )}
                         {isComplete && a.processing_error && (
-                          <span
-                            className="ml-2 text-xs text-amber-500"
-                            title={a.processing_error}
+                          <button
+                            onClick={() => navigator.clipboard.writeText(a.processing_error!)}
+                            title="Click to copy"
+                            className="ml-2 max-w-xs cursor-pointer break-words text-left text-xs text-amber-500 hover:text-amber-700"
                           >
-                            {a.processing_error.slice(0, 25)}
-                            {a.processing_error.length > 25 ? "\u2026" : ""}
-                          </span>
+                            {a.processing_error}
+                          </button>
                         )}
                       </td>
-                      <td className="truncate px-3 py-2 text-xs text-zinc-500">
-                        {a.processing_detail ?? "\u2014"}
+                      <td className="max-w-xs px-3 py-2 text-xs text-zinc-500">
+                        {a.processing_detail ? (
+                          <button
+                            onClick={() => navigator.clipboard.writeText(a.processing_detail!)}
+                            title="Click to copy"
+                            className="cursor-pointer break-words text-left hover:text-zinc-900"
+                          >
+                            {a.processing_detail}
+                          </button>
+                        ) : "\u2014"}
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
