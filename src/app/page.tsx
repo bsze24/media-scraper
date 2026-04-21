@@ -99,7 +99,21 @@ export default function Home() {
   const [authed, setAuthed] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
   const [authError, setAuthError] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [showCopied, setShowCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopRef = useRef(false);
+
+  const copyToClipboard = useCallback((text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      setShowCopied(true);
+      copiedTimerRef.current = setTimeout(() => setShowCopied(false), 1500);
+    }).catch(() => {
+      // Silently ignore — no toast on failure
+    });
+  }, []);
 
   // Check for existing admin cookie on mount
   useEffect(() => {
@@ -107,12 +121,19 @@ export default function Home() {
   }, []);
 
   const refresh = useCallback(async () => {
-    const [newAppearances, newCounts] = await Promise.all([
-      getAllAppearances(),
-      getQueueStatus(),
-    ]);
-    setAppearances(newAppearances);
-    setCounts(newCounts);
+    try {
+      const [newAppearances, newCounts] = await Promise.all([
+        getAllAppearances(),
+        getQueueStatus(),
+      ]);
+      setAppearances(newAppearances);
+      setCounts(newCounts);
+      setLoadError(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setLoadError(msg);
+      console.error("Failed to load appearances:", err);
+    }
   }, []);
 
   // Initial load
@@ -235,13 +256,20 @@ export default function Home() {
     if (!confirmed) return;
 
     setResettingInFlight(true);
+    const failedIds: string[] = [];
     try {
       for (const row of inFlightRows) {
         try {
           await retryAppearance(row.id);
         } catch (err) {
+          failedIds.push(row.id);
           console.error(`Reset failed for ${row.id}:`, err);
         }
+      }
+      if (failedIds.length > 0) {
+        setResetError(`Reset failed for ${failedIds.length} of ${inFlightRows.length} rows: [${failedIds.join(", ")}]`);
+      } else {
+        setResetError(null);
       }
     } finally {
       setResettingInFlight(false);
@@ -320,7 +348,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-zinc-50 p-8 font-sans">
-      <div className="mx-auto max-w-5xl space-y-6">
+      <div className="mx-auto space-y-6">
         <h1 className="text-2xl font-semibold text-zinc-900">
           Meeting Prep Tool — Admin
         </h1>
@@ -412,19 +440,31 @@ export default function Home() {
           </section>
         )}
 
+        {/* Error Banners */}
+        {loadError && (
+          <section className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <strong>Load error:</strong> {loadError}
+          </section>
+        )}
+        {resetError && (
+          <section className="flex items-start justify-between rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-orange-700">
+            <span><strong>Reset error:</strong> {resetError}</span>
+            <button onClick={() => setResetError(null)} aria-label="Dismiss" className="ml-4 text-orange-400 hover:text-orange-700">&times;</button>
+          </section>
+        )}
+
         {/* Appearances Table */}
         {appearances.length > 0 && (
-          <section className="rounded-lg border border-zinc-200 bg-white">
-            <table className="w-full table-fixed text-sm">
+          <section className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
+            <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-zinc-200 bg-zinc-50 text-left">
-                  <th className="w-[70px] px-3 py-2 font-medium text-zinc-600">ID</th>
-                  <th className="w-[180px] px-3 py-2 font-medium text-zinc-600">URL</th>
-                  <th className="w-[90px] px-3 py-2 font-medium text-zinc-600">Source</th>
-                  <th className="px-3 py-2 font-medium text-zinc-600">Title</th>
-                  <th className="w-[220px] px-3 py-2 font-medium text-zinc-600">Status</th>
-                  <th className="w-[140px] px-3 py-2 font-medium text-zinc-600">Detail</th>
-                  <th className="w-[100px] px-3 py-2 font-medium text-zinc-600">Action</th>
+                  <th className="px-3 py-1 font-medium text-zinc-600">ID</th>
+                  <th className="px-3 py-1 font-medium text-zinc-600">Source</th>
+                  <th className="px-3 py-1 font-medium text-zinc-600">Title</th>
+                  <th className="px-3 py-1 font-medium text-zinc-600">Status</th>
+                  <th className="px-3 py-1 font-medium text-zinc-600">Detail</th>
+                  <th className="px-3 py-1 font-medium text-zinc-600">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -439,29 +479,19 @@ export default function Home() {
                       key={a.id}
                       className="border-b border-zinc-100"
                     >
-                      <td
-                        className="truncate px-3 py-2 font-mono text-xs text-zinc-500"
-                        title={a.id}
-                      >
-                        {a.id.slice(0, 8)}
-                      </td>
-                      <td
-                        className="truncate px-3 py-2 font-mono text-xs"
-                        title={a.source_url}
-                      >
-                        <a
-                          href={isComplete ? `/transcript/${a.id}` : a.source_url}
-                          target={isComplete ? undefined : "_blank"}
-                          rel={isComplete ? undefined : "noopener noreferrer"}
-                          className="text-blue-600 hover:underline"
+                      <td className="whitespace-nowrap px-3 py-1 font-mono text-xs text-zinc-500">
+                        <button
+                          onClick={() => copyToClipboard(a.id)}
+                          title="Click to copy"
+                          className="cursor-pointer hover:text-zinc-900"
                         >
-                          {truncateUrl(a.source_url, 30)}
-                        </a>
+                          {a.id}
+                        </button>
                       </td>
-                      <td className="truncate px-3 py-2 text-xs text-zinc-500" title={a.source_name ?? ""}>
+                      <td className="px-3 py-1 text-xs text-zinc-500">
                         {a.source_name ?? "\u2014"}
                       </td>
-                      <td className="truncate px-3 py-2 text-zinc-700">
+                      <td className="px-3 py-1 text-zinc-700">
                         {isComplete ? (
                           <a
                             href={`/transcript/${a.id}`}
@@ -470,10 +500,17 @@ export default function Home() {
                             {a.title ?? "\u2014"}
                           </a>
                         ) : (
-                          a.title ?? "\u2014"
+                          <a
+                            href={a.source_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {a.title || truncateUrl(a.source_url, 50)}
+                          </a>
                         )}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-1">
                         <span
                           className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}
                         >
@@ -485,28 +522,36 @@ export default function Home() {
                           </span>
                         )}
                         {isFailed && a.processing_error && (
-                          <span
-                            className="ml-2 text-xs text-red-500"
-                            title={a.processing_error}
+                          <button
+                            onClick={() => copyToClipboard(a.processing_error!)}
+                            title="Click to copy"
+                            className="ml-2 max-w-xs cursor-pointer break-words text-left text-xs text-red-500 hover:text-red-700"
                           >
-                            {a.processing_error.slice(0, 25)}
-                            {a.processing_error.length > 25 ? "\u2026" : ""}
-                          </span>
+                            {a.processing_error}
+                          </button>
                         )}
                         {isComplete && a.processing_error && (
-                          <span
-                            className="ml-2 text-xs text-amber-500"
-                            title={a.processing_error}
+                          <button
+                            onClick={() => copyToClipboard(a.processing_error!)}
+                            title="Click to copy"
+                            className="ml-2 max-w-xs cursor-pointer break-words text-left text-xs text-amber-500 hover:text-amber-700"
                           >
-                            {a.processing_error.slice(0, 25)}
-                            {a.processing_error.length > 25 ? "\u2026" : ""}
-                          </span>
+                            {a.processing_error}
+                          </button>
                         )}
                       </td>
-                      <td className="truncate px-3 py-2 text-xs text-zinc-500">
-                        {a.processing_detail ?? "\u2014"}
+                      <td className="max-w-xs px-3 py-1 text-xs text-zinc-500">
+                        {a.processing_detail ? (
+                          <button
+                            onClick={() => copyToClipboard(a.processing_detail!)}
+                            title="Click to copy"
+                            className="cursor-pointer break-words text-left hover:text-zinc-900"
+                          >
+                            {a.processing_detail}
+                          </button>
+                        ) : "\u2014"}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-1">
                         <div className="flex items-center gap-2">
                           {canRetry && (
                             <button
@@ -534,6 +579,13 @@ export default function Home() {
           </section>
         )}
       </div>
+
+      {/* Copied toast */}
+      {showCopied && (
+        <div className="fixed bottom-6 right-6 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-lg">
+          Copied!
+        </div>
+      )}
     </div>
   );
 }
