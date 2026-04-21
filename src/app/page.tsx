@@ -100,7 +100,16 @@ export default function Home() {
   const [tokenInput, setTokenInput] = useState("");
   const [authError, setAuthError] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [showCopied, setShowCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopRef = useRef(false);
+
+  const copyToClipboard = useCallback((text: string) => {
+    navigator.clipboard.writeText(text);
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    setShowCopied(true);
+    copiedTimerRef.current = setTimeout(() => setShowCopied(false), 1500);
+  }, []);
 
   // Check for existing admin cookie on mount
   useEffect(() => {
@@ -460,7 +469,7 @@ export default function Home() {
                     >
                       <td className="whitespace-nowrap px-3 py-1 font-mono text-xs text-zinc-500">
                         <button
-                          onClick={() => navigator.clipboard.writeText(a.id)}
+                          onClick={() => copyToClipboard(a.id)}
                           title="Click to copy"
                           className="cursor-pointer hover:text-zinc-900"
                         >
@@ -502,7 +511,7 @@ export default function Home() {
                         )}
                         {isFailed && a.processing_error && (
                           <button
-                            onClick={() => navigator.clipboard.writeText(a.processing_error!)}
+                            onClick={() => copyToClipboard(a.processing_error!)}
                             title="Click to copy"
                             className="ml-2 max-w-xs cursor-pointer break-words text-left text-xs text-red-500 hover:text-red-700"
                           >
@@ -511,7 +520,7 @@ export default function Home() {
                         )}
                         {isComplete && a.processing_error && (
                           <button
-                            onClick={() => navigator.clipboard.writeText(a.processing_error!)}
+                            onClick={() => copyToClipboard(a.processing_error!)}
                             title="Click to copy"
                             className="ml-2 max-w-xs cursor-pointer break-words text-left text-xs text-amber-500 hover:text-amber-700"
                           >
@@ -522,7 +531,7 @@ export default function Home() {
                       <td className="max-w-xs px-3 py-2 text-xs text-zinc-500">
                         {a.processing_detail ? (
                           <button
-                            onClick={() => navigator.clipboard.writeText(a.processing_detail!)}
+                            onClick={() => copyToClipboard(a.processing_detail!)}
                             title="Click to copy"
                             className="cursor-pointer break-words text-left hover:text-zinc-900"
                           >
@@ -558,6 +567,13 @@ export default function Home() {
           </section>
         )}
       </div>
+
+      {/* Copied toast */}
+      {showCopied && (
+        <div className="fixed bottom-6 right-6 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-lg">
+          Copied!
+        </div>
+      )}
     </div>
   );
 }
