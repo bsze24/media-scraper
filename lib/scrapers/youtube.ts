@@ -102,7 +102,16 @@ async function fetchCaptions(url: string): Promise<CaptionSegment[]> {
       url,
     ]);
 
-    const raw = await readFile(expectedFile, "utf-8");
+    let raw: string;
+    try {
+      raw = await readFile(expectedFile, "utf-8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        console.log("[youtube] no caption file produced — video likely has no captions");
+        return [];
+      }
+      throw err;
+    }
     const data: { events: Json3Event[] } = JSON.parse(raw);
     return parseJson3Events(data.events);
   } finally {
