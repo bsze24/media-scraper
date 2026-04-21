@@ -540,7 +540,7 @@ export default function Home() {
                           </button>
                         )}
                       </td>
-                      <td className="max-w-xs px-3 py-2 text-xs text-zinc-500">
+                      <td className="max-w-xs px-3 py-1 text-xs text-zinc-500">
                         {a.processing_detail ? (
                           <button
                             onClick={() => copyToClipboard(a.processing_detail!)}
