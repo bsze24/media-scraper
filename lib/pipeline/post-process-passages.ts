@@ -294,10 +294,40 @@ function stepDetectGaps(
     }
   }
 
+  // Aggregate contiguous uncovered ranges
+  const gaps: { start: number; end: number }[] = [];
+  let currentGapStart: number | null = null;
   for (let i = 0; i < segments.length; i++) {
     if (!covered.has(i)) {
-      warnings.push(`Gap: segment ${i} not covered by any passage`);
+      if (currentGapStart === null) currentGapStart = i;
+    } else if (currentGapStart !== null) {
+      gaps.push({ start: currentGapStart, end: i - 1 });
+      currentGapStart = null;
     }
+  }
+  if (currentGapStart !== null) {
+    gaps.push({ start: currentGapStart, end: segments.length - 1 });
+  }
+
+  if (gaps.length === 0) return;
+
+  // Precompute sorted passages once for boundary lookup
+  const byEnd = [...passages].sort((a, b) => b.end_segment - a.end_segment);
+  const byStart = [...passages].sort((a, b) => a.start_segment - b.start_segment);
+
+  for (const gap of gaps) {
+    const size = gap.end - gap.start + 1;
+    const prevPassage = byEnd.find((p) => p.end_segment < gap.start);
+    const nextPassage = byStart.find((p) => p.start_segment > gap.end);
+
+    const prevSpeaker = prevPassage?.speaker ?? "(start of transcript)";
+    const nextSpeaker = nextPassage?.speaker ?? "(end of transcript)";
+    const sameSpeaker = prevPassage && nextPassage && prevSpeaker === nextSpeaker;
+
+    warnings.push(
+      `passage_gap: segments ${gap.start}-${gap.end} (${size} segment${size === 1 ? "" : "s"}), ` +
+      `between speakers '${prevSpeaker}' and '${nextSpeaker}'${sameSpeaker ? " (same speaker)" : ""}`
+    );
   }
 }
 
