@@ -35,6 +35,7 @@ interface AppearanceSnapshot {
   turns_with_section_anchor: number;
   // Gap #3: attribution distribution
   attribution_source: number;
+  attribution_derived: number;
   attribution_inferred: number;
   attribution_unset: number;
   // Gap #4: corrected turns
@@ -103,6 +104,7 @@ async function main() {
     let timestamped = 0;
     let turnsWithAnchor = 0;
     let attrSource = 0;
+    let attrDerived = 0;
     let attrInferred = 0;
     let attrUnset = 0;
     let correctedCount = 0;
@@ -112,6 +114,7 @@ async function main() {
       if (turn.timestamp_seconds != null) timestamped++;
       if (turn.section_anchor) turnsWithAnchor++;
       if (turn.attribution === "source") attrSource++;
+      else if (turn.attribution === "derived") attrDerived++;
       else if (turn.attribution === "inferred") attrInferred++;
       else attrUnset++;
       if (turn.corrected) correctedCount++;
@@ -163,6 +166,7 @@ async function main() {
       turn_text_hash: turnTextHash,
       turns_with_section_anchor: turnsWithAnchor,
       attribution_source: attrSource,
+      attribution_derived: attrDerived,
       attribution_inferred: attrInferred,
       attribution_unset: attrUnset,
       corrected_turn_count: correctedCount,
@@ -324,7 +328,8 @@ async function main() {
       "entity_people_count", "turn_summary_count", "timestamp_coverage_pct",
       "cleaned_transcript_length", "segment_count", "passage_count",
       "turn_text_hash", "turns_with_section_anchor",
-      "attribution_source", "attribution_inferred", "corrected_turn_count",
+      "attribution_source", "attribution_derived", "attribution_inferred",
+      "attribution_unset", "corrected_turn_count",
       "total_supporting_quotes", "quotes_with_section_anchor",
     ];
 
