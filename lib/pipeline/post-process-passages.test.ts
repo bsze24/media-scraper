@@ -87,18 +87,48 @@ describe("speaker name normalization", () => {
     );
   });
 
-  it("resolves ambiguous substring by longest speaker name", () => {
-    const speakers: Speaker[] = [
-      { name: "Oscar", role: "customer" },
-      { name: "Oscar L", role: "customer" },
-    ];
-    const passages = [makePassage({ speaker: "Oscar Loynaz" })];
+  it("subset match — short to long", () => {
+    const speakers: Speaker[] = [{ name: "Marc Rowan", role: "guest" }];
+    const passages = [makePassage({ speaker: "Marc" })];
 
-    const { passages: result } = postProcessPassages(passages, speakers, segments);
-    expect(result[0].speaker).toBe("Oscar L");
+    const { passages: result, warnings } = postProcessPassages(passages, speakers, segments);
+    expect(result[0].speaker).toBe("Marc Rowan");
+    expect(warnings.filter((w) => w.includes("Unknown speaker"))).toHaveLength(0);
   });
 
-  it("matches when LLM name is substring of speaker name", () => {
+  it("subset match — long to short (LLM added suffix)", () => {
+    const speakers: Speaker[] = [{ name: "Marc", role: "guest" }];
+    const passages = [makePassage({ speaker: "Marc Rowan" })];
+
+    const { passages: result, warnings } = postProcessPassages(passages, speakers, segments);
+    expect(result[0].speaker).toBe("Marc");
+    expect(warnings.filter((w) => w.includes("Unknown speaker"))).toHaveLength(0);
+  });
+
+  it("does not false-positive on substring prefix (Marcus ≠ Marc)", () => {
+    const speakers: Speaker[] = [{ name: "Marc", role: "guest" }];
+    const passages = [makePassage({ speaker: "Marcus" })];
+
+    const { passages: result, warnings } = postProcessPassages(passages, speakers, segments);
+    expect(result[0].speaker).toBe("Marcus");
+    expect(warnings).toContainEqual(expect.stringContaining("Unknown speaker 'Marcus'"));
+  });
+
+  it("flags ambiguity when multiple subset matches exist", () => {
+    const speakers: Speaker[] = [
+      { name: "Marc Rowan", role: "guest" },
+      { name: "Marc Andreessen", role: "guest" },
+    ];
+    const passages = [makePassage({ speaker: "Marc" })];
+
+    const { passages: result, warnings } = postProcessPassages(passages, speakers, segments);
+    expect(result[0].speaker).toBe("Marc");
+    expect(warnings).toContainEqual(expect.stringContaining("Ambiguous speaker 'Marc'"));
+    expect(warnings).toContainEqual(expect.stringContaining("Marc Rowan"));
+    expect(warnings).toContainEqual(expect.stringContaining("Marc Andreessen"));
+  });
+
+  it("matches when LLM name is subset of speaker name", () => {
     const speakers: Speaker[] = [{ name: "Patrick O'Shaughnessy", role: "host" }];
     const passages = [makePassage({ speaker: "Patrick" })];
 

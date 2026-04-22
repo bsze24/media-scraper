@@ -57,6 +57,19 @@ const STRUCTURAL_TAGS = new Set([
   "introductions plan",
 ]);
 
+// Duplicated from lib/pipeline/normalize-speakers.ts. When the speaker pipeline
+// is unified (PR2-era), extract to a shared util at lib/pipeline/speaker-matching.ts.
+// Keep these implementations in sync until then.
+function nameParts(name: string): string[] {
+  return name.toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+function isSubsetOf(shorter: string, longer: string): boolean {
+  const sParts = nameParts(shorter);
+  const lParts = nameParts(longer);
+  return sParts.every((sp) => lParts.includes(sp));
+}
+
 // ── Step 1: Speaker name normalization ────────────────────────────────────
 
 function normalizeSpeakerName(
@@ -94,23 +107,22 @@ function normalizeSpeakerName(
     if (s.name.toLowerCase() === strippedLower) return { normalized: s.name };
   }
 
-  // Substring match: speaker name is substring of stripped, or stripped is substring of speaker name
-  const substringMatches: Speaker[] = [];
-  for (const s of speakers) {
-    const sLower = s.name.toLowerCase();
-    if (strippedLower.includes(sLower) || sLower.includes(strippedLower)) {
-      substringMatches.push(s);
-    }
+  // Subset-of-parts match: "Marc" is a subset of "Marc Rowan",
+  // but "Marcus" is NOT (marcus ≠ marc ≠ rowan).
+  const subsetMatches: Speaker[] = speakers.filter(
+    (s) => isSubsetOf(stripped, s.name) || isSubsetOf(s.name, stripped)
+  );
+
+  if (subsetMatches.length === 1) {
+    return { normalized: subsetMatches[0].name };
   }
 
-  if (substringMatches.length === 1) {
-    return { normalized: substringMatches[0].name };
-  }
-
-  if (substringMatches.length > 1) {
-    // Longest matching speaker name wins (most specific)
-    substringMatches.sort((a, b) => b.name.length - a.name.length);
-    return { normalized: substringMatches[0].name };
+  if (subsetMatches.length > 1) {
+    const candidates = subsetMatches.map((s) => `"${s.name}"`).join(" or ");
+    return {
+      normalized: stripped,
+      warning: `Ambiguous speaker '${stripped}' — could be ${candidates}. Skipping normalization.`,
+    };
   }
 
   return {
