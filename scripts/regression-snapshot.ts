@@ -2,10 +2,12 @@ import { loadEnvConfig } from "@next/env";
 loadEnvConfig(process.cwd());
 
 import { createServerClient } from "../lib/db/client";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, writeFileSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { Turn } from "../src/types/appearance";
+import type { Turn, Speaker } from "../src/types/appearance";
+import type { PrepBulletsData } from "../src/types/bullets";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -27,6 +29,25 @@ interface AppearanceSnapshot {
   cleaned_transcript_length: number;
   segment_count: number;
   passage_count: number;
+  // Gap #1: turn content fingerprint
+  turn_text_hash: string;
+  // Gap #2: section anchor coverage on turns
+  turns_with_section_anchor: number;
+  // Gap #3: attribution distribution
+  attribution_source: number;
+  attribution_derived: number;
+  attribution_inferred: number;
+  attribution_unset: number;
+  // Gap #4: corrected turns
+  corrected_turn_count: number;
+  // Gap #5: bullet structure depth
+  total_supporting_quotes: number;
+  quotes_with_section_anchor: number;
+  // Gap #6: speaker roles
+  speaker_roles: Record<string, string>;
+  // Gap #7: processing warnings
+  processing_error: string | null;
+  processing_detail: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -62,7 +83,7 @@ async function main() {
   const { data, error } = await supabase
     .from("appearances")
     .select(
-      "id, title, transcript_source, source_name, turns, speakers, sections, entity_tags, prep_bullets, turn_summaries, cleaned_transcript, processing_detail, scraper_metadata"
+      "id, title, transcript_source, source_name, turns, speakers, sections, entity_tags, prep_bullets, turn_summaries, cleaned_transcript, processing_detail, processing_error, scraper_metadata"
     )
     .eq("processing_status", "complete")
     .order("title");
@@ -77,16 +98,50 @@ async function main() {
   // Build snapshots
   const snapshots: AppearanceSnapshot[] = data.map((row) => {
     const turns: Turn[] = row.turns ?? [];
+    const speakers: Speaker[] = row.speakers ?? [];
+    const bullets: PrepBulletsData = row.prep_bullets ?? {};
     const speakerSet = new Set<string>();
     let timestamped = 0;
+    let turnsWithAnchor = 0;
+    let attrSource = 0;
+    let attrDerived = 0;
+    let attrInferred = 0;
+    let attrUnset = 0;
+    let correctedCount = 0;
 
     for (const turn of turns) {
       if (turn.speaker) speakerSet.add(turn.speaker);
       if (turn.timestamp_seconds != null) timestamped++;
+      if (turn.section_anchor) turnsWithAnchor++;
+      if (turn.attribution === "source") attrSource++;
+      else if (turn.attribution === "derived") attrDerived++;
+      else if (turn.attribution === "inferred") attrInferred++;
+      else attrUnset++;
+      if (turn.corrected) correctedCount++;
     }
 
     const tsCoverage =
       turns.length > 0 ? (timestamped / turns.length) * 100 : 0;
+
+    // Gap #1: deterministic hash of all turn text for content change detection
+    const turnTextConcat = turns.map((t) => `${t.turn_index}:${t.speaker}:${t.text}`).join("\n");
+    const turnTextHash = createHash("sha256").update(turnTextConcat).digest("hex").slice(0, 16);
+
+    // Gap #5: bullet structure depth
+    let totalQuotes = 0;
+    let quotesWithAnchor = 0;
+    for (const b of bullets.bullets ?? []) {
+      totalQuotes += b.supporting_quotes.length;
+      for (const sq of b.supporting_quotes) {
+        if (sq.section_anchor) quotesWithAnchor++;
+      }
+    }
+
+    // Gap #6: speaker roles
+    const speakerRoles: Record<string, string> = {};
+    for (const s of speakers) {
+      speakerRoles[s.name] = s.role;
+    }
 
     return {
       id: row.id,
@@ -96,7 +151,7 @@ async function main() {
       turn_count: turns.length,
       speaker_names: [...speakerSet].sort(),
       timestamp_coverage_pct: parseFloat(tsCoverage.toFixed(1)),
-      bullet_count: row.prep_bullets?.bullets?.length ?? 0,
+      bullet_count: bullets.bullets?.length ?? 0,
       section_count: row.sections?.length ?? 0,
       entity_fund_count: row.entity_tags?.fund_names?.length ?? 0,
       entity_people_count: row.entity_tags?.key_people?.length ?? 0,
@@ -108,6 +163,18 @@ async function main() {
         ? row.scraper_metadata.segments.length
         : 0,
       passage_count: 0, // placeholder — no passages table yet
+      turn_text_hash: turnTextHash,
+      turns_with_section_anchor: turnsWithAnchor,
+      attribution_source: attrSource,
+      attribution_derived: attrDerived,
+      attribution_inferred: attrInferred,
+      attribution_unset: attrUnset,
+      corrected_turn_count: correctedCount,
+      total_supporting_quotes: totalQuotes,
+      quotes_with_section_anchor: quotesWithAnchor,
+      speaker_roles: speakerRoles,
+      processing_error: row.processing_error ?? null,
+      processing_detail: row.processing_detail ?? null,
     };
   });
 
@@ -233,6 +300,67 @@ async function main() {
         ? " (generic)"
         : "";
     console.log(`  "${name}" — ${count} appearance${count > 1 ? "s" : ""}${generic}`);
+  }
+
+  // Gap #10: Automated diff against most recent previous snapshot
+  const snapshotFiles = readdirSync(outputDir)
+    .filter((f) => f.startsWith("regression-snapshot-") && f.endsWith(".json") && f !== `regression-snapshot-${today}.json`)
+    .sort()
+    .reverse();
+
+  if (snapshotFiles.length > 0) {
+    const prevPath = join(outputDir, snapshotFiles[0]);
+    console.log(`\n=== Diff vs ${snapshotFiles[0]} ===\n`);
+
+    const prevSnapshots: AppearanceSnapshot[] = JSON.parse(readFileSync(prevPath, "utf-8"));
+    const prevById = new Map(prevSnapshots.map((s) => [s.id, s]));
+    const currById = new Map(snapshots.map((s) => [s.id, s]));
+
+    // New / removed appearances
+    const added = snapshots.filter((s) => !prevById.has(s.id));
+    const removed = prevSnapshots.filter((s) => !currById.has(s.id));
+    if (added.length > 0) console.log(`  Added (${added.length}): ${added.map((s) => truncate(s.title, 40)).join(", ")}`);
+    if (removed.length > 0) console.log(`  Removed (${removed.length}): ${removed.map((s) => truncate(s.title, 40)).join(", ")}`);
+
+    // Per-appearance field diffs
+    const diffFields: (keyof AppearanceSnapshot)[] = [
+      "turn_count", "bullet_count", "section_count", "entity_fund_count",
+      "entity_people_count", "turn_summary_count", "timestamp_coverage_pct",
+      "cleaned_transcript_length", "segment_count", "passage_count",
+      "turn_text_hash", "turns_with_section_anchor",
+      "attribution_source", "attribution_derived", "attribution_inferred",
+      "attribution_unset", "corrected_turn_count",
+      "total_supporting_quotes", "quotes_with_section_anchor",
+    ];
+
+    let changedCount = 0;
+    for (const curr of snapshots) {
+      const prev = prevById.get(curr.id);
+      if (!prev) continue;
+
+      const diffs: string[] = [];
+      for (const field of diffFields) {
+        const pv = prev[field];
+        const cv = curr[field];
+        // Skip object/array fields — compare primitives only
+        if (typeof pv !== typeof cv || typeof pv === "object") continue;
+        if (pv !== cv) {
+          diffs.push(`${field}: ${pv} → ${cv}`);
+        }
+      }
+
+      if (diffs.length > 0) {
+        changedCount++;
+        console.log(`  ${truncate(curr.title, 40)}:`);
+        for (const d of diffs) console.log(`    ${d}`);
+      }
+    }
+
+    if (changedCount === 0 && added.length === 0 && removed.length === 0) {
+      console.log("  No changes detected.");
+    }
+  } else {
+    console.log("\n  No previous snapshot found for comparison.");
   }
 }
 
