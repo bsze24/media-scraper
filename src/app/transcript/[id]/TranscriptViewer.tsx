@@ -246,6 +246,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     if (hiddenParam !== null && hiddenParam !== "") {
       setHiddenTurns(new Set(parseIndices(hiddenParam)));
     }
+    const speedParam = params.get("speed");
+    if (speedParam) {
+      const rate = parseFloat(speedParam);
+      if (PLAYBACK_RATES.includes(rate as (typeof PLAYBACK_RATES)[number])) {
+        playbackRateRef.current = rate;
+        setPlaybackRate(rate);
+      }
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleTurnExpanded = useCallback((turnIndex: number) => {
@@ -494,11 +502,14 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     if (hiddenTurns.size > 0) {
       parts.push(`hidden=${compressIndices(Array.from(hiddenTurns))}`);
     }
+    if (playbackRate !== DEFAULT_PLAYBACK_RATE) {
+      parts.push(`speed=${playbackRate}`);
+    }
     return parts.join("&") || null;
-  }, [expandedTurns, hiddenTurns, isHighlightMode]);
+  }, [expandedTurns, hiddenTurns, isHighlightMode, playbackRate]);
 
   const currentParams = buildParamsString();
-  const hasChangesFromDefaults = isHighlightMode || hiddenTurns.size > 0;
+  const hasChangesFromDefaults = isHighlightMode || hiddenTurns.size > 0 || playbackRate !== DEFAULT_PLAYBACK_RATE;
   // Normalize saved params so old comma format ("0,1,2") matches new range format ("0-2")
   const normalizedSavedParams = useMemo(() => {
     if (!defaultViewParams) return null;
