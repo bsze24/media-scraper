@@ -255,22 +255,40 @@ function stepEnforceOverlaps(
   passages: RawPassage[],
   warnings: string[]
 ): RawPassage[] {
-  const result = passages.map((p) => ({ ...p }));
+  // Sort by start_segment — LLM output or stepEnforceSize splits can
+  // produce out-of-order passages that cause inverted ranges below.
+  const result = passages
+    .map((p) => ({ ...p }))
+    .sort((a, b) => a.start_segment - b.start_segment);
+
+  const toRemove = new Set<number>();
 
   for (let i = 0; i < result.length - 1; i++) {
+    if (toRemove.has(i)) continue;
+
     const overlap =
       result[i].end_segment - result[i + 1].start_segment + 1;
 
     if (overlap > 1) {
+      const newEnd = result[i + 1].start_segment;
+      // Defense-in-depth: sort above prevents inversion under current semantics,
+      // but guard against future code changes that could bypass the sort invariant.
+      if (newEnd < result[i].start_segment) {
+        warnings.push(
+          `Inverted passage range prevented at index ${i}: S${result[i].start_segment}-S${result[i].end_segment} — passage dropped`
+        );
+        toRemove.add(i);
+        continue;
+      }
       // Reduce to 1-segment overlap (preserve boundary intent)
-      result[i].end_segment = result[i + 1].start_segment;
+      result[i].end_segment = newEnd;
       warnings.push(
         `Reduced overlap between passages ${i} and ${i + 1} from ${overlap} to 1 segment`
       );
     }
   }
 
-  return result;
+  return result.filter((_, i) => !toRemove.has(i));
 }
 
 // ── Step 4: Coverage gap detection ───────────────────────────────────────
