@@ -135,13 +135,18 @@ function stepNormalizeSpeakers(
 
 // ── Step 2: Passage size enforcement ─────────────────────────────────────
 
+function endsWithSentenceBoundary(text: string): boolean {
+  return /[.?!]\s*$/.test(text.trim());
+}
+
 /**
  * Find where to split an oversized passage. Returns the first segment
  * index of the SECOND passage (i.e., first passage ends at splitPoint - 1).
  *
- * Prefers splitting at a >> marker (speaker change) near the midpoint,
- * since >> marks the start of new speech — the >> segment belongs in
- * the second passage.
+ * Three-tier search within ±SPLIT_SEARCH_RADIUS of midpoint:
+ * 1. >> marker (speaker change) — strongest signal
+ * 2. Sentence boundary (preceding segment ends in .?!) — avoids mid-sentence cuts
+ * 3. Midpoint fallback — arbitrary split
  */
 function findSplitPoint(
   passage: RawPassage,
@@ -150,10 +155,10 @@ function findSplitPoint(
   const size = passage.end_segment - passage.start_segment + 1;
   const mid = passage.start_segment + Math.floor(size / 2);
 
-  // Search for >> marker within ±SPLIT_SEARCH_RADIUS of midpoint
   const searchStart = Math.max(passage.start_segment, mid - SPLIT_SEARCH_RADIUS);
   const searchEnd = Math.min(passage.end_segment, mid + SPLIT_SEARCH_RADIUS);
 
+  // Tier 1: >> marker (speaker change)
   let bestIdx = -1;
   let bestDist = Infinity;
 
@@ -166,11 +171,25 @@ function findSplitPoint(
       }
     }
   }
+  if (bestIdx >= 0) return bestIdx;
 
-  // >> marker found: it marks the start of new speech, so the >>
-  // segment is the first segment of the second passage.
-  // No >> found: split at midpoint (midpoint becomes first of second passage).
-  return bestIdx >= 0 ? bestIdx : mid;
+  // Tier 2: sentence boundary — split BETWEEN segment i-1 and segment i
+  // where segment i-1 ends with terminal punctuation. The split point is
+  // segment i (first segment of second passage).
+  bestDist = Infinity;
+  for (let i = searchStart + 1; i <= searchEnd; i++) {
+    if (segments[i - 1] && endsWithSentenceBoundary(segments[i - 1].text)) {
+      const dist = Math.abs(i - mid);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = i;
+      }
+    }
+  }
+  if (bestIdx >= 0) return bestIdx;
+
+  // Tier 3: midpoint fallback
+  return mid;
 }
 
 function stepEnforceSize(

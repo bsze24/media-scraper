@@ -207,6 +207,63 @@ describe("passage size enforcement", () => {
       expect(p.topic_tags).toEqual(["data architecture", "security"]);
     }
   });
+
+  it(">> marker wins over sentence boundary", () => {
+    // Segment 13 ends with ".", segment 14 has >>
+    const segments = makeSegments(30);
+    segments[13] = { text: "end of sentence.", start: 13 * 2.5, duration: 2.5 };
+    segments[14] = { text: ">> new speaker text", start: 14 * 2.5, duration: 2.5 };
+    const passages = [makePassage({ start_segment: 0, end_segment: 29 })];
+    const speakers: Speaker[] = [{ name: "Alice", role: "guest" }];
+
+    const { passages: result } = postProcessPassages(passages, speakers, segments);
+    expect(result.length).toBe(2);
+    // >> at 14 wins — segment 14 starts second passage
+    expect(result[1].start_segment).toBe(14);
+  });
+
+  it("uses sentence boundary when no >> marker exists", () => {
+    // No >> markers. Segment 13 ends with ".", segment 16 ends with "."
+    // Midpoint of 0-29 = 15. Boundary at 14 (after seg 13) is 1 away from mid.
+    // Boundary at 17 (after seg 16) is 2 away. Picks 14.
+    const segments = makeSegments(30);
+    segments[13] = { text: "some sentence ending.", start: 13 * 2.5, duration: 2.5 };
+    segments[16] = { text: "another sentence ending.", start: 16 * 2.5, duration: 2.5 };
+    const passages = [makePassage({ start_segment: 0, end_segment: 29 })];
+    const speakers: Speaker[] = [{ name: "Alice", role: "guest" }];
+
+    const { passages: result } = postProcessPassages(passages, speakers, segments);
+    expect(result.length).toBe(2);
+    expect(result[0].end_segment).toBe(13);
+    expect(result[1].start_segment).toBe(14);
+  });
+
+  it("falls back to midpoint when no >> or sentence boundary", () => {
+    // No >> markers, no terminal punctuation
+    const segments = makeSegments(30);
+    const passages = [makePassage({ start_segment: 0, end_segment: 29 })];
+    const speakers: Speaker[] = [{ name: "Alice", role: "guest" }];
+
+    const { passages: result } = postProcessPassages(passages, speakers, segments);
+    expect(result.length).toBe(2);
+    // Midpoint of 30 segments = 15
+    expect(result[1].start_segment).toBe(15);
+  });
+
+  it("finds sentence boundary at search window edge", () => {
+    // 30 segments, mid=15, searchStart=10, searchEnd=20
+    // Put sentence boundary only at segment 10 (searchStart)
+    // Split point would be 11 (first of second passage)
+    const segments = makeSegments(30);
+    segments[10] = { text: "edge boundary.", start: 10 * 2.5, duration: 2.5 };
+    const passages = [makePassage({ start_segment: 0, end_segment: 29 })];
+    const speakers: Speaker[] = [{ name: "Alice", role: "guest" }];
+
+    const { passages: result } = postProcessPassages(passages, speakers, segments);
+    expect(result.length).toBe(2);
+    expect(result[0].end_segment).toBe(10);
+    expect(result[1].start_segment).toBe(11);
+  });
 });
 
 // ── Step 3: Overlap enforcement ──────────────────────────────────────────
