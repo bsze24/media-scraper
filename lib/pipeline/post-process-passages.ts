@@ -147,13 +147,18 @@ function stepNormalizeSpeakers(
 
 // ── Step 2: Passage size enforcement ─────────────────────────────────────
 
+function endsWithSentenceBoundary(text: string): boolean {
+  return /[.?!]\s*$/.test(text.trim());
+}
+
 /**
  * Find where to split an oversized passage. Returns the first segment
  * index of the SECOND passage (i.e., first passage ends at splitPoint - 1).
  *
- * Prefers splitting at a >> marker (speaker change) near the midpoint,
- * since >> marks the start of new speech — the >> segment belongs in
- * the second passage.
+ * Three-tier search within ±SPLIT_SEARCH_RADIUS of midpoint:
+ * 1. >> marker (speaker change) — strongest signal
+ * 2. Sentence boundary (preceding segment ends in .?!) — avoids mid-sentence cuts
+ * 3. Midpoint fallback — arbitrary split
  */
 function findSplitPoint(
   passage: RawPassage,
@@ -162,10 +167,10 @@ function findSplitPoint(
   const size = passage.end_segment - passage.start_segment + 1;
   const mid = passage.start_segment + Math.floor(size / 2);
 
-  // Search for >> marker within ±SPLIT_SEARCH_RADIUS of midpoint
   const searchStart = Math.max(passage.start_segment, mid - SPLIT_SEARCH_RADIUS);
   const searchEnd = Math.min(passage.end_segment, mid + SPLIT_SEARCH_RADIUS);
 
+  // Tier 1: >> marker (speaker change)
   let bestIdx = -1;
   let bestDist = Infinity;
 
@@ -178,11 +183,25 @@ function findSplitPoint(
       }
     }
   }
+  if (bestIdx >= 0) return bestIdx;
 
-  // >> marker found: it marks the start of new speech, so the >>
-  // segment is the first segment of the second passage.
-  // No >> found: split at midpoint (midpoint becomes first of second passage).
-  return bestIdx >= 0 ? bestIdx : mid;
+  // Tier 2: sentence boundary — split BETWEEN segment i-1 and segment i
+  // where segment i-1 ends with terminal punctuation. The split point is
+  // segment i (first segment of second passage).
+  bestDist = Infinity;
+  for (let i = searchStart + 1; i <= searchEnd; i++) {
+    if (segments[i - 1] && endsWithSentenceBoundary(segments[i - 1].text)) {
+      const dist = Math.abs(i - mid);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = i;
+      }
+    }
+  }
+  if (bestIdx >= 0) return bestIdx;
+
+  // Tier 3: midpoint fallback
+  return mid;
 }
 
 function stepEnforceSize(
@@ -305,10 +324,40 @@ function stepDetectGaps(
     }
   }
 
+  // Aggregate contiguous uncovered ranges
+  const gaps: { start: number; end: number }[] = [];
+  let currentGapStart: number | null = null;
   for (let i = 0; i < segments.length; i++) {
     if (!covered.has(i)) {
-      warnings.push(`Gap: segment ${i} not covered by any passage`);
+      if (currentGapStart === null) currentGapStart = i;
+    } else if (currentGapStart !== null) {
+      gaps.push({ start: currentGapStart, end: i - 1 });
+      currentGapStart = null;
     }
+  }
+  if (currentGapStart !== null) {
+    gaps.push({ start: currentGapStart, end: segments.length - 1 });
+  }
+
+  if (gaps.length === 0) return;
+
+  // Precompute sorted passages once for boundary lookup
+  const byEnd = [...passages].sort((a, b) => b.end_segment - a.end_segment);
+  const byStart = [...passages].sort((a, b) => a.start_segment - b.start_segment);
+
+  for (const gap of gaps) {
+    const size = gap.end - gap.start + 1;
+    const prevPassage = byEnd.find((p) => p.end_segment < gap.start);
+    const nextPassage = byStart.find((p) => p.start_segment > gap.end);
+
+    const prevSpeaker = prevPassage?.speaker ?? "(start of transcript)";
+    const nextSpeaker = nextPassage?.speaker ?? "(end of transcript)";
+    const sameSpeaker = prevPassage && nextPassage && prevSpeaker === nextSpeaker;
+
+    warnings.push(
+      `passage_gap: segments ${gap.start}-${gap.end} (${size} segment${size === 1 ? "" : "s"}), ` +
+      `between speakers '${prevSpeaker}' and '${nextSpeaker}'${sameSpeaker ? " (same speaker)" : ""}`
+    );
   }
 }
 

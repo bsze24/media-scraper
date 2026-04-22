@@ -237,6 +237,63 @@ describe("passage size enforcement", () => {
       expect(p.topic_tags).toEqual(["data architecture", "security"]);
     }
   });
+
+  it(">> marker wins over sentence boundary", () => {
+    // Segment 13 ends with ".", segment 14 has >>
+    const segments = makeSegments(30);
+    segments[13] = { text: "end of sentence.", start: 13 * 2.5, duration: 2.5 };
+    segments[14] = { text: ">> new speaker text", start: 14 * 2.5, duration: 2.5 };
+    const passages = [makePassage({ start_segment: 0, end_segment: 29 })];
+    const speakers: Speaker[] = [{ name: "Alice", role: "guest" }];
+
+    const { passages: result } = postProcessPassages(passages, speakers, segments);
+    expect(result.length).toBe(2);
+    // >> at 14 wins — segment 14 starts second passage
+    expect(result[1].start_segment).toBe(14);
+  });
+
+  it("uses sentence boundary when no >> marker exists", () => {
+    // No >> markers. Segment 13 ends with ".", segment 16 ends with "."
+    // Midpoint of 0-29 = 15. Boundary at 14 (after seg 13) is 1 away from mid.
+    // Boundary at 17 (after seg 16) is 2 away. Picks 14.
+    const segments = makeSegments(30);
+    segments[13] = { text: "some sentence ending.", start: 13 * 2.5, duration: 2.5 };
+    segments[16] = { text: "another sentence ending.", start: 16 * 2.5, duration: 2.5 };
+    const passages = [makePassage({ start_segment: 0, end_segment: 29 })];
+    const speakers: Speaker[] = [{ name: "Alice", role: "guest" }];
+
+    const { passages: result } = postProcessPassages(passages, speakers, segments);
+    expect(result.length).toBe(2);
+    expect(result[0].end_segment).toBe(13);
+    expect(result[1].start_segment).toBe(14);
+  });
+
+  it("falls back to midpoint when no >> or sentence boundary", () => {
+    // No >> markers, no terminal punctuation
+    const segments = makeSegments(30);
+    const passages = [makePassage({ start_segment: 0, end_segment: 29 })];
+    const speakers: Speaker[] = [{ name: "Alice", role: "guest" }];
+
+    const { passages: result } = postProcessPassages(passages, speakers, segments);
+    expect(result.length).toBe(2);
+    // Midpoint of 30 segments = 15
+    expect(result[1].start_segment).toBe(15);
+  });
+
+  it("finds sentence boundary at search window edge", () => {
+    // 30 segments, mid=15, searchStart=10, searchEnd=20
+    // Put sentence boundary only at segment 10 (searchStart)
+    // Split point would be 11 (first of second passage)
+    const segments = makeSegments(30);
+    segments[10] = { text: "edge boundary.", start: 10 * 2.5, duration: 2.5 };
+    const passages = [makePassage({ start_segment: 0, end_segment: 29 })];
+    const speakers: Speaker[] = [{ name: "Alice", role: "guest" }];
+
+    const { passages: result } = postProcessPassages(passages, speakers, segments);
+    expect(result.length).toBe(2);
+    expect(result[0].end_segment).toBe(10);
+    expect(result[1].start_segment).toBe(11);
+  });
 });
 
 // ── Step 3: Overlap enforcement ──────────────────────────────────────────
@@ -362,7 +419,7 @@ describe("overlap enforcement", () => {
 describe("coverage gap detection", () => {
   const speakers: Speaker[] = [{ name: "Alice", role: "guest" }];
 
-  it("warns about missing segments", () => {
+  it("aggregates contiguous uncovered segments into one warning", () => {
     const passages = [
       makePassage({ start_segment: 0, end_segment: 5 }),
       makePassage({ start_segment: 8, end_segment: 14 }),
@@ -370,10 +427,82 @@ describe("coverage gap detection", () => {
     const segments = makeSegments(15);
 
     const { warnings } = postProcessPassages(passages, speakers, segments);
-    const gapWarnings = warnings.filter((w) => w.startsWith("Gap:"));
-    expect(gapWarnings.length).toBe(2); // segments 6 and 7
-    expect(gapWarnings[0]).toContain("segment 6");
-    expect(gapWarnings[1]).toContain("segment 7");
+    const gapWarnings = warnings.filter((w) => w.startsWith("passage_gap:"));
+    expect(gapWarnings.length).toBe(1);
+    expect(gapWarnings[0]).toContain("segments 6-7");
+    expect(gapWarnings[0]).toContain("2 segments");
+  });
+
+  it("emits separate warnings for non-contiguous gaps", () => {
+    const passages = [
+      makePassage({ start_segment: 0, end_segment: 4 }),
+      makePassage({ start_segment: 7, end_segment: 18 }),
+      makePassage({ start_segment: 22, end_segment: 29 }),
+    ];
+    const segments = makeSegments(30);
+
+    const { warnings } = postProcessPassages(passages, speakers, segments);
+    const gapWarnings = warnings.filter((w) => w.startsWith("passage_gap:"));
+    expect(gapWarnings.length).toBe(2);
+    expect(gapWarnings[0]).toContain("segments 5-6");
+    expect(gapWarnings[1]).toContain("segments 19-21");
+  });
+
+  it("flags same-speaker gaps", () => {
+    const speakers2: Speaker[] = [
+      { name: "Marc Rowan", role: "guest" },
+    ];
+    const passages = [
+      makePassage({ speaker: "Marc Rowan", start_segment: 0, end_segment: 5 }),
+      makePassage({ speaker: "Marc Rowan", start_segment: 8, end_segment: 14 }),
+    ];
+    const segments = makeSegments(15);
+
+    const { warnings } = postProcessPassages(passages, speakers2, segments);
+    const gapWarnings = warnings.filter((w) => w.startsWith("passage_gap:"));
+    expect(gapWarnings.length).toBe(1);
+    expect(gapWarnings[0]).toContain("(same speaker)");
+  });
+
+  it("does not flag same speaker when speakers differ", () => {
+    const speakers2: Speaker[] = [
+      { name: "Alice", role: "guest" },
+      { name: "Bob", role: "host" },
+    ];
+    const passages = [
+      makePassage({ speaker: "Alice", start_segment: 0, end_segment: 5 }),
+      makePassage({ speaker: "Bob", start_segment: 8, end_segment: 14 }),
+    ];
+    const segments = makeSegments(15);
+
+    const { warnings } = postProcessPassages(passages, speakers2, segments);
+    const gapWarnings = warnings.filter((w) => w.startsWith("passage_gap:"));
+    expect(gapWarnings.length).toBe(1);
+    expect(gapWarnings[0]).not.toContain("(same speaker)");
+  });
+
+  it("labels gap at transcript start", () => {
+    const passages = [
+      makePassage({ start_segment: 3, end_segment: 14 }),
+    ];
+    const segments = makeSegments(15);
+
+    const { warnings } = postProcessPassages(passages, speakers, segments);
+    const gapWarnings = warnings.filter((w) => w.startsWith("passage_gap:"));
+    expect(gapWarnings.length).toBe(1);
+    expect(gapWarnings[0]).toContain("(start of transcript)");
+  });
+
+  it("labels gap at transcript end", () => {
+    const passages = [
+      makePassage({ start_segment: 0, end_segment: 10 }),
+    ];
+    const segments = makeSegments(15);
+
+    const { warnings } = postProcessPassages(passages, speakers, segments);
+    const gapWarnings = warnings.filter((w) => w.startsWith("passage_gap:"));
+    expect(gapWarnings.length).toBe(1);
+    expect(gapWarnings[0]).toContain("(end of transcript)");
   });
 
   it("no warnings when fully covered", () => {
@@ -384,8 +513,22 @@ describe("coverage gap detection", () => {
     const segments = makeSegments(20);
 
     const { warnings } = postProcessPassages(passages, speakers, segments);
-    const gapWarnings = warnings.filter((w) => w.startsWith("Gap:"));
+    const gapWarnings = warnings.filter((w) => w.startsWith("passage_gap:"));
     expect(gapWarnings.length).toBe(0);
+  });
+
+  it("uses singular 'segment' for size 1", () => {
+    const passages = [
+      makePassage({ start_segment: 0, end_segment: 5 }),
+      makePassage({ start_segment: 7, end_segment: 14 }),
+    ];
+    const segments = makeSegments(15);
+
+    const { warnings } = postProcessPassages(passages, speakers, segments);
+    const gapWarnings = warnings.filter((w) => w.startsWith("passage_gap:"));
+    expect(gapWarnings.length).toBe(1);
+    expect(gapWarnings[0]).toContain("1 segment)");
+    expect(gapWarnings[0]).not.toContain("1 segments");
   });
 });
 
