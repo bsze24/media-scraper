@@ -8,6 +8,8 @@ import type {
   CleanStepOutput,
   EntitiesStepOutput,
   BulletsStepOutput,
+  Passage,
+  PassageInsert,
 } from "./types";
 import type { ProcessingStatus, EntityTags } from "@/types/appearance";
 
@@ -433,6 +435,45 @@ export async function listAppearancesSummary(options?: {
 
   if (error) throw error;
   return { rows: (data ?? []) as AppearanceListRow[], total: count ?? 0 };
+}
+
+// ---------------------------------------------------------------------------
+// Passages
+// ---------------------------------------------------------------------------
+
+export async function writePassages(
+  appearanceId: string,
+  passages: PassageInsert[]
+): Promise<void> {
+  const supabase = createServerClient();
+
+  // Delete existing passages for idempotent reprocessing
+  const { error: deleteError } = await supabase
+    .from("passages")
+    .delete()
+    .eq("appearance_id", appearanceId);
+  if (deleteError) throw deleteError;
+
+  if (passages.length === 0) return;
+
+  const { error: insertError } = await supabase
+    .from("passages")
+    .insert(passages);
+  if (insertError) throw insertError;
+}
+
+export async function getPassages(
+  appearanceId: string
+): Promise<Passage[]> {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from("passages")
+    .select("*")
+    .eq("appearance_id", appearanceId)
+    .order("passage_index", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as Passage[];
 }
 
 // ---------------------------------------------------------------------------
