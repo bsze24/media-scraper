@@ -317,11 +317,16 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     setExpandedTurns(computeRoleDefaults());
     setHiddenTurns(new Set());
     setIsHighlightMode(false);
-    // Remove expanded and hidden params from URL
+    playbackRateRef.current = DEFAULT_PLAYBACK_RATE;
+    setPlaybackRate(DEFAULT_PLAYBACK_RATE);
+    sessionStorage.removeItem("playbackRate");
+    const player = ytPlayerRef.current;
+    if (player) player.setPlaybackRate(DEFAULT_PLAYBACK_RATE);
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       url.searchParams.delete("expanded");
       url.searchParams.delete("hidden");
+      url.searchParams.delete("speed");
       window.history.replaceState({}, "", url.toString());
     }
     setResetConfirmation(true);
