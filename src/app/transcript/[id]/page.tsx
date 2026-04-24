@@ -123,10 +123,10 @@ export async function generateMetadata({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ expanded?: string; hidden?: string }>;
+  searchParams: Promise<{ expanded?: string; hidden?: string; speed?: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const { expanded, hidden } = await searchParams;
+  const { expanded, hidden, speed } = await searchParams;
   const row = await getCachedAppearance(id);
 
   if (!row || row.processing_status !== "complete") {
@@ -138,7 +138,7 @@ export async function generateMetadata({
   // Priority: URL params > saved default view > none
   // All-or-nothing: if any URL param is present, ignore saved view entirely
   // (matches client-side logic in TranscriptViewer's urlInitRef effect)
-  const hasUrlParams = expanded != null || hidden != null;
+  const hasUrlParams = expanded != null || hidden != null || speed != null;
   const savedParams = !hasUrlParams && row.default_view_params
     ? new URLSearchParams(row.default_view_params)
     : null;

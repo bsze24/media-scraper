@@ -219,7 +219,7 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     if (urlInitRef.current) return;
     urlInitRef.current = true;
     const urlParams = new URLSearchParams(window.location.search);
-    const hasUrlParams = urlParams.has("expanded") || urlParams.has("hidden");
+    const hasUrlParams = urlParams.has("expanded") || urlParams.has("hidden") || urlParams.has("speed");
 
     // Source: URL params if present, otherwise saved default view
     const params = hasUrlParams
