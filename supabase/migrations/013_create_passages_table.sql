@@ -45,12 +45,6 @@ CREATE INDEX idx_passages_signal ON passages (appearance_id, signal_score);
 -- Enable RLS
 ALTER TABLE passages ENABLE ROW LEVEL SECURITY;
 
--- Service role: full access (mirrors "Service role full access on appearances")
-CREATE POLICY "Service role full access on passages"
-  ON passages FOR ALL
-  USING (true)
-  WITH CHECK (true);
-
 -- Anon key: read access only (mirrors "Anon read access on appearances")
 -- Passages are service-role write only — no anon insert/update needed
 CREATE POLICY "Anon read access on passages"
