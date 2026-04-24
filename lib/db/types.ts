@@ -81,6 +81,41 @@ export interface BulletsStepOutput {
   prompt_context_snapshot?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Passages
+// ---------------------------------------------------------------------------
+
+/** Full passage row as returned from DB reads */
+export interface Passage {
+  id: string;
+  appearance_id: string;
+  passage_index: number;
+  turn_index: number | null;
+  start_time: number;
+  end_time: number;
+  speaker: string;
+  text: string;
+  cleaned_text: string | null;
+  topic_tags: string[];
+  signal_score: "filler" | "context" | "insight";
+  start_segment: number;
+  end_segment: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** For inserts — DB generates id, created_at, updated_at */
+export type PassageInsert = Omit<Passage, "id" | "created_at" | "updated_at">;
+
+export interface SegmentStepOutput {
+  passages: PassageInsert[];
+  warnings: string[];
+}
+
+// ---------------------------------------------------------------------------
+// List views
+// ---------------------------------------------------------------------------
+
 /** Lightweight projection for list views — omits full transcripts and large JSONB */
 export type AppearanceListRow = Pick<
   AppearanceRow,
