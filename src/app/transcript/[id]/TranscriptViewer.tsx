@@ -519,6 +519,10 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
     if (exp !== null) parts.push(`expanded=${compressIndices(parseIndices(exp))}`);
     const hid = saved.get("hidden");
     if (hid !== null && hid !== "") parts.push(`hidden=${compressIndices(parseIndices(hid))}`);
+    const speed = saved.get("speed");
+    if (speed !== null && parseFloat(speed) !== DEFAULT_PLAYBACK_RATE) {
+      parts.push(`speed=${speed}`);
+    }
     return parts.join("&") || null;
   }, [defaultViewParams]);
   const savedMatchesCurrent = normalizedSavedParams === currentParams;
