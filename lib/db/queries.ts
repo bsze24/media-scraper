@@ -456,9 +456,14 @@ export async function writePassages(
 
   if (passages.length === 0) return;
 
+  // Stamp appearance_id from the parameter to enforce delete/insert consistency.
+  // Known callers pass matching values today, but the invariant belongs at the
+  // DB-write boundary rather than being trusted.
+  const stamped = passages.map((p) => ({ ...p, appearance_id: appearanceId }));
+
   const { error: insertError } = await supabase
     .from("passages")
-    .insert(passages);
+    .insert(stamped);
   if (insertError) throw insertError;
 }
 
