@@ -36,9 +36,6 @@ CREATE TABLE IF NOT EXISTS passages (
 -- Cross-call topic search: "find all passages tagged 'data integration'"
 CREATE INDEX idx_passages_topic_tags ON passages USING GIN (topic_tags);
 
--- Per-appearance lookup: "get all passages for this appearance, ordered"
-CREATE INDEX idx_passages_appearance ON passages (appearance_id, passage_index);
-
 -- Signal filtering: "get only insight-level passages"
 CREATE INDEX idx_passages_signal ON passages (appearance_id, signal_score);
 
