@@ -228,27 +228,31 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
         ? new URLSearchParams(defaultViewParams)
         : null;
 
-    if (!params) return; // No URL params and no saved view — keep role-based defaults
+    if (params) {
+      // Suppress URL sync when loading from saved view (not URL params)
+      if (!hasUrlParams) suppressUrlSyncRef.current = true;
 
-    // Suppress URL sync when loading from saved view (not URL params)
-    if (!hasUrlParams) suppressUrlSyncRef.current = true;
-
-    const expandedParam = params.get("expanded");
-    if (expandedParam !== null) {
-      setIsHighlightMode(true);
-      if (expandedParam === "") {
-        setExpandedTurns(new Set<number>());
-      } else {
-        setExpandedTurns(new Set(parseIndices(expandedParam)));
+      const expandedParam = params.get("expanded");
+      if (expandedParam !== null) {
+        setIsHighlightMode(true);
+        if (expandedParam === "") {
+          setExpandedTurns(new Set<number>());
+        } else {
+          setExpandedTurns(new Set(parseIndices(expandedParam)));
+        }
+      }
+      const hiddenParam = params.get("hidden");
+      if (hiddenParam !== null && hiddenParam !== "") {
+        setHiddenTurns(new Set(parseIndices(hiddenParam)));
       }
     }
-    const hiddenParam = params.get("hidden");
-    if (hiddenParam !== null && hiddenParam !== "") {
-      setHiddenTurns(new Set(parseIndices(hiddenParam)));
-    }
-    const speedParam = params.get("speed");
-    if (speedParam) {
-      const rate = parseFloat(speedParam);
+
+    // Speed precedence: URL/saved-view > sessionStorage > default.
+    // Folded in here so it runs in a single mount effect — a separate effect
+    // would race against this one and overwrite the URL/saved-view value.
+    const speedSource = params?.get("speed") ?? sessionStorage.getItem("playbackRate");
+    if (speedSource) {
+      const rate = parseFloat(speedSource);
       if (PLAYBACK_RATES.includes(rate as (typeof PLAYBACK_RATES)[number])) {
         playbackRateRef.current = rate;
         setPlaybackRate(rate);
@@ -611,18 +615,6 @@ export function TranscriptViewer({ appearance }: TranscriptViewerProps) {
   const playToggleGuardRef = useRef(false);
   const lastPollTimeRef = useRef(NaN);
   const lastPollWallRef = useRef(0);
-
-  // Hydrate playback rate from sessionStorage (SSR-safe)
-  useEffect(() => {
-    const stored = sessionStorage.getItem("playbackRate");
-    if (stored) {
-      const rate = parseFloat(stored);
-      if (PLAYBACK_RATES.includes(rate as (typeof PLAYBACK_RATES)[number])) {
-        playbackRateRef.current = rate;
-        setPlaybackRate(rate);
-      }
-    }
-  }, []);
 
   const cyclePlaybackRate = useCallback((direction: 1 | -1, wrap = true) => {
     const currentIdx = PLAYBACK_RATES.indexOf(playbackRateRef.current as (typeof PLAYBACK_RATES)[number]);
